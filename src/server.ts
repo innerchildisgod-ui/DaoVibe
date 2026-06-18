@@ -195,6 +195,150 @@ app.get("/", (_req, res) => {
   });
 });
 
+app.get("/app/status", (_req, res) => {
+  res.json({
+    ok: true,
+    app: {
+      name: "CallSab",
+      product_layer: "language_engine",
+      mode: {
+        local_first: true,
+        offline_capable: true,
+        online_sync_capable: true,
+        p2p_future_capable: true,
+      },
+    },
+    node: {
+      node_id: nodeId,
+      zone,
+      author,
+      node_age_group: nodeAgeGroup,
+      db_path: dbPath ?? "data/callsab_language_engine.db",
+      port,
+    },
+    local_state: {
+      packet_count: engine.packetCount(),
+      knowledge_count: engine.listKnowledge().length,
+      known_node_count: engine.listNodes().length,
+    },
+    sync: {
+      event_log_sync: true,
+      change_only_packets: true,
+      cursor_sync_available: true,
+      inventory_sync_available: true,
+    },
+  });
+});
+
+app.post("/app/lookupPhrase", (req, res) => {
+  const query = typeof req.body.query === "string" ? req.body.query.trim() : "";
+
+  if (!query) {
+    res.status(400).json({
+      ok: false,
+      error: "query is required",
+    });
+    return;
+  }
+
+  const normalizedQuery = query.toLowerCase();
+  const matches = engine
+    .listKnowledge()
+    .filter(
+      (phrase) =>
+        phrase.surface_text?.toLowerCase().includes(normalizedQuery) ||
+        phrase.phonetic_hint?.toLowerCase().includes(normalizedQuery) ||
+        phrase.language_hint?.toLowerCase().includes(normalizedQuery)
+    )
+    .map((phrase) => ({
+      phrase_id: phrase.phrase_id,
+      surface_text: phrase.surface_text,
+      phonetic_hint: phrase.phonetic_hint,
+      language_hint: phrase.language_hint,
+      safety_label: phrase.safety_label,
+      meanings: phrase.meanings.map((meaning) => ({
+        meaning_id: meaning.meaning_id,
+        reference_meaning: meaning.reference_meaning,
+        context: meaning.context,
+        confidence: meaning.confidence,
+        confirms: meaning.confirms,
+        rejects: meaning.rejects,
+      })),
+    }));
+
+  res.json({
+    ok: true,
+    query,
+    match_count: matches.length,
+    matches,
+  });
+});
+
+app.post("/app/observePhrase", (req, res) => {
+  try {
+    const phraseId =
+      typeof req.body.phrase_id === "string" ? req.body.phrase_id.trim() : "";
+    const surfaceText =
+      typeof req.body.surface_text === "string"
+        ? req.body.surface_text.trim()
+        : "";
+    const phoneticHint =
+      typeof req.body.phonetic_hint === "string"
+        ? req.body.phonetic_hint.trim()
+        : "";
+    const languageHint =
+      typeof req.body.language_hint === "string"
+        ? req.body.language_hint.trim()
+        : "";
+
+    if (!phraseId) {
+      res.status(400).json({
+        ok: false,
+        error: "phrase_id is required",
+      });
+      return;
+    }
+
+    if (!surfaceText && !phoneticHint && !languageHint) {
+      res.status(400).json({
+        ok: false,
+        error: "at least one phrase text field is required",
+      });
+      return;
+    }
+
+    const payload: PhraseObservedPayload = {
+      phrase_id: phraseId,
+      surface_text: surfaceText || undefined,
+      phonetic_hint: phoneticHint || undefined,
+      language_hint: languageHint || undefined,
+      input_type:
+        typeof req.body.input_type === "string"
+          ? (req.body.input_type as PhraseObservedPayload["input_type"])
+          : "text",
+    };
+    const result = engine.observePhrase(payload);
+
+    res.json({
+      ok: true,
+      result: {
+        phrase_id: phraseId,
+        packet_id: result.packet.packet_id,
+        packet_type: result.packet.packet_type,
+        created_at: result.packet.created_at,
+        local_apply_status: "applied_to_knowledge",
+        packet_size_class: result.packetSize.sizeClass,
+        route_decision: result.packetRoute.decision,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({
+      ok: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
 app.post("/observePhrase", (req, res) => {
   try {
     const payload = req.body as PhraseObservedPayload;
@@ -363,6 +507,31 @@ app.post("/sync/cursor/:peerAuthor", (req, res) => {
     res.json({
       ok: true,
       cursor: engine.setPeerSyncCursor(req.params.peerAuthor, cursor),
+    });
+  } catch (error) {
+    res.status(400).json({
+      ok: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+app.post("/sync/missingPacketIds", (req, res) => {
+  try {
+    const packetIds = Array.isArray(req.body.packet_ids)
+      ? req.body.packet_ids.filter(
+          (packetId: unknown): packetId is string =>
+            typeof packetId === "string"
+        )
+      : [];
+    const missingPacketIds = engine.findMissingPacketIds(packetIds);
+
+    res.json({
+      ok: true,
+      input_count: packetIds.length,
+      known_count: packetIds.length - missingPacketIds.length,
+      missing_count: missingPacketIds.length,
+      missing_packet_ids: missingPacketIds,
     });
   } catch (error) {
     res.status(400).json({

@@ -31,6 +31,37 @@ interface RootResponse {
   ok: boolean;
 }
 
+interface AppStatusResponse {
+  ok: boolean;
+  app: {
+    mode: {
+      local_first: boolean;
+    };
+  };
+  local_state: {
+    packet_count: number;
+    knowledge_count: number;
+    known_node_count: number;
+  };
+  sync: {
+    change_only_packets: boolean;
+  };
+}
+
+interface AppObservePhraseResponse {
+  ok: boolean;
+  result: {
+    phrase_id: string;
+    packet_id: string;
+    packet_type: string;
+    created_at: number;
+    local_apply_status: string;
+    packet_size_class: string;
+    route_decision: string;
+  };
+  error?: string;
+}
+
 interface SyncRunResponse {
   ok: boolean;
   result: {
@@ -65,6 +96,15 @@ interface KnowledgeResponse {
   }>;
 }
 
+interface LookupPhraseResponse {
+  ok: boolean;
+  query: string;
+  match_count: number;
+  matches: Array<{
+    phrase_id: string;
+  }>;
+}
+
 interface PacketSummary {
   packet_id: string;
   phrase_id?: string;
@@ -73,6 +113,14 @@ interface PacketSummary {
 interface PacketSummariesResponse {
   ok: boolean;
   packets: PacketSummary[];
+}
+
+interface MissingPacketIdsResponse {
+  ok: boolean;
+  input_count: number;
+  known_count: number;
+  missing_count: number;
+  missing_packet_ids: string[];
 }
 
 interface PacketsByIdsResponse {
@@ -282,6 +330,35 @@ async function waitForServer(
   );
 }
 
+async function assertAppStatus(baseUrl: string): Promise<void> {
+  const response = await requestJson<AppStatusResponse>(
+    "GET",
+    `${baseUrl}/app/status`
+  );
+
+  assertSimulation(response.ok, `${baseUrl} app status returned ok=false`);
+  assertSimulation(
+    response.app.mode.local_first === true,
+    `${baseUrl} app status local_first was not true`
+  );
+  assertSimulation(
+    response.sync.change_only_packets === true,
+    `${baseUrl} app status change_only_packets was not true`
+  );
+  assertSimulation(
+    typeof response.local_state.packet_count === "number",
+    `${baseUrl} app status packet_count was not a number`
+  );
+  assertSimulation(
+    typeof response.local_state.knowledge_count === "number",
+    `${baseUrl} app status knowledge_count was not a number`
+  );
+  assertSimulation(
+    typeof response.local_state.known_node_count === "number",
+    `${baseUrl} app status known_node_count was not a number`
+  );
+}
+
 async function stopServer(server: ManagedServer | undefined): Promise<void> {
   if (!server || server.process.exitCode !== null) {
     return;
@@ -345,19 +422,6 @@ async function assertNodeBDoesNotHavePhrase(phraseId: string): Promise<void> {
   );
 }
 
-function findMissingPacketIds(
-  nodeAPackets: PacketSummary[],
-  nodeBPackets: PacketSummary[]
-): string[] {
-  const nodeBPacketIds = new Set(
-    nodeBPackets.map((packet) => packet.packet_id)
-  );
-
-  return nodeAPackets
-    .map((packet) => packet.packet_id)
-    .filter((packetId) => !nodeBPacketIds.has(packetId));
-}
-
 async function runSimulation(): Promise<void> {
   mkdirSync(DATA_DIR, { recursive: true });
   clearSqliteDatabase(NODE_A_DB);
@@ -386,6 +450,13 @@ async function runSimulation(): Promise<void> {
       waitForServer(nodeA, NODE_A_BASE_URL),
       waitForServer(nodeB, NODE_B_BASE_URL),
     ]);
+
+    await Promise.all([
+      assertAppStatus(NODE_A_BASE_URL),
+      assertAppStatus(NODE_B_BASE_URL),
+    ]);
+
+    console.log("HTTP app status endpoint passed");
 
     const phrasePayload = {
       phrase_id: "http_two_node_sync_phrase_001",
@@ -430,6 +501,147 @@ async function runSimulation(): Promise<void> {
       `Node B knowledge is missing phrase ${phrasePayload.phrase_id}`
     );
 
+    const phraseLookup = await requestJson<LookupPhraseResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/app/lookupPhrase`,
+      {
+        query: phrasePayload.surface_text,
+      }
+    );
+
+    assertSimulation(phraseLookup.ok, "Node B phrase lookup returned ok=false");
+    assertSimulation(
+      phraseLookup.match_count >= 1,
+      `Expected phrase lookup to return at least 1 match, got ${phraseLookup.match_count}`
+    );
+    assertSimulation(
+      phraseLookup.matches.some(
+        (match) => match.phrase_id === phrasePayload.phrase_id
+      ),
+      `Expected phrase lookup to include phrase ${phrasePayload.phrase_id}`
+    );
+
+    const emptyLookupFailed = await requestFails(
+      "POST",
+      `${NODE_B_BASE_URL}/app/lookupPhrase`,
+      {
+        query: "   ",
+      }
+    );
+
+    assertSimulation(emptyLookupFailed, "Expected empty phrase lookup to fail");
+
+    console.log("HTTP app phrase lookup endpoint passed");
+
+    await delay(1100);
+
+    const appPhrasePayload: PhraseObservedPayload = {
+      phrase_id: "http_app_observe_phrase_001",
+      surface_text: "saptiya?",
+      phonetic_hint: "saaptiyaa",
+      language_hint: "Tamil-English slang",
+      input_type: "text",
+    };
+    const appObserve = await requestJson<AppObservePhraseResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/observePhrase`,
+      appPhrasePayload
+    );
+
+    assertSimulation(appObserve.ok, appObserve.error ?? "App observe failed");
+    assertSimulation(
+      appObserve.result.phrase_id === appPhrasePayload.phrase_id,
+      `Expected app observe phrase_id ${appPhrasePayload.phrase_id}, got ${appObserve.result.phrase_id}`
+    );
+    assertSimulation(
+      appObserve.result.packet_type === "phrase_observed",
+      `Expected app observe packet_type phrase_observed, got ${appObserve.result.packet_type}`
+    );
+    assertSimulation(
+      typeof appObserve.result.packet_id === "string",
+      "Expected app observe packet_id to be a string"
+    );
+    assertSimulation(
+      appObserve.result.local_apply_status === "applied_to_knowledge",
+      `Expected app observe local_apply_status applied_to_knowledge, got ${appObserve.result.local_apply_status}`
+    );
+
+    const nodeAAppLookup = await requestJson<LookupPhraseResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/lookupPhrase`,
+      {
+        query: appPhrasePayload.surface_text,
+      }
+    );
+
+    assertSimulation(
+      nodeAAppLookup.matches.some(
+        (match) => match.phrase_id === appPhrasePayload.phrase_id
+      ),
+      `Expected Node A app lookup to include phrase ${appPhrasePayload.phrase_id}`
+    );
+
+    const appPhraseSync = await requestJson<SyncRunResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/sync/run`,
+      {
+        remote_base_url: NODE_A_BASE_URL,
+        peer_author: NODE_A_AUTHOR,
+        limit: 100,
+      }
+    );
+
+    assertSimulation(
+      appPhraseSync.result.accepted_new_count === 1,
+      `Expected app phrase sync accepted_new_count 1, got ${appPhraseSync.result.accepted_new_count}`
+    );
+    assertSimulation(
+      appPhraseSync.result.failed_count === 0,
+      `Expected app phrase sync failed_count 0, got ${appPhraseSync.result.failed_count}`
+    );
+
+    const nodeBAppLookup = await requestJson<LookupPhraseResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/app/lookupPhrase`,
+      {
+        query: appPhrasePayload.surface_text,
+      }
+    );
+
+    assertSimulation(
+      nodeBAppLookup.matches.some(
+        (match) => match.phrase_id === appPhrasePayload.phrase_id
+      ),
+      `Expected Node B app lookup to include phrase ${appPhrasePayload.phrase_id}`
+    );
+
+    const missingPhraseIdFailed = await requestFails(
+      "POST",
+      `${NODE_A_BASE_URL}/app/observePhrase`,
+      {
+        surface_text: "missing id",
+        input_type: "text",
+      }
+    );
+    const missingTextFailed = await requestFails(
+      "POST",
+      `${NODE_A_BASE_URL}/app/observePhrase`,
+      {
+        phrase_id: "http_app_observe_missing_text_001",
+        input_type: "text",
+      }
+    );
+
+    assertSimulation(
+      missingPhraseIdFailed,
+      "Expected app observe without phrase_id to fail"
+    );
+    assertSimulation(
+      missingTextFailed,
+      "Expected app observe without text fields to fail"
+    );
+
+    console.log("HTTP app phrase observation endpoint passed");
     console.log("HTTP success sync passed");
 
     const secondSync = await requestJson<SyncRunResponse>(
@@ -588,20 +800,14 @@ async function runSimulation(): Promise<void> {
       "GET",
       `${NODE_A_BASE_URL}/packetSummaries?limit=100`
     );
-    const nodeBSummaries = await requestJson<PacketSummariesResponse>(
-      "GET",
-      `${NODE_B_BASE_URL}/packetSummaries?limit=100`
-    );
 
     assertSimulation(nodeASummaries.ok, "Node A packetSummaries returned ok=false");
-    assertSimulation(nodeBSummaries.ok, "Node B packetSummaries returned ok=false");
 
     const inventoryPacketSummary = nodeASummaries.packets.find(
       (packet) => packet.phrase_id === inventoryPhrasePayload.phrase_id
     );
-    const missingPacketIds = findMissingPacketIds(
-      nodeASummaries.packets,
-      nodeBSummaries.packets
+    const nodeAPacketIds = nodeASummaries.packets.map(
+      (packet) => packet.packet_id
     );
 
     assertSimulation(
@@ -614,20 +820,37 @@ async function runSimulation(): Promise<void> {
       typeof inventoryPacketId === "string",
       `Expected inventory packet ID for phrase ${inventoryPhrasePayload.phrase_id}`
     );
+
+    const missingInventory = await requestJson<MissingPacketIdsResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/sync/missingPacketIds`,
+      {
+        packet_ids: nodeAPacketIds,
+      }
+    );
+
     assertSimulation(
-      missingPacketIds.length === 1,
-      `Expected exactly 1 missing packet ID, got ${missingPacketIds.length}`
+      missingInventory.ok,
+      "Node B missingPacketIds returned ok=false"
     );
     assertSimulation(
-      missingPacketIds[0] === inventoryPacketId,
-      `Expected missing packet ID ${missingPacketIds[0]} to match inventory packet ${inventoryPacketId}`
+      missingInventory.input_count === nodeAPacketIds.length,
+      `Expected missingPacketIds input_count ${nodeAPacketIds.length}, got ${missingInventory.input_count}`
+    );
+    assertSimulation(
+      missingInventory.missing_count === 1,
+      `Expected exactly 1 missing packet ID, got ${missingInventory.missing_count}`
+    );
+    assertSimulation(
+      missingInventory.missing_packet_ids[0] === inventoryPacketId,
+      `Expected missing packet ID ${missingInventory.missing_packet_ids[0]} to match inventory packet ${inventoryPacketId}`
     );
 
     const missingPackets = await requestJson<PacketsByIdsResponse>(
       "POST",
       `${NODE_A_BASE_URL}/packetsByIds`,
       {
-        packet_ids: missingPacketIds,
+        packet_ids: missingInventory.missing_packet_ids,
       }
     );
 
@@ -665,24 +888,22 @@ async function runSimulation(): Promise<void> {
       `Expected Node B knowledge to contain phrase ${inventoryPhrasePayload.phrase_id}`
     );
 
-    const updatedNodeBSummaries = await requestJson<PacketSummariesResponse>(
-      "GET",
-      `${NODE_B_BASE_URL}/packetSummaries?limit=100`
-    );
+    const updatedMissingInventory =
+      await requestJson<MissingPacketIdsResponse>(
+        "POST",
+        `${NODE_B_BASE_URL}/sync/missingPacketIds`,
+        {
+          packet_ids: nodeAPacketIds,
+        }
+      );
 
     assertSimulation(
-      updatedNodeBSummaries.packets.some(
-        (packet) => packet.packet_id === inventoryPacketId
-      ),
-      `Expected Node B packet summaries to contain packet ${inventoryPacketId}`
-    );
-    assertSimulation(
-      findMissingPacketIds(nodeASummaries.packets, updatedNodeBSummaries.packets)
-        .length === 0,
+      updatedMissingInventory.missing_count === 0 &&
+        updatedMissingInventory.missing_packet_ids.length === 0,
       "Expected inventory comparison to find zero missing packet IDs after receivePacket"
     );
 
-    console.log("HTTP inventory comparison sync passed");
+    console.log("HTTP missing-packet inventory endpoint passed");
     console.log("HTTP two-node sync simulation succeeded.");
   } finally {
     await Promise.all([stopServer(nodeA), stopServer(nodeB)]);

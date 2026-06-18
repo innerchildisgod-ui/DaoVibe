@@ -314,6 +314,10 @@ export class LanguageEngine {
     return this.sqliteStore.getPacketsByIds(packetIds);
   }
 
+  findMissingPacketIds(packetIds: string[]): string[] {
+    return packetIds.filter((packetId) => !this.sqliteStore.hasPacket(packetId));
+  }
+
   pullSyncBatch(cursor = "0:", limit = 100) {
     return this.sqliteStore.listPacketSyncBatch(cursor, limit);
   }
