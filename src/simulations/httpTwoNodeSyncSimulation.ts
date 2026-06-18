@@ -65,9 +65,28 @@ interface KnowledgeResponse {
   }>;
 }
 
+interface PacketSummary {
+  packet_id: string;
+  phrase_id?: string;
+}
+
+interface PacketSummariesResponse {
+  ok: boolean;
+  packets: PacketSummary[];
+}
+
 interface PacketsByIdsResponse {
   ok: boolean;
   packets: LmpPacket[];
+}
+
+interface ReceivePacketResponse {
+  ok: boolean;
+  result: {
+    applyStatus?: string;
+    apply_status?: string;
+  };
+  error?: string;
 }
 
 function clearSqliteDatabase(dbPath: string): void {
@@ -326,6 +345,19 @@ async function assertNodeBDoesNotHavePhrase(phraseId: string): Promise<void> {
   );
 }
 
+function findMissingPacketIds(
+  nodeAPackets: PacketSummary[],
+  nodeBPackets: PacketSummary[]
+): string[] {
+  const nodeBPacketIds = new Set(
+    nodeBPackets.map((packet) => packet.packet_id)
+  );
+
+  return nodeAPackets
+    .map((packet) => packet.packet_id)
+    .filter((packetId) => !nodeBPacketIds.has(packetId));
+}
+
 async function runSimulation(): Promise<void> {
   mkdirSync(DATA_DIR, { recursive: true });
   clearSqliteDatabase(NODE_A_DB);
@@ -480,6 +512,22 @@ async function runSimulation(): Promise<void> {
     await assertNodeBDoesNotHavePacket(corruptedPacket.packet_id);
     await assertNodeBDoesNotHavePhrase(corruptPhrasePayload.phrase_id);
 
+    const cleanupReceive = await requestJson<ReceivePacketResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/receivePacket`,
+      originalPacket
+    );
+
+    assertSimulation(
+      cleanupReceive.ok,
+      cleanupReceive.error ?? "Expected original packet cleanup receive to pass"
+    );
+    assertSimulation(
+      cleanupReceive.result.applyStatus === "applied_to_knowledge" ||
+        cleanupReceive.result.apply_status === "applied_to_knowledge",
+      "Expected original packet cleanup receive to apply to knowledge"
+    );
+
     console.log("HTTP corrupted packet rejection passed");
 
     const expiredCursorBefore = await getNodeBCursor();
@@ -521,6 +569,120 @@ async function runSimulation(): Promise<void> {
     await assertNodeBDoesNotHavePhrase(expiredPhrasePayload.phrase_id);
 
     console.log("HTTP expired packet rejection passed");
+
+    const inventoryPhrasePayload: PhraseObservedPayload = {
+      phrase_id: "http_two_node_sync_inventory_phrase_001",
+      surface_text: "inventory sync ah?",
+      phonetic_hint: "inventory-sync-aa",
+      language_hint: "Tamil-English slang",
+      input_type: "speech",
+    };
+
+    await requestJson(
+      "POST",
+      `${NODE_A_BASE_URL}/observePhrase`,
+      inventoryPhrasePayload
+    );
+
+    const nodeASummaries = await requestJson<PacketSummariesResponse>(
+      "GET",
+      `${NODE_A_BASE_URL}/packetSummaries?limit=100`
+    );
+    const nodeBSummaries = await requestJson<PacketSummariesResponse>(
+      "GET",
+      `${NODE_B_BASE_URL}/packetSummaries?limit=100`
+    );
+
+    assertSimulation(nodeASummaries.ok, "Node A packetSummaries returned ok=false");
+    assertSimulation(nodeBSummaries.ok, "Node B packetSummaries returned ok=false");
+
+    const inventoryPacketSummary = nodeASummaries.packets.find(
+      (packet) => packet.phrase_id === inventoryPhrasePayload.phrase_id
+    );
+    const missingPacketIds = findMissingPacketIds(
+      nodeASummaries.packets,
+      nodeBSummaries.packets
+    );
+
+    assertSimulation(
+      inventoryPacketSummary !== undefined,
+      `Expected Node A packet summaries to include phrase ${inventoryPhrasePayload.phrase_id}`
+    );
+    const inventoryPacketId = inventoryPacketSummary?.packet_id;
+
+    assertSimulation(
+      typeof inventoryPacketId === "string",
+      `Expected inventory packet ID for phrase ${inventoryPhrasePayload.phrase_id}`
+    );
+    assertSimulation(
+      missingPacketIds.length === 1,
+      `Expected exactly 1 missing packet ID, got ${missingPacketIds.length}`
+    );
+    assertSimulation(
+      missingPacketIds[0] === inventoryPacketId,
+      `Expected missing packet ID ${missingPacketIds[0]} to match inventory packet ${inventoryPacketId}`
+    );
+
+    const missingPackets = await requestJson<PacketsByIdsResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/packetsByIds`,
+      {
+        packet_ids: missingPacketIds,
+      }
+    );
+
+    assertSimulation(missingPackets.ok, "Node A packetsByIds returned ok=false");
+    assertSimulation(
+      missingPackets.packets.length === 1,
+      `Expected Node A to return 1 missing packet, got ${missingPackets.packets.length}`
+    );
+
+    const inventoryReceive = await requestJson<ReceivePacketResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/receivePacket`,
+      missingPackets.packets[0]
+    );
+
+    assertSimulation(
+      inventoryReceive.ok,
+      inventoryReceive.error ?? "Inventory receivePacket returned ok=false"
+    );
+    assertSimulation(
+      inventoryReceive.result.applyStatus === "applied_to_knowledge" ||
+        inventoryReceive.result.apply_status === "applied_to_knowledge",
+      "Expected inventory receivePacket to apply to knowledge"
+    );
+
+    const inventoryKnowledge = await requestJson<KnowledgeResponse>(
+      "GET",
+      `${NODE_B_BASE_URL}/listKnowledge`
+    );
+
+    assertSimulation(
+      inventoryKnowledge.knowledge.some(
+        (phrase) => phrase.phrase_id === inventoryPhrasePayload.phrase_id
+      ),
+      `Expected Node B knowledge to contain phrase ${inventoryPhrasePayload.phrase_id}`
+    );
+
+    const updatedNodeBSummaries = await requestJson<PacketSummariesResponse>(
+      "GET",
+      `${NODE_B_BASE_URL}/packetSummaries?limit=100`
+    );
+
+    assertSimulation(
+      updatedNodeBSummaries.packets.some(
+        (packet) => packet.packet_id === inventoryPacketId
+      ),
+      `Expected Node B packet summaries to contain packet ${inventoryPacketId}`
+    );
+    assertSimulation(
+      findMissingPacketIds(nodeASummaries.packets, updatedNodeBSummaries.packets)
+        .length === 0,
+      "Expected inventory comparison to find zero missing packet IDs after receivePacket"
+    );
+
+    console.log("HTTP inventory comparison sync passed");
     console.log("HTTP two-node sync simulation succeeded.");
   } finally {
     await Promise.all([stopServer(nodeA), stopServer(nodeB)]);

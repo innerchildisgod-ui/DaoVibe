@@ -133,7 +133,26 @@ async function runSimulation(): Promise<void> {
   );
 
   const nodeBCursor = nodeB.getPeerSyncCursor(NODE_A_AUTHOR);
-  const secondBatch = nodeA.pullSyncBatch(nodeBCursor.cursor);
+  const restartedNodeB = createEngine(NODE_B_AUTHOR, NODE_B_DB);
+  const restartedPhrase = findPhrase(restartedNodeB, phrasePayload.phrase_id);
+  const restartedPackets = restartedNodeB.getPacketsByIds([
+    phraseResult.packet.packet_id,
+  ]);
+  const restartedCursor = restartedNodeB.getPeerSyncCursor(NODE_A_AUTHOR);
+  const secondBatch = nodeA.pullSyncBatch(restartedCursor.cursor);
+
+  assertSimulation(
+    restartedPhrase !== undefined,
+    `Restarted node B knowledge is missing phrase ${phrasePayload.phrase_id}`
+  );
+  assertSimulation(
+    restartedPackets.length === 1,
+    `Restarted node B is missing imported packet ${phraseResult.packet.packet_id}`
+  );
+  assertSimulation(
+    restartedCursor.cursor === nodeBCursor.cursor,
+    `Restarted node B cursor mismatch. Expected ${nodeBCursor.cursor}, got ${restartedCursor.cursor}`
+  );
 
   assertSimulation(
     secondBatch.packet_count === 0,
@@ -143,6 +162,7 @@ async function runSimulation(): Promise<void> {
   console.log(
     `success sync passed: ${phrasePayload.phrase_id} imported from packet ${phraseResult.packet.packet_id}`
   );
+  console.log("restart persistence passed");
   console.log("duplicate/cursor check passed");
 
   if (!NON_NORMAL_SAFETY_LABEL) {
