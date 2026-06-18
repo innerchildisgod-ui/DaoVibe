@@ -1,0 +1,693 @@
+import Database from "better-sqlite3";
+import { existsSync, mkdirSync } from "fs";
+import path from "path";
+import { LmpPacket } from "../protocol/packet";
+import { PacketSizeEstimate } from "../protocol/packetSize";
+import {
+  MeaningProposalPayload,
+  MeaningVotePayload,
+  PhraseObservedPayload,
+  SafetyLabelPayload,
+} from "../protocol/packetTypes";
+import { MeaningRecord } from "../knowledge/phraseStore";
+import { SafetyLabel } from "../safety/safetyLabels";
+
+interface PacketRefs {
+  phrase_id?: string;
+  meaning_id?: string;
+  symbol_id?: string;
+}
+
+interface PhraseRow {
+  phrase_id: string;
+  surface_text: string | null;
+  phonetic_hint: string | null;
+  language_hint: string | null;
+  safety_label: SafetyLabel;
+}
+
+interface MeaningRow {
+  meaning_id: string;
+  phrase_id: string;
+  reference_meaning: string;
+  context: string | null;
+  confidence: number;
+  confirms: number;
+  rejects: number;
+}
+
+export interface PacketSummary {
+  packet_id: string;
+  packet_type: string;
+  zone: string;
+  author: string;
+  parent?: string;
+  phrase_id?: string;
+  meaning_id?: string;
+  symbol_id?: string;
+  payload_hash: string;
+  packet_size_bytes: number;
+  packet_size_class: string;
+  size_recommendation: string;
+  created_at: number;
+  received_at: number;
+}
+
+export interface PacketSyncBatch {
+  cursor_before: string;
+  cursor_after: string;
+  packet_count: number;
+  packets: LmpPacket[];
+}
+
+export interface PeerSyncCursor {
+  peer_author: string;
+  cursor: string;
+  updated_at: number;
+}
+
+interface PacketRow extends PacketSummary {
+  packet_json: string;
+}
+
+interface SyncPacketRow {
+  packet_id: string;
+  received_at: number;
+  packet_json: string;
+}
+
+interface SyncCursor {
+  received_at: number;
+  packet_id: string;
+}
+
+function decodeSyncCursor(cursor?: string): SyncCursor {
+  const value = cursor ?? "0:";
+  const separatorIndex = value.indexOf(":");
+
+  if (separatorIndex === -1) {
+    throw new Error(`Invalid sync cursor: ${value}`);
+  }
+
+  const receivedAtText = value.slice(0, separatorIndex);
+  const packetId = value.slice(separatorIndex + 1);
+  const receivedAt = Number(receivedAtText);
+
+  if (!Number.isInteger(receivedAt) || receivedAt < 0) {
+    throw new Error(`Invalid sync cursor timestamp: ${receivedAtText}`);
+  }
+
+  return {
+    received_at: receivedAt,
+    packet_id: packetId,
+  };
+}
+
+function encodeSyncCursor(receivedAt: number, packetId: string): string {
+  return `${receivedAt}:${packetId}`;
+}
+function compareSyncCursors(left: string, right: string): number {
+  const leftCursor = decodeSyncCursor(left);
+  const rightCursor = decodeSyncCursor(right);
+
+  if (leftCursor.received_at > rightCursor.received_at) {
+    return 1;
+  }
+
+  if (leftCursor.received_at < rightCursor.received_at) {
+    return -1;
+  }
+
+  if (leftCursor.packet_id > rightCursor.packet_id) {
+    return 1;
+  }
+
+  if (leftCursor.packet_id < rightCursor.packet_id) {
+    return -1;
+  }
+
+  return 0;
+}
+
+function clampSyncLimit(limit: number): number {
+  if (!Number.isFinite(limit)) {
+    return 100;
+  }
+
+  return Math.max(1, Math.min(Math.floor(limit), 500));
+}
+
+function extractRefs(packet: LmpPacket): PacketRefs {
+  const payload = packet.payload as Record<string, unknown>;
+
+  return {
+    phrase_id:
+      typeof payload.phrase_id === "string" ? payload.phrase_id : undefined,
+    meaning_id:
+      typeof payload.meaning_id === "string" ? payload.meaning_id : undefined,
+    symbol_id:
+      typeof payload.symbol_id === "string" ? payload.symbol_id : undefined,
+  };
+}
+
+export class SQLiteStore {
+  private db: Database.Database;
+
+  constructor(
+    dbPath = path.join(process.cwd(), "data", "callsab_language_engine.db")
+  ) {
+    const dir = path.dirname(dbPath);
+
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+
+    this.db = new Database(dbPath);
+    this.db.pragma("journal_mode = WAL");
+
+    this.initialize();
+  }
+
+  private initialize(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS packets (
+        packet_id TEXT PRIMARY KEY,
+        packet_type TEXT NOT NULL,
+        zone TEXT NOT NULL,
+        author TEXT NOT NULL,
+        parent TEXT,
+        phrase_id TEXT,
+        meaning_id TEXT,
+        symbol_id TEXT,
+        payload_hash TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        packet_json TEXT NOT NULL,
+        packet_size_bytes INTEGER NOT NULL,
+        packet_size_class TEXT NOT NULL,
+        size_recommendation TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        received_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_packets_phrase_id
+        ON packets(phrase_id);
+
+      CREATE INDEX IF NOT EXISTS idx_packets_meaning_id
+        ON packets(meaning_id);
+
+      CREATE INDEX IF NOT EXISTS idx_packets_type
+        ON packets(packet_type);
+
+      CREATE INDEX IF NOT EXISTS idx_packets_zone
+        ON packets(zone);
+
+      CREATE TABLE IF NOT EXISTS phrases (
+        phrase_id TEXT PRIMARY KEY,
+        surface_text TEXT,
+        phonetic_hint TEXT,
+        language_hint TEXT,
+        safety_label TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS meanings (
+        meaning_id TEXT PRIMARY KEY,
+        phrase_id TEXT NOT NULL,
+        reference_meaning TEXT NOT NULL,
+        context TEXT,
+        confidence REAL NOT NULL,
+        confirms INTEGER NOT NULL,
+        rejects INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_meanings_phrase_id
+        ON meanings(phrase_id);
+
+      CREATE TABLE IF NOT EXISTS votes (
+        vote_packet_id TEXT PRIMARY KEY,
+        phrase_id TEXT NOT NULL,
+        meaning_id TEXT NOT NULL,
+        vote TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        author TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS peer_sync_cursors (
+        peer_author TEXT PRIMARY KEY,
+        cursor TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+  }
+
+  savePacket(packet: LmpPacket, packetSize: PacketSizeEstimate): void {
+    const refs = extractRefs(packet);
+
+    this.db
+      .prepare(
+        `
+        INSERT OR IGNORE INTO packets (
+          packet_id,
+          packet_type,
+          zone,
+          author,
+          parent,
+          phrase_id,
+          meaning_id,
+          symbol_id,
+          payload_hash,
+          payload_json,
+          packet_json,
+          packet_size_bytes,
+          packet_size_class,
+          size_recommendation,
+          created_at,
+          received_at
+        )
+        VALUES (
+          @packet_id,
+          @packet_type,
+          @zone,
+          @author,
+          @parent,
+          @phrase_id,
+          @meaning_id,
+          @symbol_id,
+          @payload_hash,
+          @payload_json,
+          @packet_json,
+          @packet_size_bytes,
+          @packet_size_class,
+          @size_recommendation,
+          @created_at,
+          @received_at
+        )
+      `
+      )
+      .run({
+        packet_id: packet.packet_id,
+        packet_type: packet.packet_type,
+        zone: packet.zone,
+        author: packet.author,
+        parent: packet.parent ?? null,
+        phrase_id: refs.phrase_id ?? null,
+        meaning_id: refs.meaning_id ?? null,
+        symbol_id: refs.symbol_id ?? null,
+        payload_hash: packet.payload_hash,
+        payload_json: JSON.stringify(packet.payload),
+        packet_json: JSON.stringify(packet),
+        packet_size_bytes: packetSize.bytes,
+        packet_size_class: packetSize.sizeClass,
+        size_recommendation: packetSize.recommendation,
+        created_at: packet.created_at,
+        received_at: Math.floor(Date.now() / 1000),
+      });
+  }
+
+  upsertPhrase(
+    payload: PhraseObservedPayload,
+    safetyLabel: SafetyLabel
+  ): void {
+    this.db
+      .prepare(
+        `
+        INSERT INTO phrases (
+          phrase_id,
+          surface_text,
+          phonetic_hint,
+          language_hint,
+          safety_label,
+          updated_at
+        )
+        VALUES (
+          @phrase_id,
+          @surface_text,
+          @phonetic_hint,
+          @language_hint,
+          @safety_label,
+          @updated_at
+        )
+        ON CONFLICT(phrase_id) DO UPDATE SET
+          surface_text = COALESCE(excluded.surface_text, phrases.surface_text),
+          phonetic_hint = COALESCE(excluded.phonetic_hint, phrases.phonetic_hint),
+          language_hint = COALESCE(excluded.language_hint, phrases.language_hint),
+          safety_label = excluded.safety_label,
+          updated_at = excluded.updated_at
+      `
+      )
+      .run({
+        phrase_id: payload.phrase_id,
+        surface_text: payload.surface_text ?? null,
+        phonetic_hint: payload.phonetic_hint ?? null,
+        language_hint: payload.language_hint ?? null,
+        safety_label: safetyLabel,
+        updated_at: Math.floor(Date.now() / 1000),
+      });
+  }
+
+  upsertMeaning(phrase_id: string, meaning: MeaningRecord): void {
+    this.db
+      .prepare(
+        `
+        INSERT INTO meanings (
+          meaning_id,
+          phrase_id,
+          reference_meaning,
+          context,
+          confidence,
+          confirms,
+          rejects,
+          updated_at
+        )
+        VALUES (
+          @meaning_id,
+          @phrase_id,
+          @reference_meaning,
+          @context,
+          @confidence,
+          @confirms,
+          @rejects,
+          @updated_at
+        )
+        ON CONFLICT(meaning_id) DO UPDATE SET
+          reference_meaning = excluded.reference_meaning,
+          context = excluded.context,
+          confidence = excluded.confidence,
+          confirms = excluded.confirms,
+          rejects = excluded.rejects,
+          updated_at = excluded.updated_at
+      `
+      )
+      .run({
+        meaning_id: meaning.meaning_id,
+        phrase_id,
+        reference_meaning: meaning.reference_meaning,
+        context: meaning.context ?? null,
+        confidence: meaning.confidence,
+        confirms: meaning.confirms,
+        rejects: meaning.rejects,
+        updated_at: Math.floor(Date.now() / 1000),
+      });
+  }
+
+  recordVote(packet: LmpPacket, payload: MeaningVotePayload): void {
+    this.db
+      .prepare(
+        `
+        INSERT OR IGNORE INTO votes (
+          vote_packet_id,
+          phrase_id,
+          meaning_id,
+          vote,
+          confidence,
+          author,
+          created_at
+        )
+        VALUES (
+          @vote_packet_id,
+          @phrase_id,
+          @meaning_id,
+          @vote,
+          @confidence,
+          @author,
+          @created_at
+        )
+      `
+      )
+      .run({
+        vote_packet_id: packet.packet_id,
+        phrase_id: payload.phrase_id,
+        meaning_id: payload.meaning_id,
+        vote: payload.vote,
+        confidence: payload.confidence,
+        author: packet.author,
+        created_at: packet.created_at,
+      });
+  }
+
+  setSafetyLabel(payload: SafetyLabelPayload): void {
+    this.db
+      .prepare(
+        `
+        UPDATE phrases
+        SET safety_label = @safety_label,
+            updated_at = @updated_at
+        WHERE phrase_id = @phrase_id
+      `
+      )
+      .run({
+        phrase_id: payload.phrase_id,
+        safety_label: payload.label,
+        updated_at: Math.floor(Date.now() / 1000),
+      });
+  }
+
+  listKnowledge() {
+    const phrases = this.db
+      .prepare(
+        `
+        SELECT phrase_id, surface_text, phonetic_hint, language_hint, safety_label
+        FROM phrases
+        ORDER BY updated_at DESC
+      `
+      )
+      .all() as PhraseRow[];
+
+    const meaningsStatement = this.db.prepare(
+      `
+      SELECT meaning_id, phrase_id, reference_meaning, context, confidence, confirms, rejects
+      FROM meanings
+      WHERE phrase_id = ?
+      ORDER BY confidence DESC
+    `
+    );
+
+    return phrases.map((phrase) => {
+      const meanings = meaningsStatement.all(phrase.phrase_id) as MeaningRow[];
+
+      return {
+        phrase_id: phrase.phrase_id,
+        surface_text: phrase.surface_text ?? undefined,
+        phonetic_hint: phrase.phonetic_hint ?? undefined,
+        language_hint: phrase.language_hint ?? undefined,
+        safety_label: phrase.safety_label,
+        meanings: meanings.map((meaning) => ({
+          meaning_id: meaning.meaning_id,
+          reference_meaning: meaning.reference_meaning,
+          context: meaning.context ?? undefined,
+          confidence: meaning.confidence,
+          confirms: meaning.confirms,
+          rejects: meaning.rejects,
+        })),
+      };
+    });
+  }
+    listPacketSummaries(limit = 100): PacketSummary[] {
+    const rows = this.db
+      .prepare(
+        `
+        SELECT
+          packet_id,
+          packet_type,
+          zone,
+          author,
+          parent,
+          phrase_id,
+          meaning_id,
+          symbol_id,
+          payload_hash,
+          packet_size_bytes,
+          packet_size_class,
+          size_recommendation,
+          created_at,
+          received_at
+        FROM packets
+        ORDER BY received_at DESC
+        LIMIT ?
+      `
+      )
+      .all(limit) as PacketSummary[];
+
+    return rows.map((row) => ({
+      ...row,
+      parent: row.parent ?? undefined,
+      phrase_id: row.phrase_id ?? undefined,
+      meaning_id: row.meaning_id ?? undefined,
+      symbol_id: row.symbol_id ?? undefined,
+    }));
+  }
+
+  listPacketsAfter(receivedAfter: number, limit = 100): LmpPacket[] {
+    const rows = this.db
+      .prepare(
+        `
+        SELECT packet_json
+        FROM packets
+        WHERE received_at > ?
+        ORDER BY received_at ASC
+        LIMIT ?
+      `
+      )
+      .all(receivedAfter, limit) as PacketRow[];
+
+    return rows.map((row) => JSON.parse(row.packet_json) as LmpPacket);
+  }
+
+  listPacketSyncBatch(cursor = "0:", limit = 100): PacketSyncBatch {
+    const cursorBefore = decodeSyncCursor(cursor);
+    const normalizedLimit = clampSyncLimit(limit);
+
+    const rows = this.db
+      .prepare(
+        `
+        SELECT packet_id, received_at, packet_json
+        FROM packets
+        WHERE
+          received_at > @received_at
+          OR (
+            received_at = @received_at
+            AND packet_id > @packet_id
+          )
+        ORDER BY received_at ASC, packet_id ASC
+        LIMIT @limit
+      `
+      )
+      .all({
+        received_at: cursorBefore.received_at,
+        packet_id: cursorBefore.packet_id,
+        limit: normalizedLimit,
+      }) as SyncPacketRow[];
+
+    const lastRow = rows.length > 0 ? rows[rows.length - 1] : undefined;
+
+    return {
+      cursor_before: encodeSyncCursor(
+        cursorBefore.received_at,
+        cursorBefore.packet_id
+      ),
+      cursor_after: lastRow
+        ? encodeSyncCursor(lastRow.received_at, lastRow.packet_id)
+        : encodeSyncCursor(cursorBefore.received_at, cursorBefore.packet_id),
+      packet_count: rows.length,
+      packets: rows.map((row) => JSON.parse(row.packet_json) as LmpPacket),
+    };
+  }
+
+  countPackets(): number {
+    const row = this.db
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM packets
+      `
+      )
+      .get() as { count: number };
+
+    return row.count;
+  }
+
+  hasPacket(packetId: string): boolean {
+    const row = this.db
+      .prepare(
+        `
+        SELECT 1 AS found
+        FROM packets
+        WHERE packet_id = ?
+        LIMIT 1
+      `
+      )
+      .get(packetId) as { found: number } | undefined;
+
+    return row !== undefined;
+  }
+    getPeerSyncCursor(peerAuthor: string): PeerSyncCursor {
+    const row = this.db
+      .prepare(
+        `
+        SELECT peer_author, cursor, updated_at
+        FROM peer_sync_cursors
+        WHERE peer_author = ?
+      `
+      )
+      .get(peerAuthor) as PeerSyncCursor | undefined;
+
+    if (row) {
+      return row;
+    }
+
+    return {
+      peer_author: peerAuthor,
+      cursor: "0:",
+      updated_at: 0,
+    };
+  }
+
+  setPeerSyncCursor(peerAuthor: string, cursor: string): PeerSyncCursor {
+    const decodedCursor = decodeSyncCursor(cursor);
+    const normalizedCursor = encodeSyncCursor(
+      decodedCursor.received_at,
+      decodedCursor.packet_id
+    );
+    const existingCursor = this.getPeerSyncCursor(peerAuthor);
+
+    if (compareSyncCursors(normalizedCursor, existingCursor.cursor) < 0) {
+      throw new Error(
+        `Refusing to move sync cursor backwards for ${peerAuthor}. Current ${existingCursor.cursor}, requested ${normalizedCursor}`
+      );
+    }
+
+    const updatedAt = Math.floor(Date.now() / 1000);
+
+    this.db
+      .prepare(
+        `
+        INSERT INTO peer_sync_cursors (
+          peer_author,
+          cursor,
+          updated_at
+        )
+        VALUES (
+          @peer_author,
+          @cursor,
+          @updated_at
+        )
+        ON CONFLICT(peer_author) DO UPDATE SET
+          cursor = excluded.cursor,
+          updated_at = excluded.updated_at
+      `
+      )
+      .run({
+        peer_author: peerAuthor,
+        cursor: normalizedCursor,
+        updated_at: updatedAt,
+      });
+
+    return {
+      peer_author: peerAuthor,
+      cursor: normalizedCursor,
+      updated_at: updatedAt,
+    };
+  }
+
+  getPacketsByIds(packetIds: string[]): LmpPacket[] {
+    if (packetIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = packetIds.map(() => "?").join(",");
+
+    const rows = this.db
+      .prepare(
+        `
+        SELECT packet_json
+        FROM packets
+        WHERE packet_id IN (${placeholders})
+      `
+      )
+      .all(...packetIds) as PacketRow[];
+
+    return rows.map((row) => JSON.parse(row.packet_json) as LmpPacket);
+  }
+}
