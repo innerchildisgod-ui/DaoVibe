@@ -333,7 +333,12 @@ export class SQLiteStore {
           surface_text = COALESCE(excluded.surface_text, phrases.surface_text),
           phonetic_hint = COALESCE(excluded.phonetic_hint, phrases.phonetic_hint),
           language_hint = COALESCE(excluded.language_hint, phrases.language_hint),
-          safety_label = excluded.safety_label,
+          safety_label = CASE
+            WHEN phrases.safety_label != 'normal'
+              AND excluded.safety_label = 'normal'
+            THEN phrases.safety_label
+            ELSE excluded.safety_label
+          END,
           updated_at = excluded.updated_at
       `
       )
@@ -431,10 +436,25 @@ export class SQLiteStore {
     this.db
       .prepare(
         `
-        UPDATE phrases
-        SET safety_label = @safety_label,
-            updated_at = @updated_at
-        WHERE phrase_id = @phrase_id
+        INSERT INTO phrases (
+          phrase_id,
+          surface_text,
+          phonetic_hint,
+          language_hint,
+          safety_label,
+          updated_at
+        )
+        VALUES (
+          @phrase_id,
+          NULL,
+          NULL,
+          NULL,
+          @safety_label,
+          @updated_at
+        )
+        ON CONFLICT(phrase_id) DO UPDATE SET
+          safety_label = excluded.safety_label,
+          updated_at = excluded.updated_at
       `
       )
       .run({

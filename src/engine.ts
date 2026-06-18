@@ -31,6 +31,91 @@ export interface EngineActionResult<TPayload> {
   nodeRoute: RoutePlan;
 }
 
+export type ReceivePacketApplyStatus =
+  | "applied_to_knowledge"
+  | "stored_event_only"
+  | "not_yet_supported"
+  | "already_stored";
+
+export interface ReceivePacketResult {
+  packet: LmpPacket;
+  packetSize: PacketSizeEstimate;
+  packetRoute: PacketRouteResult;
+  appliedToKnowledge: boolean;
+  applyStatus: ReceivePacketApplyStatus;
+}
+
+export type SyncImportPacketStatus =
+  | "accepted_new"
+  | "already_stored"
+  | "rejected_invalid"
+  | "rejected_expired"
+  | "failed_apply";
+
+export interface SyncImportPacketResult {
+  packet_index: number;
+  packet_id: string;
+  packet_type: string;
+  status: SyncImportPacketStatus;
+  applied_to_knowledge: boolean;
+  apply_status?: ReceivePacketApplyStatus;
+  route_decision?: string;
+  errors: string[];
+}
+
+export interface SyncImportSummary {
+  accepted_new: number;
+  already_stored: number;
+  rejected_invalid: number;
+  rejected_expired: number;
+  failed_apply: number;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function classifySyncImportFailure(error: unknown): SyncImportPacketStatus {
+  const message = getErrorMessage(error);
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    message.includes("reject_expired") ||
+    lowerMessage.includes("expired")
+  ) {
+    return "rejected_expired";
+  }
+
+  if (
+    message.includes("reject_invalid") ||
+    lowerMessage.includes("invalid") ||
+    lowerMessage.includes("unsupported") ||
+    lowerMessage.includes("missing")
+  ) {
+    return "rejected_invalid";
+  }
+
+  return "failed_apply";
+}
+
+function summarizeSyncImportResults(
+  results: SyncImportPacketResult[]
+): SyncImportSummary {
+  return results.reduce<SyncImportSummary>(
+    (summary, result) => {
+      summary[result.status] += 1;
+      return summary;
+    },
+    {
+      accepted_new: 0,
+      already_stored: 0,
+      rejected_invalid: 0,
+      rejected_expired: 0,
+      failed_apply: 0,
+    }
+  );
+}
+
 export class LanguageEngine {
   private store = new PhraseStore();
   private packetIndex = new PacketIndex();
@@ -255,25 +340,58 @@ export class LanguageEngine {
       );
     }
 
-    const results = [];
+    const results: SyncImportPacketResult[] = [];
 
     for (let index = 0; index < params.packets.length; index += 1) {
       const packet = params.packets[index];
 
       try {
-        results.push(this.receivePacket(packet));
+        const receiveResult = this.receivePacket(packet);
+        const status: SyncImportPacketStatus =
+          receiveResult.applyStatus === "already_stored"
+            ? "already_stored"
+            : "accepted_new";
+
+        results.push({
+          packet_index: index,
+          packet_id: packet.packet_id,
+          packet_type: packet.packet_type,
+          status,
+          applied_to_knowledge: receiveResult.appliedToKnowledge,
+          apply_status: receiveResult.applyStatus,
+          route_decision: receiveResult.packetRoute.decision,
+          errors: receiveResult.packetRoute.errors,
+        });
       } catch (error) {
+        const status = classifySyncImportFailure(error);
+        const errorMessage = getErrorMessage(error);
+
+        results.push({
+          packet_index: index,
+          packet_id: packet.packet_id,
+          packet_type: packet.packet_type,
+          status,
+          applied_to_knowledge: false,
+          errors: [errorMessage],
+        });
+
+        const summary = summarizeSyncImportResults(results);
+
         throw new Error(
           [
             `Sync import failed for ${params.peerAuthor}.`,
             `Packet index: ${index}.`,
             `Packet ID: ${packet.packet_id}.`,
+            `Status: ${status}.`,
             `Cursor was not advanced.`,
-            `Reason: ${error instanceof Error ? error.message : "Unknown error"}`,
+            `Summary: ${JSON.stringify(summary)}.`,
+            `Reason: ${errorMessage}`,
           ].join(" ")
         );
       }
     }
+
+    const summary = summarizeSyncImportResults(results);
 
     const cursor = this.sqliteStore.setPeerSyncCursor(
       params.peerAuthor,
@@ -285,13 +403,19 @@ export class LanguageEngine {
       cursor_before: params.cursorBefore,
       cursor_after: cursor.cursor,
       packet_count: params.packets.length,
-      imported_count: results.length,
-      failed_count: 0,
+      imported_count: summary.accepted_new + summary.already_stored,
+      accepted_new_count: summary.accepted_new,
+      already_stored_count: summary.already_stored,
+      failed_count:
+        summary.rejected_invalid +
+        summary.rejected_expired +
+        summary.failed_apply,
+      summary,
       results,
     };
   }
 
-  receivePacket(packet: LmpPacket) {
+  receivePacket(packet: LmpPacket): ReceivePacketResult {
     const packetSize = estimatePacketSize(packet);
 
     const packetRoute = this.packetRouter.routeIncoming(packet);
@@ -323,11 +447,7 @@ export class LanguageEngine {
     }
 
     let appliedToKnowledge = false;
-    let applyStatus:
-      | "applied_to_knowledge"
-      | "stored_event_only"
-      | "not_yet_supported"
-      | "already_stored";
+    let applyStatus: ReceivePacketApplyStatus;
 
     switch (packet.packet_type) {
       case "phrase_observed": {
@@ -388,6 +508,7 @@ export class LanguageEngine {
     }
 
     this.sqliteStore.savePacket(packet, packetSize);
+    this.refreshResidentStateFromSQLite();
 
     return {
       packet,
@@ -400,6 +521,10 @@ export class LanguageEngine {
 
   findPacketsByPhrase(phrase_id: string) {
     return this.packetIndex.findByPhrase(phrase_id);
+  }
+
+  private refreshResidentStateFromSQLite(): void {
+    this.store.hydrate(this.sqliteStore.listKnowledge());
   }
 
   private assertPacketAccepted(route: PacketRouteResult): void {
