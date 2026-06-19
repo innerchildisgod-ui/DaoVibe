@@ -14,6 +14,8 @@ const SUPPORTED_PACKET_TYPES: Set<PacketType> = new Set([
   "meaning_proposal",
   "meaning_vote",
   "correction",
+  "meaning_correction_proposed",
+  "meaning_correction_vote",
   "safety_label",
   "symbol_sample",
 ]);
@@ -32,6 +34,77 @@ export interface PacketValidationResult {
   signature_input_hash?: string;
 }
 
+function asPayloadObject(payload: unknown): Record<string, unknown> | undefined {
+  if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+
+  return undefined;
+}
+
+function requirePayloadString(
+  payload: Record<string, unknown>,
+  fieldName: string,
+  errors: string[]
+): void {
+  const value = payload[fieldName];
+
+  if (typeof value !== "string" || value.trim().length === 0) {
+    errors.push(`Missing payload.${fieldName}`);
+  }
+}
+
+function validateMeaningCorrectionProposedPayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  requirePayloadString(payload, "phrase_id", errors);
+  requirePayloadString(payload, "original_meaning_id", errors);
+  requirePayloadString(payload, "correction_id", errors);
+  requirePayloadString(payload, "corrected_reference_meaning", errors);
+}
+
+function validateMeaningCorrectionVotePayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  requirePayloadString(payload, "phrase_id", errors);
+  requirePayloadString(payload, "correction_id", errors);
+  requirePayloadString(payload, "vote", errors);
+
+  if (
+    typeof payload.vote === "string" &&
+    payload.vote !== "confirm" &&
+    payload.vote !== "reject"
+  ) {
+    errors.push("Invalid payload.vote");
+  }
+}
+
+function validateCorrectionPayload(packet: LmpPacket, errors: string[]): void {
+  if (packet.packet_type === "meaning_correction_proposed") {
+    validateMeaningCorrectionProposedPayload(packet, errors);
+  }
+
+  if (packet.packet_type === "meaning_correction_vote") {
+    validateMeaningCorrectionVotePayload(packet, errors);
+  }
+}
+
 export function validatePacket(packet: LmpPacket): PacketValidationResult {
   const errors: string[] = [];
   let signatureStatus: PacketSignatureStatus = "missing";
@@ -43,6 +116,8 @@ export function validatePacket(packet: LmpPacket): PacketValidationResult {
   if (!SUPPORTED_PACKET_TYPES.has(packet.packet_type)) {
     errors.push(`Unsupported packet type: ${packet.packet_type}`);
   }
+
+  validateCorrectionPayload(packet, errors);
 
   if (!packet.packet_id) errors.push("Missing packet_id");
   if (!packet.zone) errors.push("Missing zone");

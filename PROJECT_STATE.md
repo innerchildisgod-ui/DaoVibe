@@ -166,6 +166,16 @@ Language routes now validate required request fields and return clear errors ins
 
 ---
 
+## Current Milestone: Correction Packet Flow Started
+
+Mycelium is beginning correction packet support. The first step is protocol-level support for meaning correction proposal and correction voting packets.
+
+Significance:
+
+Language knowledge must be correctable. Mycelium should not only store and vote on first meanings; it must allow communities to refine wrong meanings over time.
+
+---
+
 ## Current Build Flow
 
 - Current active layer: Mycelium language layer.
@@ -230,6 +240,8 @@ Current packet types:
 - meaning_proposal
 - meaning_vote
 - correction
+- meaning_correction_proposed
+- meaning_correction_vote
 - safety_label
 - symbol_sample
 

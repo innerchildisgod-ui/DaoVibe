@@ -5,12 +5,16 @@ export type PacketType =
   | "meaning_proposal"
   | "meaning_vote"
   | "correction"
+  | "meaning_correction_proposed"
+  | "meaning_correction_vote"
   | "safety_label"
   | "symbol_sample";
 
 export type InputType = "speech" | "text" | "symbol" | "drawing";
 
 export type VoteValue = "confirm" | "reject" | "unsure";
+
+export type CorrectionVoteValue = "confirm" | "reject";
 
 export interface PhraseObservedPayload {
   phrase_id: string;
@@ -33,6 +37,22 @@ export interface MeaningVotePayload {
   meaning_id: string;
   vote: VoteValue;
   confidence: number;
+}
+
+export interface MeaningCorrectionProposedPayload {
+  phrase_id: string;
+  original_meaning_id: string;
+  correction_id: string;
+  corrected_reference_meaning: string;
+  correction_context?: string;
+  source?: string;
+}
+
+export interface MeaningCorrectionVotePayload {
+  phrase_id: string;
+  correction_id: string;
+  vote: CorrectionVoteValue;
+  voter?: string;
 }
 
 export interface SafetyLabelPayload {
