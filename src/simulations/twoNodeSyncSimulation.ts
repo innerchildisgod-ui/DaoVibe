@@ -403,6 +403,135 @@ async function runSimulation(): Promise<void> {
   console.log("correction duplicate protection passed");
   console.log("synced correction best meaning passed");
 
+
+  await delay(1100);
+
+  const tombstoneId = "two_node_sync_correction_tombstone_001";
+  const tombstoneProposalPacket = createPacket({
+    packet_type: "meaning_correction_tombstone_proposed",
+    zone: ZONE,
+    author: NODE_A_AUTHOR,
+    parent: correctionVoteResult.packet.packet_id,
+    payload: {
+      phrase_id: phrasePayload.phrase_id,
+      correction_id: correctionId,
+      tombstone_id: tombstoneId,
+      reason: "negative_score",
+      details: "two-node tombstone sync verification",
+      proposer: NODE_A_AUTHOR,
+    },
+  });
+  const tombstoneVotePacket = createPacket({
+    packet_type: "meaning_correction_tombstone_vote",
+    zone: ZONE,
+    author: NODE_A_AUTHOR,
+    parent: tombstoneProposalPacket.packet_id,
+    payload: {
+      phrase_id: phrasePayload.phrase_id,
+      correction_id: correctionId,
+      tombstone_id: tombstoneId,
+      vote: "confirm",
+      voter: NODE_A_AUTHOR,
+    },
+  });
+
+  const tombstoneProposalReceive = nodeA.receivePacket(tombstoneProposalPacket);
+  const tombstoneVoteReceive = nodeA.receivePacket(tombstoneVotePacket);
+
+  assertSimulation(
+    tombstoneProposalReceive.applyStatus === "stored_event_only",
+    `Expected tombstone proposal to be stored event only, got ${tombstoneProposalReceive.applyStatus}`
+  );
+  assertSimulation(
+    tombstoneVoteReceive.applyStatus === "stored_event_only",
+    `Expected tombstone vote to be stored event only, got ${tombstoneVoteReceive.applyStatus}`
+  );
+
+  const tombstoneCursorBefore = nodeB.getPeerSyncCursor(NODE_A_AUTHOR).cursor;
+  const tombstoneBatch = nodeA.pullSyncBatch(tombstoneCursorBefore);
+  const tombstoneImport = nodeB.importSyncBatch({
+    peerAuthor: NODE_A_AUTHOR,
+    cursorBefore: tombstoneBatch.cursor_before,
+    cursorAfter: tombstoneBatch.cursor_after,
+    packets: tombstoneBatch.packets,
+  });
+
+  assertSyncSummaryFields(tombstoneImport.summary);
+  assertSimulation(
+    tombstoneBatch.packet_count === 2,
+    `Expected tombstone sync batch to contain 2 packets, got ${tombstoneBatch.packet_count}`
+  );
+  assertSimulation(
+    tombstoneImport.summary.accepted_new === 2,
+    `Expected node B to accept 2 tombstone packets, got ${tombstoneImport.summary.accepted_new}`
+  );
+  assertSimulation(
+    tombstoneImport.summary.already_stored === 0 &&
+      tombstoneImport.summary.rejected_invalid === 0 &&
+      tombstoneImport.summary.rejected_expired === 0 &&
+      tombstoneImport.summary.failed_apply === 0,
+    `Expected tombstone sync to have no duplicate or failed packets, got ${JSON.stringify(tombstoneImport.summary)}`
+  );
+  assertStoredPacketTypes(nodeB, [
+    {
+      packetId: tombstoneProposalPacket.packet_id,
+      packetType: "meaning_correction_tombstone_proposed",
+    },
+    {
+      packetId: tombstoneVotePacket.packet_id,
+      packetType: "meaning_correction_tombstone_vote",
+    },
+  ]);
+  assertPacketResultStatus(
+    tombstoneImport.results,
+    tombstoneProposalPacket.packet_id,
+    "accepted_new"
+  );
+  assertPacketResultStatus(
+    tombstoneImport.results,
+    tombstoneVotePacket.packet_id,
+    "accepted_new"
+  );
+
+  const duplicateTombstoneCursor = nodeB.getPeerSyncCursor(
+    NODE_A_AUTHOR
+  ).cursor;
+  const duplicateTombstoneImport = nodeB.importSyncBatch({
+    peerAuthor: NODE_A_AUTHOR,
+    cursorBefore: duplicateTombstoneCursor,
+    cursorAfter: duplicateTombstoneCursor,
+    packets: [tombstoneProposalPacket, tombstoneVotePacket],
+  });
+
+  assertSyncSummaryFields(duplicateTombstoneImport.summary);
+  assertSimulation(
+    duplicateTombstoneImport.summary.accepted_new === 0,
+    `Expected duplicate tombstone sync to accept 0 new packets, got ${duplicateTombstoneImport.summary.accepted_new}`
+  );
+  assertSimulation(
+    duplicateTombstoneImport.summary.already_stored === 2,
+    `Expected duplicate tombstone sync to report 2 already stored packets, got ${duplicateTombstoneImport.summary.already_stored}`
+  );
+  assertSimulation(
+    duplicateTombstoneImport.summary.rejected_invalid === 0 &&
+      duplicateTombstoneImport.summary.rejected_expired === 0 &&
+      duplicateTombstoneImport.summary.failed_apply === 0,
+    `Expected duplicate tombstone sync to have no rejected or failed packets, got ${JSON.stringify(duplicateTombstoneImport.summary)}`
+  );
+  assertPacketResultStatus(
+    duplicateTombstoneImport.results,
+    tombstoneProposalPacket.packet_id,
+    "already_stored"
+  );
+  assertPacketResultStatus(
+    duplicateTombstoneImport.results,
+    tombstoneVotePacket.packet_id,
+    "already_stored"
+  );
+
+  console.log("correction tombstone packet sync passed");
+  console.log("correction tombstone duplicate protection passed");
+
   const corruptCursorBefore = nodeB.getPeerSyncCursor(NODE_A_AUTHOR).cursor;
   const corruptPhrasePayload: PhraseObservedPayload = {
     phrase_id: "two_node_sync_corrupt_phrase_001",
@@ -467,3 +596,4 @@ runSimulation().catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });
+
