@@ -54,6 +54,18 @@ function requirePayloadString(
   }
 }
 
+function validateOptionalPayloadString(
+  payload: Record<string, unknown>,
+  fieldName: string,
+  errors: string[]
+): void {
+  const value = payload[fieldName];
+
+  if (value !== undefined && typeof value !== "string") {
+    errors.push(`Invalid payload.${fieldName}`);
+  }
+}
+
 function validateMeaningCorrectionProposedPayload(
   packet: LmpPacket,
   errors: string[]
@@ -69,6 +81,8 @@ function validateMeaningCorrectionProposedPayload(
   requirePayloadString(payload, "original_meaning_id", errors);
   requirePayloadString(payload, "correction_id", errors);
   requirePayloadString(payload, "corrected_reference_meaning", errors);
+  validateOptionalPayloadString(payload, "correction_context", errors);
+  validateOptionalPayloadString(payload, "source", errors);
 }
 
 function validateMeaningCorrectionVotePayload(
@@ -85,6 +99,7 @@ function validateMeaningCorrectionVotePayload(
   requirePayloadString(payload, "phrase_id", errors);
   requirePayloadString(payload, "correction_id", errors);
   requirePayloadString(payload, "vote", errors);
+  validateOptionalPayloadString(payload, "voter", errors);
 
   if (
     typeof payload.vote === "string" &&
