@@ -20,6 +20,16 @@ const SUPPORTED_PACKET_TYPES: Set<PacketType> = new Set([
   "symbol_sample",
 ]);
 
+export const CORRECTION_PACKET_FIELD_LIMITS = {
+  phrase_id: 160,
+  original_meaning_id: 160,
+  correction_id: 160,
+  corrected_reference_meaning: 2000,
+  correction_context: 1000,
+  source: 300,
+  voter: 160,
+} as const;
+
 export type PacketSignatureStatus =
   | "missing"
   | "dev_signature_valid"
@@ -54,15 +64,43 @@ function requirePayloadString(
   }
 }
 
-function validateOptionalPayloadString(
+function requirePayloadStringWithinLimit(
   payload: Record<string, unknown>,
   fieldName: string,
+  maxLength: number,
   errors: string[]
 ): void {
   const value = payload[fieldName];
 
-  if (value !== undefined && typeof value !== "string") {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    errors.push(`Missing payload.${fieldName}`);
+    return;
+  }
+
+  if (value.trim().length > maxLength) {
+    errors.push(`Invalid payload.${fieldName}: max ${maxLength} characters`);
+  }
+}
+
+function validateOptionalPayloadStringWithinLimit(
+  payload: Record<string, unknown>,
+  fieldName: string,
+  maxLength: number,
+  errors: string[]
+): void {
+  const value = payload[fieldName];
+
+  if (value === undefined) {
+    return;
+  }
+
+  if (typeof value !== "string" || value.trim().length === 0) {
     errors.push(`Invalid payload.${fieldName}`);
+    return;
+  }
+
+  if (value.trim().length > maxLength) {
+    errors.push(`Invalid payload.${fieldName}: max ${maxLength} characters`);
   }
 }
 
@@ -77,12 +115,42 @@ function validateMeaningCorrectionProposedPayload(
     return;
   }
 
-  requirePayloadString(payload, "phrase_id", errors);
-  requirePayloadString(payload, "original_meaning_id", errors);
-  requirePayloadString(payload, "correction_id", errors);
-  requirePayloadString(payload, "corrected_reference_meaning", errors);
-  validateOptionalPayloadString(payload, "correction_context", errors);
-  validateOptionalPayloadString(payload, "source", errors);
+  requirePayloadStringWithinLimit(
+    payload,
+    "phrase_id",
+    CORRECTION_PACKET_FIELD_LIMITS.phrase_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "original_meaning_id",
+    CORRECTION_PACKET_FIELD_LIMITS.original_meaning_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "correction_id",
+    CORRECTION_PACKET_FIELD_LIMITS.correction_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "corrected_reference_meaning",
+    CORRECTION_PACKET_FIELD_LIMITS.corrected_reference_meaning,
+    errors
+  );
+  validateOptionalPayloadStringWithinLimit(
+    payload,
+    "correction_context",
+    CORRECTION_PACKET_FIELD_LIMITS.correction_context,
+    errors
+  );
+  validateOptionalPayloadStringWithinLimit(
+    payload,
+    "source",
+    CORRECTION_PACKET_FIELD_LIMITS.source,
+    errors
+  );
 }
 
 function validateMeaningCorrectionVotePayload(
@@ -96,10 +164,25 @@ function validateMeaningCorrectionVotePayload(
     return;
   }
 
-  requirePayloadString(payload, "phrase_id", errors);
-  requirePayloadString(payload, "correction_id", errors);
+  requirePayloadStringWithinLimit(
+    payload,
+    "phrase_id",
+    CORRECTION_PACKET_FIELD_LIMITS.phrase_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "correction_id",
+    CORRECTION_PACKET_FIELD_LIMITS.correction_id,
+    errors
+  );
   requirePayloadString(payload, "vote", errors);
-  validateOptionalPayloadString(payload, "voter", errors);
+  validateOptionalPayloadStringWithinLimit(
+    payload,
+    "voter",
+    CORRECTION_PACKET_FIELD_LIMITS.voter,
+    errors
+  );
 
   if (
     typeof payload.vote === "string" &&

@@ -95,37 +95,6 @@ export interface PhraseCorrectionsResult {
   corrections: CorrectionSummary[];
 }
 
-export type CorrectionHistoryEvent =
-  | CorrectionProposedHistoryEvent
-  | CorrectionVoteHistoryEvent;
-
-export interface CorrectionProposedHistoryEvent {
-  event_type: "correction_proposed";
-  phrase_id: string;
-  original_meaning_id: string;
-  correction_id: string;
-  corrected_reference_meaning: string;
-  correction_context?: string;
-  source?: string;
-  packet_id?: string;
-  created_at?: string | number;
-}
-
-export interface CorrectionVoteHistoryEvent {
-  event_type: "correction_vote";
-  phrase_id: string;
-  correction_id: string;
-  vote: "confirm" | "reject";
-  voter?: string;
-  packet_id?: string;
-  created_at?: string | number;
-}
-
-export interface PhraseCorrectionHistoryResult {
-  phrase_id: string;
-  history: CorrectionHistoryEvent[];
-}
-
 interface CorrectionBestMeaningDetails extends BestMeaningDetails {
   source: "correction";
   correction_id: string;
@@ -142,12 +111,6 @@ interface CorrectionProposalCandidate {
 
 interface RankedCorrectionSummary extends CorrectionSummary {
   proposal_created_at?: number;
-}
-
-interface CorrectionHistoryCandidate {
-  event: CorrectionHistoryEvent;
-  ledger_index: number;
-  timestamp_order?: number;
 }
 
 const DEFAULT_SEARCH_LIMIT = 25;
@@ -286,39 +249,6 @@ export function listCorrectionsForPhrase(
       correctionPackets
     ),
   };
-}
-
-export function listCorrectionHistoryForPhrase(
-  source: PhraseLookupSource,
-  phraseId: string
-): PhraseCorrectionHistoryResult {
-  const normalizedPhraseId = phraseId.trim();
-  const correctionPackets = listCorrectionPacketsForPhrase(
-    source,
-    normalizedPhraseId
-  );
-
-  return {
-    phrase_id: normalizedPhraseId,
-    history: summarizeCorrectionHistoryForPhrase(
-      normalizedPhraseId,
-      correctionPackets
-    ),
-  };
-}
-
-export function summarizeCorrectionHistoryForPhrase(
-  phraseId: string,
-  correctionPackets: LmpPacket[]
-): CorrectionHistoryEvent[] {
-  return correctionPackets
-    .map((packet, index) => toCorrectionHistoryCandidate(packet, phraseId, index))
-    .filter(
-      (candidate): candidate is CorrectionHistoryCandidate =>
-        candidate !== undefined
-    )
-    .sort(compareCorrectionHistoryCandidates)
-    .map((candidate) => candidate.event);
 }
 
 export function summarizeCorrectionPacketsForPhrase(
@@ -496,176 +426,6 @@ function correctionVoteVoterKey(
     payload.correction_id,
     payload.voter.trim(),
   ]);
-}
-
-function toCorrectionHistoryCandidate(
-  packet: LmpPacket,
-  phraseId: string,
-  ledgerIndex: number
-): CorrectionHistoryCandidate | undefined {
-  const event = toCorrectionHistoryEvent(packet, phraseId);
-
-  if (!event) {
-    return undefined;
-  }
-
-  return {
-    event,
-    ledger_index: ledgerIndex,
-    timestamp_order: packetTimestampOrder(packet),
-  };
-}
-
-function toCorrectionHistoryEvent(
-  packet: LmpPacket,
-  phraseId: string
-): CorrectionHistoryEvent | undefined {
-  const packetMetadata = packetHistoryMetadata(packet);
-
-  if (packet.packet_type === "meaning_correction_proposed") {
-    const payload = packet.payload as MeaningCorrectionProposedPayload;
-
-    if (!isCorrectionProposalForPhrase(payload, phraseId)) {
-      return undefined;
-    }
-
-    const event: CorrectionProposedHistoryEvent = {
-      event_type: "correction_proposed",
-      phrase_id: payload.phrase_id,
-      original_meaning_id: payload.original_meaning_id,
-      correction_id: payload.correction_id,
-      corrected_reference_meaning: payload.corrected_reference_meaning,
-      ...packetMetadata,
-    };
-
-    if (typeof payload.correction_context === "string") {
-      event.correction_context = payload.correction_context;
-    }
-
-    if (typeof payload.source === "string") {
-      event.source = payload.source;
-    }
-
-    return event;
-  }
-
-  if (packet.packet_type === "meaning_correction_vote") {
-    const payload = packet.payload as MeaningCorrectionVotePayload;
-
-    if (!isCorrectionVoteForPhrase(payload, phraseId)) {
-      return undefined;
-    }
-
-    const event: CorrectionVoteHistoryEvent = {
-      event_type: "correction_vote",
-      phrase_id: payload.phrase_id,
-      correction_id: payload.correction_id,
-      vote: payload.vote,
-      ...packetMetadata,
-    };
-
-    if (isNonEmptyString(payload.voter)) {
-      event.voter = payload.voter.trim();
-    }
-
-    return event;
-  }
-
-  return undefined;
-}
-
-function packetHistoryMetadata(
-  packet: LmpPacket
-): Pick<CorrectionHistoryEvent, "packet_id" | "created_at"> {
-  const metadata: Pick<CorrectionHistoryEvent, "packet_id" | "created_at"> = {};
-
-  if (typeof packet.packet_id === "string" && packet.packet_id) {
-    metadata.packet_id = packet.packet_id;
-  }
-
-  const createdAt = packetCreatedAt(packet);
-
-  if (createdAt !== undefined) {
-    metadata.created_at = createdAt;
-  }
-
-  return metadata;
-}
-
-function packetCreatedAt(packet: LmpPacket): string | number | undefined {
-  const createdAt = (packet as { created_at?: unknown }).created_at;
-
-  if (typeof createdAt === "number" && Number.isFinite(createdAt)) {
-    return createdAt;
-  }
-
-  if (typeof createdAt === "string" && createdAt.trim()) {
-    return createdAt;
-  }
-
-  return undefined;
-}
-
-function packetTimestampOrder(packet: LmpPacket): number | undefined {
-  const createdAt = packetCreatedAt(packet);
-
-  if (typeof createdAt === "number") {
-    return createdAt;
-  }
-
-  if (typeof createdAt === "string") {
-    const numericCreatedAt = Number(createdAt);
-
-    if (Number.isFinite(numericCreatedAt)) {
-      return numericCreatedAt;
-    }
-
-    const parsedCreatedAt = Date.parse(createdAt);
-
-    if (Number.isFinite(parsedCreatedAt)) {
-      return parsedCreatedAt;
-    }
-  }
-
-  return undefined;
-}
-
-function compareCorrectionHistoryCandidates(
-  left: CorrectionHistoryCandidate,
-  right: CorrectionHistoryCandidate
-): number {
-  if (
-    left.timestamp_order !== undefined &&
-    right.timestamp_order !== undefined &&
-    left.timestamp_order !== right.timestamp_order
-  ) {
-    return left.timestamp_order - right.timestamp_order;
-  }
-
-  if (left.ledger_index !== right.ledger_index) {
-    return left.ledger_index - right.ledger_index;
-  }
-
-  return compareOptionalStrings(left.event.packet_id, right.event.packet_id);
-}
-
-function compareOptionalStrings(
-  left: string | undefined,
-  right: string | undefined
-): number {
-  if (left === undefined && right === undefined) {
-    return 0;
-  }
-
-  if (left === undefined) {
-    return 1;
-  }
-
-  if (right === undefined) {
-    return -1;
-  }
-
-  return left.localeCompare(right);
 }
 
 function toCorrectionSummary(

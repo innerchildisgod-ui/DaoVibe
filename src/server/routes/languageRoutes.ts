@@ -9,12 +9,12 @@ import {
   PhraseObservedPayload,
   SafetyLabelPayload,
 } from "../../protocol/packetTypes";
+import { CORRECTION_PACKET_FIELD_LIMITS } from "../../protocol/validatePacket";
 import { SafetyLabel } from "../../safety/safetyLabels";
 import {
   asRequestObject,
   optionalNumber,
   optionalString,
-  optionalStringField,
   payloadOrBody,
   requireAllowedString,
   requireOneString,
@@ -41,6 +41,44 @@ function isValidSafetyLabel(value: unknown): value is SafetyLabel {
     typeof value === "string" &&
     VALID_SAFETY_LABELS.includes(value as SafetyLabel)
   );
+}
+
+function requireLimitedString(
+  body: Record<string, unknown>,
+  fieldName: string,
+  maxLength: number
+): string {
+  const value = requireString(body, fieldName);
+
+  if (value.length > maxLength) {
+    validationError(`${fieldName} is too long`);
+  }
+
+  return value;
+}
+
+function optionalLimitedStringField(
+  body: Record<string, unknown>,
+  fieldName: string,
+  maxLength: number
+): string | undefined {
+  const value = body[fieldName];
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || value.trim().length === 0) {
+    validationError(`${fieldName} is invalid`);
+  }
+
+  const trimmedValue = value.trim();
+
+  if (trimmedValue.length > maxLength) {
+    validationError(`${fieldName} is too long`);
+  }
+
+  return trimmedValue;
 }
 
 function legacyPhrasePayload(body: unknown): PhraseObservedPayload {
@@ -95,15 +133,36 @@ function meaningCorrectionProposedPayload(
   const payload = payloadOrBody(body);
 
   return {
-    phrase_id: requireString(payload, "phrase_id"),
-    original_meaning_id: requireString(payload, "original_meaning_id"),
-    correction_id: requireString(payload, "correction_id"),
-    corrected_reference_meaning: requireString(
+    phrase_id: requireLimitedString(
       payload,
-      "corrected_reference_meaning"
+      "phrase_id",
+      CORRECTION_PACKET_FIELD_LIMITS.phrase_id
     ),
-    correction_context: optionalStringField(payload, "correction_context"),
-    source: optionalStringField(payload, "source"),
+    original_meaning_id: requireLimitedString(
+      payload,
+      "original_meaning_id",
+      CORRECTION_PACKET_FIELD_LIMITS.original_meaning_id
+    ),
+    correction_id: requireLimitedString(
+      payload,
+      "correction_id",
+      CORRECTION_PACKET_FIELD_LIMITS.correction_id
+    ),
+    corrected_reference_meaning: requireLimitedString(
+      payload,
+      "corrected_reference_meaning",
+      CORRECTION_PACKET_FIELD_LIMITS.corrected_reference_meaning
+    ),
+    correction_context: optionalLimitedStringField(
+      payload,
+      "correction_context",
+      CORRECTION_PACKET_FIELD_LIMITS.correction_context
+    ),
+    source: optionalLimitedStringField(
+      payload,
+      "source",
+      CORRECTION_PACKET_FIELD_LIMITS.source
+    ),
   };
 }
 
@@ -111,10 +170,22 @@ function meaningCorrectionVotePayload(body: unknown): MeaningCorrectionVotePaylo
   const payload = payloadOrBody(body);
 
   return {
-    phrase_id: requireString(payload, "phrase_id"),
-    correction_id: requireString(payload, "correction_id"),
+    phrase_id: requireLimitedString(
+      payload,
+      "phrase_id",
+      CORRECTION_PACKET_FIELD_LIMITS.phrase_id
+    ),
+    correction_id: requireLimitedString(
+      payload,
+      "correction_id",
+      CORRECTION_PACKET_FIELD_LIMITS.correction_id
+    ),
     vote: requireAllowedString(payload, "vote", ["confirm", "reject"]),
-    voter: optionalStringField(payload, "voter"),
+    voter: optionalLimitedStringField(
+      payload,
+      "voter",
+      CORRECTION_PACKET_FIELD_LIMITS.voter
+    ),
   };
 }
 
@@ -179,17 +250,6 @@ export function registerLanguageRoutes(
 
   app.get("/phrases/:phraseId/corrections", (req, res) => {
     const result = myceliumController.getPhraseCorrections(req.params.phraseId);
-
-    res.json({
-      ok: true,
-      ...result,
-    });
-  });
-
-  app.get("/phrases/:phraseId/correctionHistory", (req, res) => {
-    const result = myceliumController.getPhraseCorrectionHistory(
-      req.params.phraseId
-    );
 
     res.json({
       ok: true,
