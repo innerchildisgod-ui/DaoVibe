@@ -7,6 +7,11 @@ import type {
   SafetyLabelPayload,
 } from "../protocol/packetTypes";
 import type { SafetyLabel } from "../safety/safetyLabels";
+import {
+  findPhraseById,
+  searchPhrases,
+  selectBestMeaning,
+} from "./PhraseLookup";
 
 export class MyceliumController {
   constructor(private readonly engine: LanguageEngine) {}
@@ -59,6 +64,20 @@ export class MyceliumController {
           rejects: meaning.rejects,
         })),
       }));
+  }
+
+  searchPhrases(query: string, limit?: number) {
+    return searchPhrases(this.engine, query, limit);
+  }
+
+  getPhraseById(phraseId: string) {
+    return findPhraseById(this.engine, phraseId);
+  }
+
+  getBestMeaning(phraseId: string) {
+    const phraseResult = this.getPhraseById(phraseId);
+
+    return selectBestMeaning(phraseResult.phrase, phraseResult.phrase_id);
   }
 
   listNodes() {

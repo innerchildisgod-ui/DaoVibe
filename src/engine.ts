@@ -229,6 +229,14 @@ export class LanguageEngine {
     return this.sqliteStore.listKnowledge();
   }
 
+  findPhraseById(phraseId: string) {
+    return this.sqliteStore.findPhraseById(phraseId);
+  }
+
+  searchPhrases(query: string, limit?: number) {
+    return this.sqliteStore.searchPhrases(query, limit);
+  }
+
   packetCount(): number {
     return this.sqliteStore.countPackets();
   }

@@ -29,11 +29,125 @@ function isValidSafetyLabel(value: unknown): value is SafetyLabel {
   );
 }
 
+function asObject(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function routePayload(body: unknown): Record<string, unknown> {
+  const objectBody = asObject(body);
+  const nestedPayload = asObject(objectBody.payload);
+
+  return Object.keys(nestedPayload).length > 0 ? nestedPayload : objectBody;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function legacyPhrasePayload(body: unknown): PhraseObservedPayload {
+  const payload = routePayload(body);
+
+  return {
+    phrase_id: optionalString(payload.phrase_id) ?? "",
+    surface_text:
+      optionalString(payload.surface_text) ?? optionalString(payload.text),
+    phonetic_hint: optionalString(payload.phonetic_hint),
+    language_hint:
+      optionalString(payload.language_hint) ?? optionalString(payload.language),
+    input_type:
+      typeof payload.input_type === "string"
+        ? (payload.input_type as PhraseObservedPayload["input_type"])
+        : "text",
+  };
+}
+
+function legacyMeaningPayload(body: unknown): MeaningProposalPayload {
+  const payload = routePayload(body);
+
+  return {
+    phrase_id: optionalString(payload.phrase_id) ?? "",
+    meaning_id: optionalString(payload.meaning_id) ?? "",
+    reference_meaning: optionalString(payload.reference_meaning) ?? "",
+    context: optionalString(payload.context),
+    confidence: optionalNumber(payload.confidence) ?? 0.5,
+  };
+}
+
+function legacyVotePayload(body: unknown): MeaningVotePayload {
+  const payload = routePayload(body);
+
+  return {
+    phrase_id: optionalString(payload.phrase_id) ?? "",
+    meaning_id: optionalString(payload.meaning_id) ?? "",
+    vote:
+      typeof payload.vote === "string"
+        ? (payload.vote as MeaningVotePayload["vote"])
+        : "unsure",
+    confidence: optionalNumber(payload.confidence) ?? 0.5,
+  };
+}
+
 export function registerLanguageRoutes(
   app: Express,
   context: LanguageRoutesContext
 ): void {
   const { myceliumController } = context;
+
+  app.get("/phrases/search", (req, res) => {
+    const query = typeof req.query.q === "string" ? req.query.q : "";
+    const limit =
+      typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+    const result = myceliumController.searchPhrases(query, limit);
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  });
+
+  app.get("/phrases/:phraseId/bestMeaning", (req, res) => {
+    const result = myceliumController.getBestMeaning(req.params.phraseId);
+
+    if (result.reason === "Phrase not found.") {
+      res.status(404).json({
+        ok: false,
+        error: "Phrase not found.",
+        phrase_id: result.phrase_id,
+      });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  });
+
+  app.get("/phrases/:phraseId", (req, res) => {
+    const result = myceliumController.getPhraseById(req.params.phraseId);
+
+    if (!result.found) {
+      res.status(404).json({
+        ok: false,
+        error: "Phrase not found.",
+        phrase_id: result.phrase_id,
+      });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      phrase: result.phrase,
+    });
+  });
 
   app.post("/app/lookupPhrase", (req, res) => {
     const query =
@@ -349,7 +463,7 @@ export function registerLanguageRoutes(
 
   app.post("/observePhrase", (req, res) => {
     try {
-      const payload = req.body as PhraseObservedPayload;
+      const payload = legacyPhrasePayload(req.body);
       const result = myceliumController.observePhrase(payload);
 
       res.json({
@@ -366,7 +480,7 @@ export function registerLanguageRoutes(
 
   app.post("/proposeMeaning", (req, res) => {
     try {
-      const payload = req.body.payload as MeaningProposalPayload;
+      const payload = legacyMeaningPayload(req.body);
       const parent = req.body.parent as string | undefined;
 
       const result = myceliumController.proposeMeaning(payload, parent);
@@ -385,7 +499,7 @@ export function registerLanguageRoutes(
 
   app.post("/voteMeaning", (req, res) => {
     try {
-      const payload = req.body.payload as MeaningVotePayload;
+      const payload = legacyVotePayload(req.body);
       const parent = req.body.parent as string | undefined;
 
       const result = myceliumController.voteMeaning(payload, parent);

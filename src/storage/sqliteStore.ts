@@ -36,6 +36,24 @@ interface MeaningRow {
   rejects: number;
 }
 
+export interface KnowledgeMeaningRecord {
+  meaning_id: string;
+  reference_meaning: string;
+  context?: string;
+  confidence: number;
+  confirms: number;
+  rejects: number;
+}
+
+export interface KnowledgePhraseRecord {
+  phrase_id: string;
+  surface_text?: string;
+  phonetic_hint?: string;
+  language_hint?: string;
+  safety_label: SafetyLabel;
+  meanings: KnowledgeMeaningRecord[];
+}
+
 export interface PacketSummary {
   packet_id: string;
   packet_type: string;
@@ -135,6 +153,18 @@ function clampSyncLimit(limit: number): number {
   }
 
   return Math.max(1, Math.min(Math.floor(limit), 500));
+}
+
+function clampLookupLimit(limit?: number): number {
+  if (!Number.isFinite(limit)) {
+    return 25;
+  }
+
+  return Math.max(1, Math.min(Math.floor(Number(limit)), 100));
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
 function extractRefs(packet: LmpPacket): PacketRefs {
@@ -464,7 +494,7 @@ export class SQLiteStore {
       });
   }
 
-  listKnowledge() {
+  listKnowledge(): KnowledgePhraseRecord[] {
     const phrases = this.db
       .prepare(
         `
@@ -475,6 +505,59 @@ export class SQLiteStore {
       )
       .all() as PhraseRow[];
 
+    return this.attachMeanings(phrases);
+  }
+
+  findPhraseById(phraseId: string): KnowledgePhraseRecord | undefined {
+    const row = this.db
+      .prepare(
+        `
+        SELECT phrase_id, surface_text, phonetic_hint, language_hint, safety_label
+        FROM phrases
+        WHERE phrase_id = ?
+        LIMIT 1
+      `
+      )
+      .get(phraseId) as PhraseRow | undefined;
+
+    if (!row) {
+      return undefined;
+    }
+
+    return this.attachMeanings([row])[0];
+  }
+
+  searchPhrases(query: string, limit = 25): KnowledgePhraseRecord[] {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const pattern = `%${escapeLikePattern(normalizedQuery)}%`;
+    const rows = this.db
+      .prepare(
+        `
+        SELECT phrase_id, surface_text, phonetic_hint, language_hint, safety_label
+        FROM phrases
+        WHERE
+          LOWER(phrase_id) LIKE @pattern ESCAPE '\\'
+          OR LOWER(COALESCE(surface_text, '')) LIKE @pattern ESCAPE '\\'
+          OR LOWER(COALESCE(phonetic_hint, '')) LIKE @pattern ESCAPE '\\'
+          OR LOWER(COALESCE(language_hint, '')) LIKE @pattern ESCAPE '\\'
+        ORDER BY updated_at DESC
+        LIMIT @limit
+      `
+      )
+      .all({
+        pattern,
+        limit: clampLookupLimit(limit),
+      }) as PhraseRow[];
+
+    return this.attachMeanings(rows);
+  }
+
+  private attachMeanings(phrases: PhraseRow[]): KnowledgePhraseRecord[] {
     const meaningsStatement = this.db.prepare(
       `
       SELECT meaning_id, phrase_id, reference_meaning, context, confidence, confirms, rejects
@@ -493,7 +576,7 @@ export class SQLiteStore {
         phonetic_hint: phrase.phonetic_hint ?? undefined,
         language_hint: phrase.language_hint ?? undefined,
         safety_label: phrase.safety_label,
-        meanings: meanings.map((meaning) => ({
+        meanings: meanings.map((meaning): KnowledgeMeaningRecord => ({
           meaning_id: meaning.meaning_id,
           reference_meaning: meaning.reference_meaning,
           context: meaning.context ?? undefined,
