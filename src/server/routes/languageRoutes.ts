@@ -271,6 +271,17 @@ export function registerLanguageRoutes(
     });
   });
 
+  app.get("/phrases/:phraseId/correctionCleanupCandidates", (req, res) => {
+    const result = myceliumController.getPhraseCorrectionCleanupCandidates(
+      req.params.phraseId
+    );
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  });
+
   app.get("/phrases/:phraseId", (req, res) => {
     const result = myceliumController.getPhraseById(req.params.phraseId);
 

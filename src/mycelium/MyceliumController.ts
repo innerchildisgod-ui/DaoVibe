@@ -11,6 +11,7 @@ import type {
 import type { SafetyLabel } from "../safety/safetyLabels";
 import {
   findPhraseById,
+  listCorrectionCleanupCandidatesForPhrase,
   listCorrectionHistoryForPhrase,
   listCorrectionsForPhrase,
   listCorrectionPacketsForPhrase,
@@ -96,6 +97,10 @@ export class MyceliumController {
 
   getPhraseCorrectionHistory(phraseId: string, limit?: number) {
     return listCorrectionHistoryForPhrase(this.engine, phraseId, limit);
+  }
+
+  getPhraseCorrectionCleanupCandidates(phraseId: string) {
+    return listCorrectionCleanupCandidatesForPhrase(this.engine, phraseId);
   }
 
   getBestMeaning(phraseId: string) {

@@ -127,6 +127,20 @@ export interface PhraseCorrectionHistoryResult {
   history: CorrectionHistoryEvent[];
 }
 
+export type CorrectionCleanupReason =
+  | "rejected_status"
+  | "negative_score"
+  | "losing_conflict_candidate";
+
+export interface CorrectionCleanupCandidate extends CorrectionSummary {
+  cleanup_reasons: CorrectionCleanupReason[];
+}
+
+export interface PhraseCorrectionCleanupCandidatesResult {
+  phrase_id: string;
+  candidates: CorrectionCleanupCandidate[];
+}
+
 interface CorrectionBestMeaningDetails extends BestMeaningDetails {
   source: "correction";
   correction_id: string;
@@ -333,6 +347,32 @@ export function listCorrectionHistoryForPhrase(
   };
 }
 
+export function listCorrectionCleanupCandidatesForPhrase(
+  source: PhraseLookupSource,
+  phraseId: string
+): PhraseCorrectionCleanupCandidatesResult {
+  const correctionsResult = listCorrectionsForPhrase(source, phraseId);
+
+  return {
+    phrase_id: correctionsResult.phrase_id,
+    candidates: selectCorrectionCleanupCandidates(
+      correctionsResult.corrections
+    ),
+  };
+}
+
+export function selectCorrectionCleanupCandidates(
+  corrections: CorrectionSummary[]
+): CorrectionCleanupCandidate[] {
+  return corrections
+    .map(toCorrectionCleanupCandidate)
+    .filter(
+      (candidate): candidate is CorrectionCleanupCandidate =>
+        candidate !== undefined
+    )
+    .sort(compareCorrectionCleanupCandidates);
+}
+
 export function summarizeCorrectionHistoryForPhrase(
   phraseId: string,
   correctionPackets: LmpPacket[],
@@ -526,6 +566,60 @@ function correctionVoteVoterKey(
     payload.correction_id,
     payload.voter.trim(),
   ]);
+}
+
+function toCorrectionCleanupCandidate(
+  correction: CorrectionSummary
+): CorrectionCleanupCandidate | undefined {
+  const cleanupReasons = correctionCleanupReasons(correction);
+
+  if (cleanupReasons.length === 0) {
+    return undefined;
+  }
+
+  return {
+    ...correction,
+    cleanup_reasons: cleanupReasons,
+  };
+}
+
+function correctionCleanupReasons(
+  correction: CorrectionSummary
+): CorrectionCleanupReason[] {
+  const reasons: CorrectionCleanupReason[] = [];
+
+  if (correction.status === "rejected") {
+    reasons.push("rejected_status");
+  }
+
+  if (correction.correction_score < 0) {
+    reasons.push("negative_score");
+  }
+
+  if (
+    correction.is_conflicting &&
+    correction.conflict_rank > 1 &&
+    correction.correction_score <= 0
+  ) {
+    reasons.push("losing_conflict_candidate");
+  }
+
+  return reasons;
+}
+
+function compareCorrectionCleanupCandidates(
+  left: CorrectionCleanupCandidate,
+  right: CorrectionCleanupCandidate
+): number {
+  if (left.correction_score !== right.correction_score) {
+    return left.correction_score - right.correction_score;
+  }
+
+  if (right.reject_votes !== left.reject_votes) {
+    return right.reject_votes - left.reject_votes;
+  }
+
+  return left.correction_id.localeCompare(right.correction_id);
 }
 
 function toCorrectionHistoryCandidate(
