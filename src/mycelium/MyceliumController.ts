@@ -2,6 +2,8 @@ import type { LanguageEngine } from "../engine";
 import type { LmpPacket } from "../protocol/packet";
 import type {
   MeaningCorrectionProposedPayload,
+  MeaningCorrectionTombstoneProposedPayload,
+  MeaningCorrectionTombstoneVotePayload,
   MeaningCorrectionVotePayload,
   MeaningProposalPayload,
   MeaningVotePayload,
@@ -50,6 +52,20 @@ export class MyceliumController {
 
   voteMeaningCorrection(payload: MeaningCorrectionVotePayload, parent?: string) {
     return this.engine.voteMeaningCorrection(payload, parent);
+  }
+
+  proposeMeaningCorrectionTombstone(
+    payload: MeaningCorrectionTombstoneProposedPayload,
+    parent?: string
+  ) {
+    return this.engine.proposeMeaningCorrectionTombstone(payload, parent);
+  }
+
+  voteMeaningCorrectionTombstone(
+    payload: MeaningCorrectionTombstoneVotePayload,
+    parent?: string
+  ) {
+    return this.engine.voteMeaningCorrectionTombstone(payload, parent);
   }
 
   listKnowledge() {

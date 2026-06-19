@@ -4,6 +4,8 @@ import { SQLiteStore } from "./storage/sqliteStore";
 
 import {
   MeaningCorrectionProposedPayload,
+  MeaningCorrectionTombstoneProposedPayload,
+  MeaningCorrectionTombstoneVotePayload,
   MeaningCorrectionVotePayload,
   MeaningProposalPayload,
   MeaningVotePayload,
@@ -249,6 +251,36 @@ export class LanguageEngine {
   ): EngineActionResult<MeaningCorrectionVotePayload> {
     const packet = createPacket({
       packet_type: "meaning_correction_vote",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  proposeMeaningCorrectionTombstone(
+    payload: MeaningCorrectionTombstoneProposedPayload,
+    parent?: string
+  ): EngineActionResult<MeaningCorrectionTombstoneProposedPayload> {
+    const packet = createPacket({
+      packet_type: "meaning_correction_tombstone_proposed",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  voteMeaningCorrectionTombstone(
+    payload: MeaningCorrectionTombstoneVotePayload,
+    parent?: string
+  ): EngineActionResult<MeaningCorrectionTombstoneVotePayload> {
+    const packet = createPacket({
+      packet_type: "meaning_correction_tombstone_vote",
       zone: this.config.zone,
       author: this.config.author,
       parent,

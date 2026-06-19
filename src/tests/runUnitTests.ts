@@ -7,6 +7,7 @@ import {
   selectCorrectionCleanupCandidates,
   summarizeCorrectionPacketsForPhrase,
 } from "../mycelium/CorrectionLookup";
+import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRoutes";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
 
@@ -83,6 +84,27 @@ test("clampCorrectionHistoryLimit uses defaults and bounds", () => {
   assert.strictEqual(clampCorrectionHistoryLimit(0), 1);
   assert.strictEqual(clampCorrectionHistoryLimit(999), 500);
   assert.strictEqual(clampCorrectionHistoryLimit(12.9), 12);
+});
+
+test("correction governance rate limiter uses fixed IP windows", () => {
+  let now = 1_000;
+  const limiter = createCorrectionGovernanceRateLimiter({
+    limit: 2,
+    windowMs: 1_000,
+    now: () => now,
+  });
+
+  assert.strictEqual(limiter.allow("192.0.2.10"), true);
+  assert.strictEqual(limiter.allow("192.0.2.10"), true);
+  assert.strictEqual(limiter.allow("192.0.2.10"), false);
+  assert.strictEqual(limiter.allow("192.0.2.11"), true);
+
+  now = 2_000;
+
+  assert.strictEqual(limiter.allow("192.0.2.10"), true);
+  assert.strictEqual(limiter.allow(undefined), true);
+  assert.strictEqual(limiter.allow(undefined), true);
+  assert.strictEqual(limiter.allow(undefined), false);
 });
 
 test("correction voter duplicate protection counts first identified voter vote only", () => {

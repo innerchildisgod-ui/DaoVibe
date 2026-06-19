@@ -1,7 +1,9 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { MyceliumController } from "../../mycelium/MyceliumController";
 import {
   MeaningCorrectionProposedPayload,
+  MeaningCorrectionTombstoneProposedPayload,
+  MeaningCorrectionTombstoneVotePayload,
   MeaningCorrectionVotePayload,
 } from "../../protocol/packetTypes";
 import { CORRECTION_PACKET_FIELD_LIMITS } from "../../protocol/validatePacket";
@@ -16,6 +18,63 @@ import {
 
 interface CorrectionRoutesContext {
   myceliumController: MyceliumController;
+}
+
+const CORRECTION_TOMBSTONE_REASONS = [
+  "rejected_status",
+  "negative_score",
+  "losing_conflict_candidate",
+  "spam",
+  "malformed",
+  "other",
+] as const;
+const CORRECTION_GOVERNANCE_RATE_LIMIT = 30;
+const CORRECTION_GOVERNANCE_RATE_LIMIT_WINDOW_MS = 60_000;
+const CORRECTION_GOVERNANCE_RATE_LIMIT_ERROR =
+  "Too many correction requests. Try again later.";
+
+interface CorrectionGovernanceRateLimiterOptions {
+  limit?: number;
+  windowMs?: number;
+  now?: () => number;
+}
+
+interface CorrectionGovernanceRateLimitBucket {
+  windowStartedAt: number;
+  count: number;
+}
+
+export function createCorrectionGovernanceRateLimiter(
+  options: CorrectionGovernanceRateLimiterOptions = {}
+) {
+  const limit = options.limit ?? CORRECTION_GOVERNANCE_RATE_LIMIT;
+  const windowMs =
+    options.windowMs ?? CORRECTION_GOVERNANCE_RATE_LIMIT_WINDOW_MS;
+  const now = options.now ?? Date.now;
+  const buckets = new Map<string, CorrectionGovernanceRateLimitBucket>();
+
+  return {
+    allow(ip?: string): boolean {
+      const key = ip || "unknown";
+      const currentTime = now();
+      const bucket = buckets.get(key);
+
+      if (!bucket || currentTime - bucket.windowStartedAt >= windowMs) {
+        buckets.set(key, {
+          windowStartedAt: currentTime,
+          count: 1,
+        });
+        return true;
+      }
+
+      if (bucket.count >= limit) {
+        return false;
+      }
+
+      bucket.count += 1;
+      return true;
+    },
+  };
 }
 
 function requireLimitedString(
@@ -118,6 +177,75 @@ function meaningCorrectionVotePayload(body: unknown): MeaningCorrectionVotePaylo
   };
 }
 
+function meaningCorrectionTombstoneProposedPayload(
+  body: unknown
+): MeaningCorrectionTombstoneProposedPayload {
+  const payload = payloadOrBody(body);
+
+  return {
+    phrase_id: requireLimitedString(
+      payload,
+      "phrase_id",
+      CORRECTION_PACKET_FIELD_LIMITS.phrase_id
+    ),
+    correction_id: requireLimitedString(
+      payload,
+      "correction_id",
+      CORRECTION_PACKET_FIELD_LIMITS.correction_id
+    ),
+    tombstone_id: requireLimitedString(
+      payload,
+      "tombstone_id",
+      CORRECTION_PACKET_FIELD_LIMITS.tombstone_id
+    ),
+    reason: requireAllowedString(
+      payload,
+      "reason",
+      CORRECTION_TOMBSTONE_REASONS
+    ),
+    details: optionalLimitedStringField(
+      payload,
+      "details",
+      CORRECTION_PACKET_FIELD_LIMITS.details
+    ),
+    proposer: optionalLimitedStringField(
+      payload,
+      "proposer",
+      CORRECTION_PACKET_FIELD_LIMITS.proposer
+    ),
+  };
+}
+
+function meaningCorrectionTombstoneVotePayload(
+  body: unknown
+): MeaningCorrectionTombstoneVotePayload {
+  const payload = payloadOrBody(body);
+
+  return {
+    phrase_id: requireLimitedString(
+      payload,
+      "phrase_id",
+      CORRECTION_PACKET_FIELD_LIMITS.phrase_id
+    ),
+    correction_id: requireLimitedString(
+      payload,
+      "correction_id",
+      CORRECTION_PACKET_FIELD_LIMITS.correction_id
+    ),
+    tombstone_id: requireLimitedString(
+      payload,
+      "tombstone_id",
+      CORRECTION_PACKET_FIELD_LIMITS.tombstone_id
+    ),
+    vote: requireAllowedString(payload, "vote", ["confirm", "reject"]),
+    voter: optionalLimitedStringField(
+      payload,
+      "voter",
+      CORRECTION_PACKET_FIELD_LIMITS.voter
+    ),
+  };
+}
+
 function parentFromBody(body: unknown): string | undefined {
   return optionalString(asRequestObject(body).parent);
 }
@@ -127,6 +255,25 @@ export function registerCorrectionRoutes(
   context: CorrectionRoutesContext
 ): void {
   const { myceliumController } = context;
+  const correctionGovernanceRateLimiter =
+    createCorrectionGovernanceRateLimiter();
+
+  function isCorrectionGovernanceRateLimited(
+    req: Request,
+    res: Response
+  ): boolean {
+    if (correctionGovernanceRateLimiter.allow(req.ip)) {
+      return false;
+    }
+
+    res.status(429).json({
+      ok: false,
+      accepted: false,
+      rejected: true,
+      error: CORRECTION_GOVERNANCE_RATE_LIMIT_ERROR,
+    });
+    return true;
+  }
 
   app.get("/phrases/:phraseId/corrections", (req, res) => {
     const result = myceliumController.getPhraseCorrections(req.params.phraseId);
@@ -163,6 +310,10 @@ export function registerCorrectionRoutes(
   });
 
   app.post("/proposeMeaningCorrection", (req, res) => {
+    if (isCorrectionGovernanceRateLimited(req, res)) {
+      return;
+    }
+
     try {
       const payload = meaningCorrectionProposedPayload(req.body);
       const parent = parentFromBody(req.body);
@@ -197,6 +348,10 @@ export function registerCorrectionRoutes(
   });
 
   app.post("/voteMeaningCorrection", (req, res) => {
+    if (isCorrectionGovernanceRateLimited(req, res)) {
+      return;
+    }
+
     try {
       const payload = meaningCorrectionVotePayload(req.body);
       const parent = parentFromBody(req.body);
@@ -208,6 +363,84 @@ export function registerCorrectionRoutes(
         result: {
           phrase_id: payload.phrase_id,
           correction_id: payload.correction_id,
+          vote: payload.vote,
+          packet_id: result.packet.packet_id,
+          packet_type: result.packet.packet_type,
+          created_at: result.packet.created_at,
+          local_apply_status: "stored_event_only",
+          packet_size_class: result.packetSize.sizeClass,
+          route_decision: result.packetRoute.decision,
+        },
+      });
+    } catch (error) {
+      res.status(400).json({
+        ok: false,
+        accepted: false,
+        rejected: true,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/proposeMeaningCorrectionTombstone", (req, res) => {
+    if (isCorrectionGovernanceRateLimited(req, res)) {
+      return;
+    }
+
+    try {
+      const payload = meaningCorrectionTombstoneProposedPayload(req.body);
+      const parent = parentFromBody(req.body);
+      const result = myceliumController.proposeMeaningCorrectionTombstone(
+        payload,
+        parent
+      );
+
+      res.json({
+        ok: true,
+        accepted: true,
+        result: {
+          phrase_id: payload.phrase_id,
+          correction_id: payload.correction_id,
+          tombstone_id: payload.tombstone_id,
+          reason: payload.reason,
+          packet_id: result.packet.packet_id,
+          packet_type: result.packet.packet_type,
+          created_at: result.packet.created_at,
+          local_apply_status: "stored_event_only",
+          packet_size_class: result.packetSize.sizeClass,
+          route_decision: result.packetRoute.decision,
+        },
+      });
+    } catch (error) {
+      res.status(400).json({
+        ok: false,
+        accepted: false,
+        rejected: true,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/voteMeaningCorrectionTombstone", (req, res) => {
+    if (isCorrectionGovernanceRateLimited(req, res)) {
+      return;
+    }
+
+    try {
+      const payload = meaningCorrectionTombstoneVotePayload(req.body);
+      const parent = parentFromBody(req.body);
+      const result = myceliumController.voteMeaningCorrectionTombstone(
+        payload,
+        parent
+      );
+
+      res.json({
+        ok: true,
+        accepted: true,
+        result: {
+          phrase_id: payload.phrase_id,
+          correction_id: payload.correction_id,
+          tombstone_id: payload.tombstone_id,
           vote: payload.vote,
           packet_id: result.packet.packet_id,
           packet_type: result.packet.packet_type,
