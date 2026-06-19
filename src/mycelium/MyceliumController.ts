@@ -20,6 +20,7 @@ import {
   searchPhrases,
   selectBestMeaning,
 } from "./PhraseLookup";
+import { listCorrectionTombstonesForPhrase } from "./TombstoneLookup";
 
 export class MyceliumController {
   constructor(private readonly engine: LanguageEngine) {}
@@ -117,6 +118,10 @@ export class MyceliumController {
 
   getPhraseCorrectionCleanupCandidates(phraseId: string) {
     return listCorrectionCleanupCandidatesForPhrase(this.engine, phraseId);
+  }
+
+  getCorrectionTombstonesForPhrase(phraseId: string) {
+    return listCorrectionTombstonesForPhrase(this.engine, phraseId);
   }
 
   getBestMeaning(phraseId: string) {

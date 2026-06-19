@@ -7,6 +7,7 @@ import {
   selectCorrectionCleanupCandidates,
   summarizeCorrectionPacketsForPhrase,
 } from "../mycelium/CorrectionLookup";
+import { summarizeTombstonePacketsForPhrase } from "../mycelium/TombstoneLookup";
 import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
@@ -72,6 +73,69 @@ function correctionPacketsWithVotes(args: {
   return packets;
 }
 
+function tombstonePacketsWithVotes(args: {
+  phraseId: string;
+  correctionId: string;
+  tombstoneId: string;
+  confirmVotes?: number;
+  rejectVotes?: number;
+  proposedAt?: number;
+}): LmpPacket[] {
+  const proposal = createPacket({
+    packet_type: "meaning_correction_tombstone_proposed",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      phrase_id: args.phraseId,
+      correction_id: args.correctionId,
+      tombstone_id: args.tombstoneId,
+      reason: "negative_score",
+    },
+  });
+
+  if (args.proposedAt !== undefined) {
+    proposal.created_at = args.proposedAt;
+  }
+
+  const packets: LmpPacket[] = [proposal];
+
+  for (let index = 0; index < (args.confirmVotes ?? 0); index += 1) {
+    packets.push(
+      createPacket({
+        packet_type: "meaning_correction_tombstone_vote",
+        zone: TEST_ZONE,
+        author: TEST_AUTHOR,
+        payload: {
+          phrase_id: args.phraseId,
+          correction_id: args.correctionId,
+          tombstone_id: args.tombstoneId,
+          vote: "confirm",
+          voter: `${args.tombstoneId}_confirm_voter_${index}`,
+        },
+      })
+    );
+  }
+
+  for (let index = 0; index < (args.rejectVotes ?? 0); index += 1) {
+    packets.push(
+      createPacket({
+        packet_type: "meaning_correction_tombstone_vote",
+        zone: TEST_ZONE,
+        author: TEST_AUTHOR,
+        payload: {
+          phrase_id: args.phraseId,
+          correction_id: args.correctionId,
+          tombstone_id: args.tombstoneId,
+          vote: "reject",
+          voter: `${args.tombstoneId}_reject_voter_${index}`,
+        },
+      })
+    );
+  }
+
+  return packets;
+}
+
 test("clampPhraseSearchLimit uses defaults and bounds", () => {
   assert.strictEqual(clampPhraseSearchLimit(undefined), 25);
   assert.strictEqual(clampPhraseSearchLimit(0), 1);
@@ -105,6 +169,136 @@ test("correction governance rate limiter uses fixed IP windows", () => {
   assert.strictEqual(limiter.allow(undefined), true);
   assert.strictEqual(limiter.allow(undefined), true);
   assert.strictEqual(limiter.allow(undefined), false);
+});
+
+test("correction tombstone summaries use maturity statuses", () => {
+  const cases = [
+    { confirmVotes: 0, rejectVotes: 0, status: "pending" },
+    { confirmVotes: 1, rejectVotes: 0, status: "maturing" },
+    { confirmVotes: 3, rejectVotes: 0, status: "confirmed" },
+    { confirmVotes: 0, rejectVotes: 1, status: "maturing" },
+    { confirmVotes: 0, rejectVotes: 3, status: "rejected" },
+    { confirmVotes: 1, rejectVotes: 1, status: "contested" },
+  ];
+
+  for (const testCase of cases) {
+    const phraseId = `unit_phrase_tombstone_status_${testCase.confirmVotes}_${testCase.rejectVotes}`;
+    const tombstoneId = `unit_tombstone_status_${testCase.confirmVotes}_${testCase.rejectVotes}`;
+    const summaries = summarizeTombstonePacketsForPhrase(
+      phraseId,
+      tombstonePacketsWithVotes({
+        phraseId,
+        correctionId: "unit_correction_tombstone_status",
+        tombstoneId,
+        confirmVotes: testCase.confirmVotes,
+        rejectVotes: testCase.rejectVotes,
+      })
+    );
+
+    assert.strictEqual(summaries.length, 1);
+    assert.strictEqual(summaries[0].status, testCase.status);
+  }
+});
+
+test("correction tombstone duplicate voter protection counts earliest vote", () => {
+  const phraseId = "unit_phrase_tombstone_duplicate_votes";
+  const correctionId = "unit_correction_tombstone_duplicate_votes";
+  const tombstoneId = "unit_tombstone_duplicate_votes";
+  const packets: LmpPacket[] = [
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId,
+    }),
+    createPacket({
+      packet_type: "meaning_correction_tombstone_vote",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: phraseId,
+        correction_id: correctionId,
+        tombstone_id: tombstoneId,
+        vote: "confirm",
+        voter: "same_tombstone_voter",
+      },
+    }),
+    createPacket({
+      packet_type: "meaning_correction_tombstone_vote",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: phraseId,
+        correction_id: correctionId,
+        tombstone_id: tombstoneId,
+        vote: "reject",
+        voter: "same_tombstone_voter",
+      },
+    }),
+  ];
+
+  const summaries = summarizeTombstonePacketsForPhrase(phraseId, packets);
+
+  assert.strictEqual(summaries.length, 1);
+  assert.strictEqual(summaries[0].confirm_votes, 1);
+  assert.strictEqual(summaries[0].reject_votes, 0);
+  assert.strictEqual(summaries[0].tombstone_score, 1);
+  assert.strictEqual(summaries[0].status, "maturing");
+});
+
+test("correction tombstone summaries sort deterministically", () => {
+  const phraseId = "unit_phrase_tombstone_sorting";
+  const correctionId = "unit_correction_tombstone_sorting";
+  const packets: LmpPacket[] = [
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "sort_alpha",
+      confirmVotes: 1,
+      proposedAt: 400,
+    }),
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "sort_beta",
+      confirmVotes: 1,
+      proposedAt: 400,
+    }),
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "sort_high_score",
+      confirmVotes: 3,
+      proposedAt: 300,
+    }),
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "sort_more_confirms",
+      confirmVotes: 2,
+      rejectVotes: 1,
+      proposedAt: 200,
+    }),
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "sort_early",
+      confirmVotes: 1,
+      proposedAt: 100,
+    }),
+  ];
+
+  const summaries = summarizeTombstonePacketsForPhrase(phraseId, packets);
+
+  assert.deepStrictEqual(
+    summaries.map((summary) => summary.tombstone_id),
+    [
+      "sort_high_score",
+      "sort_more_confirms",
+      "sort_early",
+      "sort_alpha",
+      "sort_beta",
+    ]
+  );
 });
 
 test("correction voter duplicate protection counts first identified voter vote only", () => {

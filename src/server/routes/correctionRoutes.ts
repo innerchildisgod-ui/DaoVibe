@@ -265,6 +265,17 @@ export function registerCorrectionRoutes(
     });
   });
 
+  app.get("/phrases/:phraseId/tombstones", (req, res) => {
+    const result = myceliumController.getCorrectionTombstonesForPhrase(
+      req.params.phraseId
+    );
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  });
+
   app.post("/proposeMeaningCorrection", (req, res) => {
     if (isCorrectionGovernanceRateLimited(req, res)) {
       return;
