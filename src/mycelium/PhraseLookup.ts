@@ -248,6 +248,7 @@ export function summarizeCorrectionPacketsForPhrase(
     string,
     { confirm_votes: number; reject_votes: number }
   >();
+  const countedVoterVotes = new Set<string>();
 
   for (const packet of correctionPackets) {
     if (packet.packet_type === "meaning_correction_proposed") {
@@ -265,6 +266,16 @@ export function summarizeCorrectionPacketsForPhrase(
       const payload = packet.payload as MeaningCorrectionVotePayload;
 
       if (isCorrectionVoteForPhrase(payload, phraseId)) {
+        const voterKey = correctionVoteVoterKey(payload);
+
+        if (voterKey) {
+          if (countedVoterVotes.has(voterKey)) {
+            continue;
+          }
+
+          countedVoterVotes.add(voterKey);
+        }
+
         const counts = voteCounts.get(payload.correction_id) ?? {
           confirm_votes: 0,
           reject_votes: 0,
@@ -379,12 +390,27 @@ function isCorrectionVoteForPhrase(
   return (
     payload.phrase_id === phraseId &&
     isNonEmptyString(payload.correction_id) &&
-    (payload.vote === "confirm" || payload.vote === "reject")
+    (payload.vote === "confirm" || payload.vote === "reject") &&
+    (payload.voter === undefined || typeof payload.voter === "string")
   );
 }
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function correctionVoteVoterKey(
+  payload: MeaningCorrectionVotePayload
+): string | undefined {
+  if (!isNonEmptyString(payload.voter)) {
+    return undefined;
+  }
+
+  return JSON.stringify([
+    payload.phrase_id,
+    payload.correction_id,
+    payload.voter.trim(),
+  ]);
 }
 
 function toCorrectionSummary(
