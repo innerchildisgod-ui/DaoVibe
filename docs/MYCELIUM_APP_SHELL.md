@@ -16,7 +16,7 @@ Start the app shell:
 npm.cmd run app:dev
 ```
 
-Open the Vite local URL printed in the terminal. The app defaults to `http://localhost:3000` for the Mycelium API. Override it with:
+Open the Vite local URL printed in the terminal. In local dev, Vite proxies app API calls to the default Mycelium server at `http://localhost:3000`. Override the API base URL with:
 
 ```bat
 set VITE_MYCELIUM_API_BASE_URL=http://localhost:3001
@@ -31,6 +31,8 @@ npm.cmd run app:dev
 - phrase search
 - phrase detail
 - best meaning for the selected phrase
+- phrase observation
+- meaning proposal
 - visible tombstone execution disabled state
 
 The app uses `src/client/MyceliumClient.ts` for HTTP access.
@@ -39,6 +41,7 @@ The app uses `src/client/MyceliumClient.ts` for HTTP access.
 
 - auth or remote accounts
 - correction voting UI
+- tombstone write UI
 - tombstone execution
 - marketplace, token, or economy UI
 - SBP, EEE, Student Nodes, or symbolic orchestrators

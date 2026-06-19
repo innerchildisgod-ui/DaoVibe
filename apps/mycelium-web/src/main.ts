@@ -3,35 +3,77 @@ import {
   type BestMeaningResponse,
   type LocalNodeIdentity,
   type NodeStatusResponse,
+  type ObservePhraseResponse,
   type PhraseRecord,
   type PhraseSearchResponse,
+  type ProposeMeaningResponse,
   type SyncStatusResponse,
 } from "@mycelium/client";
 import "./styles.css";
 
 const DEFAULT_API_BASE_URL = "http://localhost:3000";
+const configuredApiBaseUrl = import.meta.env.VITE_MYCELIUM_API_BASE_URL;
 const apiBaseUrl =
-  import.meta.env.VITE_MYCELIUM_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+  configuredApiBaseUrl ??
+  (import.meta.env.DEV ? window.location.origin : DEFAULT_API_BASE_URL);
+const visibleApiBaseUrl = configuredApiBaseUrl ?? DEFAULT_API_BASE_URL;
 const client = new MyceliumClient({ baseUrl: apiBaseUrl });
 
 type AppState = {
   loading: boolean;
   loadingPhrase: boolean;
+  observingPhrase: boolean;
+  proposingMeaning: boolean;
   error?: string;
   searchError?: string;
+  observeResult?: FormResult;
+  proposeResult?: FormResult;
   nodeStatus?: NodeStatusResponse;
   nodeIdentity?: LocalNodeIdentity;
   syncStatus?: SyncStatusResponse;
   searchQuery: string;
+  observeForm: ObserveFormState;
+  proposeForm: ProposeFormState;
   searchResults?: PhraseSearchResponse["results"];
   selectedPhrase?: PhraseRecord;
   bestMeaning?: BestMeaningResponse;
 };
 
+type FormResult = {
+  kind: "success" | "error";
+  message: string;
+};
+
+type ObserveFormState = {
+  surfaceText: string;
+  languageHint: string;
+  phoneticHint: string;
+};
+
+type ProposeFormState = {
+  phraseId: string;
+  referenceMeaning: string;
+  context: string;
+  confidence: string;
+};
+
 const state: AppState = {
   loading: true,
   loadingPhrase: false,
+  observingPhrase: false,
+  proposingMeaning: false,
   searchQuery: "",
+  observeForm: {
+    surfaceText: "",
+    languageHint: "",
+    phoneticHint: "",
+  },
+  proposeForm: {
+    phraseId: "",
+    referenceMeaning: "",
+    context: "",
+    confidence: "0.5",
+  },
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -70,6 +112,38 @@ function statusText(value: boolean | undefined): string {
   return value === true ? "true" : value === false ? "false" : "unknown";
 }
 
+function optionalTrimmed(value: string): string | undefined {
+  const trimmedValue = value.trim();
+
+  return trimmedValue ? trimmedValue : undefined;
+}
+
+function slugFromText(value: string, fallback: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+
+  return slug || fallback;
+}
+
+function createPhraseId(surfaceText: string): string {
+  return `phrase_${slugFromText(surfaceText, "observed")}_${Date.now().toString(36)}`;
+}
+
+function createMeaningId(phraseId: string, referenceMeaning: string): string {
+  const baseText = `${phraseId}_${referenceMeaning}`;
+
+  return `meaning_${slugFromText(baseText, "proposal")}_${Date.now().toString(36)}`;
+}
+
+function currentProposePhraseId(): string {
+  return state.proposeForm.phraseId || state.selectedPhrase?.phrase_id || "";
+}
+
 function field(label: string, value: unknown): string {
   return `
     <div class="field">
@@ -79,6 +153,14 @@ function field(label: string, value: unknown): string {
   `;
 }
 
+function renderFormResult(result: FormResult | undefined): string {
+  if (!result) {
+    return "";
+  }
+
+  return `<p class="form-message ${result.kind}">${escapeHtml(result.message)}</p>`;
+}
+
 function renderHeader(): string {
   return `
     <header class="app-header">
@@ -86,7 +168,7 @@ function renderHeader(): string {
         <h1>DAOVibe Mycelium</h1>
         <p>local-first language layer</p>
       </div>
-      <div class="api-pill">${escapeHtml(apiBaseUrl)}</div>
+      <div class="api-pill">${escapeHtml(visibleApiBaseUrl)}</div>
     </header>
   `;
 }
@@ -252,6 +334,106 @@ function renderPhraseDetail(): string {
   `;
 }
 
+function renderObservePhrase(): string {
+  return `
+    <section class="panel contribution-panel">
+      <div class="panel-heading">
+        <h2>Observe Phrase</h2>
+      </div>
+      <form id="observe-phrase-form" class="contribution-form">
+        <label>
+          <span>surface_text</span>
+          <input
+            name="surface_text"
+            value="${escapeAttribute(state.observeForm.surfaceText)}"
+            autocomplete="off"
+            ${state.observingPhrase ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>language_hint</span>
+          <input
+            name="language_hint"
+            value="${escapeAttribute(state.observeForm.languageHint)}"
+            autocomplete="off"
+            ${state.observingPhrase ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>phonetic_hint</span>
+          <input
+            name="phonetic_hint"
+            value="${escapeAttribute(state.observeForm.phoneticHint)}"
+            autocomplete="off"
+            ${state.observingPhrase ? "disabled" : ""}
+          />
+        </label>
+        <button type="submit" ${state.observingPhrase ? "disabled" : ""}>
+          ${state.observingPhrase ? "Saving..." : "Observe Phrase"}
+        </button>
+      </form>
+      ${renderFormResult(state.observeResult)}
+    </section>
+  `;
+}
+
+function renderProposeMeaning(): string {
+  const defaultAuthor = state.nodeIdentity?.default_author;
+
+  return `
+    <section class="panel contribution-panel">
+      <div class="panel-heading">
+        <h2>Propose Meaning</h2>
+      </div>
+      <form id="propose-meaning-form" class="contribution-form">
+        <label>
+          <span>phrase_id</span>
+          <input
+            name="phrase_id"
+            value="${escapeAttribute(currentProposePhraseId())}"
+            autocomplete="off"
+            ${state.proposingMeaning ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>reference_meaning</span>
+          <textarea
+            name="reference_meaning"
+            rows="3"
+            ${state.proposingMeaning ? "disabled" : ""}
+          >${escapeHtml(state.proposeForm.referenceMeaning)}</textarea>
+        </label>
+        <label>
+          <span>context</span>
+          <input
+            name="context"
+            value="${escapeAttribute(state.proposeForm.context)}"
+            autocomplete="off"
+            ${state.proposingMeaning ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>confidence</span>
+          <input
+            name="confidence"
+            type="number"
+            min="0"
+            max="1"
+            step="0.05"
+            value="${escapeAttribute(state.proposeForm.confidence)}"
+            ${state.proposingMeaning ? "disabled" : ""}
+          />
+        </label>
+        <button type="submit" ${state.proposingMeaning ? "disabled" : ""}>
+          ${state.proposingMeaning ? "Saving..." : "Propose Meaning"}
+        </button>
+      </form>
+      <p class="muted form-note">Default author: ${escapeHtml(defaultAuthor ?? "local identity not loaded")}</p>
+      ${renderFormResult(state.proposeResult)}
+    </section>
+  `;
+}
+
 function renderGovernance(): string {
   return `
     <section class="panel governance-panel">
@@ -280,7 +462,9 @@ function render(): void {
       </div>
       <div class="work-column">
         ${renderSearch()}
+        ${renderObservePhrase()}
         ${renderPhraseDetail()}
+        ${renderProposeMeaning()}
       </div>
     </main>
   `;
@@ -291,6 +475,12 @@ function render(): void {
 function bindEvents(): void {
   const form = document.querySelector<HTMLFormElement>("#search-form");
   const input = document.querySelector<HTMLInputElement>("#search-input");
+  const observeForm = document.querySelector<HTMLFormElement>(
+    "#observe-phrase-form"
+  );
+  const proposeForm = document.querySelector<HTMLFormElement>(
+    "#propose-meaning-form"
+  );
 
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -308,6 +498,52 @@ function bindEvents(): void {
       });
     }
   );
+
+  bindFormInput("observe-phrase-form", "surface_text", (value) => {
+    state.observeForm.surfaceText = value;
+  });
+  bindFormInput("observe-phrase-form", "language_hint", (value) => {
+    state.observeForm.languageHint = value;
+  });
+  bindFormInput("observe-phrase-form", "phonetic_hint", (value) => {
+    state.observeForm.phoneticHint = value;
+  });
+  bindFormInput("propose-meaning-form", "phrase_id", (value) => {
+    state.proposeForm.phraseId = value;
+  });
+  bindFormInput("propose-meaning-form", "reference_meaning", (value) => {
+    state.proposeForm.referenceMeaning = value;
+  });
+  bindFormInput("propose-meaning-form", "context", (value) => {
+    state.proposeForm.context = value;
+  });
+  bindFormInput("propose-meaning-form", "confidence", (value) => {
+    state.proposeForm.confidence = value;
+  });
+
+  observeForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void observePhrase(new FormData(observeForm));
+  });
+
+  proposeForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void proposeMeaning(new FormData(proposeForm));
+  });
+}
+
+function bindFormInput(
+  formId: string,
+  fieldName: string,
+  updateValue: (value: string) => void
+): void {
+  const field = document.querySelector<
+    HTMLInputElement | HTMLTextAreaElement
+  >(`#${formId} [name="${fieldName}"]`);
+
+  field?.addEventListener("input", () => {
+    updateValue(field.value);
+  });
 }
 
 async function loadStatus(): Promise<void> {
@@ -372,6 +608,10 @@ async function searchPhrases(query: string): Promise<void> {
 async function selectPhrase(phraseId: string): Promise<void> {
   setState({
     loadingPhrase: true,
+    proposeForm: {
+      ...state.proposeForm,
+      phraseId,
+    },
     selectedPhrase: undefined,
     bestMeaning: undefined,
   });
@@ -392,6 +632,163 @@ async function selectPhrase(phraseId: string): Promise<void> {
       loadingPhrase: false,
       searchError:
         error instanceof Error ? error.message : "Phrase detail failed.",
+    });
+  }
+}
+
+async function refreshAfterWrite(phraseId: string, searchQuery?: string): Promise<void> {
+  await Promise.all([
+    loadStatus(),
+    searchQuery ? searchPhrases(searchQuery) : Promise.resolve(),
+    selectPhrase(phraseId),
+  ]);
+}
+
+async function observePhrase(formData: FormData): Promise<void> {
+  const surfaceText = String(formData.get("surface_text") ?? "").trim();
+  const languageHint = String(formData.get("language_hint") ?? "").trim();
+  const phoneticHint = String(formData.get("phonetic_hint") ?? "").trim();
+
+  state.observeForm = {
+    surfaceText,
+    languageHint,
+    phoneticHint,
+  };
+
+  if (!surfaceText) {
+    setState({
+      observeResult: {
+        kind: "error",
+        message: "surface_text is required.",
+      },
+    });
+    return;
+  }
+
+  const phraseId = createPhraseId(surfaceText);
+
+  setState({
+    observingPhrase: true,
+    observeResult: undefined,
+  });
+
+  try {
+    const result: ObservePhraseResponse = await client.observePhrase({
+      phrase_id: phraseId,
+      surface_text: surfaceText,
+      language_hint: optionalTrimmed(languageHint),
+      phonetic_hint: optionalTrimmed(phoneticHint),
+      input_type: "text",
+    });
+
+    state.observeForm = {
+      surfaceText: "",
+      languageHint: "",
+      phoneticHint: "",
+    };
+    state.proposeForm.phraseId = result.result.phrase_id;
+
+    setState({
+      observingPhrase: false,
+      observeResult: {
+        kind: "success",
+        message: `Observed ${result.result.phrase_id} with packet ${result.result.packet_id}.`,
+      },
+    });
+
+    await refreshAfterWrite(result.result.phrase_id, surfaceText);
+  } catch (error) {
+    setState({
+      observingPhrase: false,
+      observeResult: {
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "Phrase observation failed.",
+      },
+    });
+  }
+}
+
+async function proposeMeaning(formData: FormData): Promise<void> {
+  const phraseId = String(formData.get("phrase_id") ?? "").trim();
+  const referenceMeaning = String(
+    formData.get("reference_meaning") ?? ""
+  ).trim();
+  const context = String(formData.get("context") ?? "").trim();
+  const confidenceText = String(formData.get("confidence") ?? "").trim();
+  const confidence = confidenceText ? Number(confidenceText) : 0.5;
+
+  state.proposeForm = {
+    phraseId,
+    referenceMeaning,
+    context,
+    confidence: confidenceText || "0.5",
+  };
+
+  if (!phraseId) {
+    setState({
+      proposeResult: {
+        kind: "error",
+        message: "phrase_id is required.",
+      },
+    });
+    return;
+  }
+
+  if (!referenceMeaning) {
+    setState({
+      proposeResult: {
+        kind: "error",
+        message: "reference_meaning is required.",
+      },
+    });
+    return;
+  }
+
+  if (!Number.isFinite(confidence)) {
+    setState({
+      proposeResult: {
+        kind: "error",
+        message: "confidence must be a number.",
+      },
+    });
+    return;
+  }
+
+  setState({
+    proposingMeaning: true,
+    proposeResult: undefined,
+  });
+
+  try {
+    const result: ProposeMeaningResponse = await client.proposeMeaning({
+      phrase_id: phraseId,
+      meaning_id: createMeaningId(phraseId, referenceMeaning),
+      reference_meaning: referenceMeaning,
+      context: optionalTrimmed(context),
+      confidence,
+    });
+
+    state.proposeForm.referenceMeaning = "";
+    state.proposeForm.context = "";
+
+    setState({
+      proposingMeaning: false,
+      proposeResult: {
+        kind: "success",
+        message: `Proposed ${result.result.meaning_id} with packet ${result.result.packet_id}.`,
+      },
+    });
+
+    await refreshAfterWrite(phraseId, state.searchQuery || undefined);
+  } catch (error) {
+    setState({
+      proposingMeaning: false,
+      proposeResult: {
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "Meaning proposal failed.",
+      },
     });
   }
 }

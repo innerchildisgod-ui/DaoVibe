@@ -18,6 +18,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    proxy: {
+      "/app": "http://localhost:3000",
+      "/node": "http://localhost:3000",
+      "/phrases": "http://localhost:3000",
+      "/sync": "http://localhost:3000",
+    },
     fs: {
       allow: [appRoot, resolve(repoRoot, "src/client")],
     },

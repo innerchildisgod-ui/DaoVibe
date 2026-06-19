@@ -23,7 +23,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -208,7 +209,8 @@ button {
   background: #fbfdfb;
 }
 
-.search-form button {
+.search-form button,
+.contribution-form button {
   min-height: 42px;
   border: 1px solid #225e46;
   border-radius: 8px;
@@ -216,6 +218,13 @@ button {
   background: #225e46;
   color: #ffffff;
   font-weight: 700;
+}
+
+.search-form button:disabled,
+.contribution-form button:disabled {
+  cursor: not-allowed;
+  border-color: #9aaba2;
+  background: #9aaba2;
 }
 
 .result-list {
@@ -282,6 +291,60 @@ button {
   border: 1px solid #e1b1a8;
   background: #fff0ed;
   color: #7b2014;
+}
+
+.contribution-form {
+  display: grid;
+  gap: 12px;
+}
+
+.contribution-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.contribution-form label span {
+  color: #53605a;
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.contribution-form input,
+.contribution-form textarea {
+  width: 100%;
+  border: 1px solid #cbd6cf;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #17231f;
+  background: #fbfdfb;
+}
+
+.contribution-form textarea {
+  resize: vertical;
+}
+
+.form-message {
+  margin: 12px 0 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.form-message.success {
+  border: 1px solid #b7dbc7;
+  background: #e8f6ee;
+  color: #116331;
+}
+
+.form-message.error {
+  border: 1px solid #e1b1a8;
+  background: #fff0ed;
+  color: #7b2014;
+}
+
+.form-note {
+  margin-top: 10px;
+  font-size: 13px;
 }
 
 .muted {
