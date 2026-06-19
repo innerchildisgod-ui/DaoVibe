@@ -1,3 +1,9 @@
+// Demo/manual test runner.
+// This file creates sample language packets and exits.
+// The real local node API server is src/server.ts.
+// Use `npm run demo` for this file.
+// Use `npm run dev` to start the persistent local node server.
+
 import { LanguageEngine } from "./engine";
 import {
   MeaningProposalPayload,

@@ -124,8 +124,8 @@ async function runSimulation(): Promise<void> {
     `Expected first sync batch to contain 1 packet, got ${firstBatch.packet_count}`
   );
   assertSimulation(
-    firstImport.accepted_new_count === 1,
-    `Expected node B to accept 1 new packet, got ${firstImport.accepted_new_count}`
+    firstImport.summary.accepted_new === 1,
+    `Expected node B to accept 1 new packet, got ${firstImport.summary.accepted_new}`
   );
   assertSimulation(
     importedPhrase !== undefined,
@@ -198,8 +198,8 @@ async function runSimulation(): Promise<void> {
       `Expected safety sync batch to contain 1 packet, got ${safetyBatch.packet_count}`
     );
     assertSimulation(
-      safetyImport.accepted_new_count === 1,
-      `Expected node B to accept 1 safety packet, got ${safetyImport.accepted_new_count}`
+      safetyImport.summary.accepted_new === 1,
+      `Expected node B to accept 1 safety packet, got ${safetyImport.summary.accepted_new}`
     );
     assertSimulation(
       safetyPhrase?.safety_label === NON_NORMAL_SAFETY_LABEL,

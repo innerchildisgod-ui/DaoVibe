@@ -1,12 +1,12 @@
-# CallSab Language Engine — Project State
+# DAOVibe Mycelium Engine - Project State
 
 ## Product Identity
 
-CallSab is not a throwaway prototype or investor-demo MVP.
+DAOVibe is not a throwaway prototype or investor-demo MVP.
 
-This repository is the actual product foundation for the CallSab ecosystem.
+This repository is the actual product foundation for the DAOVibe ecosystem.
 
-The first product layer is the language engine. Later layers may include local social voice, delivery, taxi, marketplace, and other community services.
+The current active layer is Mycelium, the DAOVibe language layer. Later layers may include local social voice, delivery, taxi, marketplace, and other community services.
 
 The system should be built in testable layers, but those layers should be treated as permanent product infrastructure.
 
@@ -14,7 +14,7 @@ The system should be built in testable layers, but those layers should be treate
 
 ## Core Vision
 
-CallSab is a people-owned, local-first infrastructure system.
+DAOVibe is a people-owned, local-first infrastructure system.
 
 The goal is to let people communicate, validate local knowledge, and build services using the devices they already have:
 
@@ -28,9 +28,9 @@ The long-term direction is a local mesh-style ecosystem where community devices 
 
 ---
 
-## First Product Layer: Language
+## Current Active Layer: Mycelium
 
-The first layer is a meaning-based language engine.
+Mycelium is a meaning-based language engine.
 
 The rule is:
 
@@ -75,6 +75,64 @@ This means:
 Core rule:
 
 > Do not transmit what is already true. Transmit only what changed.
+
+---
+
+## Controller / Conductor Architecture
+
+DAOVibe Mycelium uses small focused modules coordinated by local controller files.
+
+- Routes expose HTTP.
+- Controllers decide what happens next.
+- Stores persist state.
+- Filters reject bad sync.
+- Promoters advance useful sync.
+- Kernel-boundary files isolate deterministic decision logic so hot paths can later move into chip-close/native implementations without changing the API layer.
+
+The first active controllers are:
+
+- MyceliumController
+- SyncController
+
+The first active kernel boundary is:
+
+- NativeKernelBoundary
+- TypeScriptKernel
+
+This is product architecture, not a throwaway prototype.
+
+Sync import now returns detailed packet movement summaries:
+
+- accepted_new
+- already_stored
+- rejected_invalid
+- rejected_expired
+- failed_apply
+
+---
+
+## Current Build Flow
+
+- Current active layer: Mycelium language layer.
+- `npm run dev` starts the real persistent local node API server from `src/server.ts`.
+- `npm run demo` runs the old manual demo script from `src/index.ts`.
+- We are not demo-first. We use real local node/server steps.
+- The next proof is two-node language sync:
+  - Node A runs on port 3000 with its own SQLite DB.
+  - Node B runs on port 3001 with its own SQLite DB.
+  - A phrase is created on Node A.
+  - Node B syncs from Node A using `/sync/run`.
+  - Node B must then show the phrase in `/listKnowledge`.
+  - Running sync again should import 0 new packets or mark packets as already stored.
+- Sync import now returns detailed packet movement summaries:
+  - accepted_new
+  - already_stored
+  - rejected_invalid
+  - rejected_expired
+  - failed_apply
+- This supports the Mycelium controller idea: local nodes filter bad sync, promote useful sync, and explain packet movement clearly.
+
+The current Express server is not a central backend. It is a local node API/daemon. In the final architecture, phones, PCs, laptops, and business machines act as heterogeneous local nodes in the packet swarm.
 
 ---
 
@@ -149,36 +207,55 @@ Packet rules:
 ## Current Folder Structure
 
 ```text
-callsab_language_engine
-├─ src
-│  ├─ protocol
-│  │  ├─ packet.ts
-│  │  ├─ packetTypes.ts
-│  │  ├─ hash.ts
-│  │  ├─ validatePacket.ts
-│  │  ├─ packetIndex.ts
-│  │  ├─ packetRouter.ts
-│  │  └─ packetSize.ts
-│  ├─ knowledge
-│  │  ├─ phraseStore.ts
-│  │  └─ confidence.ts
-│  ├─ safety
-│  │  ├─ safetyLabels.ts
-│  │  └─ safetyGate.ts
-│  ├─ network
-│  │  ├─ nodeProfile.ts
-│  │  ├─ nodeDirectory.ts
-│  │  └─ routePlanner.ts
-│  ├─ storage
-│  │  └─ sqliteStore.ts
-│  ├─ engine.ts
-│  ├─ index.ts
-│  └─ server.ts
-├─ data
-│  └─ callsab_language_engine.db
-├─ package.json
-├─ tsconfig.json
-└─ PROJECT_STATE.md
+repo-root
++- src
+|  +- config
+|  |  +- env.ts
+|  +- protocol
+|  |  +- packet.ts
+|  |  +- packetTypes.ts
+|  |  +- hash.ts
+|  |  +- validatePacket.ts
+|  |  +- packetIndex.ts
+|  |  +- packetRouter.ts
+|  |  +- packetSize.ts
+|  +- knowledge
+|  |  +- phraseStore.ts
+|  |  +- confidence.ts
+|  +- safety
+|  |  +- safetyLabels.ts
+|  |  +- safetyGate.ts
+|  +- network
+|  |  +- nodeProfile.ts
+|  |  +- nodeDirectory.ts
+|  |  +- routePlanner.ts
+|  +- kernel
+|  |  +- KernelDecisionTypes.ts
+|  |  +- NativeKernelBoundary.ts
+|  |  +- TypeScriptKernel.ts
+|  +- mycelium
+|  |  +- MyceliumController.ts
+|  +- storage
+|  |  +- sqliteStore.ts
+|  +- sync
+|  |  +- SyncResultSummary.ts
+|  |  +- SyncController.ts
+|  +- server
+|  |  +- createServer.ts
+|  |  +- startServer.ts
+|  |  +- http
+|  |  |  +- requestJson.ts
+|  |  +- routes
+|  |     +- languageRoutes.ts
+|  |     +- syncRoutes.ts
+|  +- engine.ts
+|  +- index.ts
+|  +- server.ts
++- data
+|  +- local_node.db
++- package.json
++- tsconfig.json
++- PROJECT_STATE.md
 ```
 
 ---
@@ -261,16 +338,42 @@ Install dependencies:
 npm install
 ```
 
-Run local engine test:
+Run real persistent local node API server:
 
 ```powershell
 npm run dev
 ```
 
-Run HTTP server:
+Run Node A:
 
 ```powershell
-npm run server
+$env:DAOVIBE_PORT="3000"
+$env:DAOVIBE_AUTHOR="dev_public_key_laptop_001"
+$env:DAOVIBE_NODE_ID="node_laptop_001"
+$env:DAOVIBE_DB_PATH="data/node_a_test.db"
+npm run dev
+```
+
+Run Node B:
+
+```powershell
+$env:DAOVIBE_PORT="3001"
+$env:DAOVIBE_AUTHOR="dev_public_key_phone_adult_001"
+$env:DAOVIBE_NODE_ID="node_phone_adult_001"
+$env:DAOVIBE_DB_PATH="data/node_b_test.db"
+npm run dev
+```
+
+Run old manual demo script:
+
+```powershell
+npm run demo
+```
+
+Run typecheck:
+
+```powershell
+npm run typecheck
 ```
 
 Test server root:
@@ -302,31 +405,34 @@ GET  /packetCount
 GET  /packetSummaries
 GET  /packetsAfter
 POST /packetsByIds
+GET  /sync/pull
+POST /sync/importBatch
+POST /sync/run
+GET  /sync/cursor/:peerAuthor
+POST /sync/cursor/:peerAuthor
+POST /sync/missingPacketIds
 ```
 
 ---
 
 ## Next Engineering Step
 
-The next step is to test `POST /receivePacket`.
+The next proof is two-node language sync using the real local node API server.
 
 Why:
 
-The current engine can create local packets.
+The current engine can create local packets and receive packets from another node.
 
-But a mesh node must also accept packets from another node.
+But a mesh node must also prove that a second local server can pull, import, and apply another node's missing language packets.
 
-The receiver must:
+The proof must:
 
-1. accept a packet from outside
-2. validate packet hash
-3. reject duplicates
-4. reject expired packets
-5. route accepted packets into the local packet index
-6. apply the packet payload to local knowledge state
-7. save the packet to SQLite
-
-After that, create a clean two-node simulation so one node can send a packet and another node can accept it as new.
+1. run Node A on port 3000 with its own SQLite DB
+2. run Node B on port 3001 with its own SQLite DB
+3. create a phrase on Node A
+4. sync Node B from Node A using `/sync/run`
+5. confirm Node B shows the phrase in `/listKnowledge`
+6. run sync again and confirm it imports 0 new packets or marks packets as already stored
 
 ---
 

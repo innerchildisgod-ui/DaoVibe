@@ -5,6 +5,7 @@ import path from "path";
 import { Readable } from "stream";
 import { createPacket, LmpPacket } from "../protocol/packet";
 import { PhraseObservedPayload } from "../protocol/packetTypes";
+import { SafetyLabel } from "../safety/safetyLabels";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const NODE_A_DB = path.join(DATA_DIR, "http_two_node_sync_node_a.db");
@@ -19,6 +20,7 @@ const NODE_A_PORT = 3100;
 const NODE_B_PORT = 3101;
 const NODE_A_BASE_URL = `http://localhost:${NODE_A_PORT}`;
 const NODE_B_BASE_URL = `http://localhost:${NODE_B_PORT}`;
+const APP_SAFETY_LABEL: SafetyLabel = "mild_slang";
 
 interface ManagedServer {
   name: string;
@@ -62,12 +64,64 @@ interface AppObservePhraseResponse {
   error?: string;
 }
 
+interface AppProposeMeaningResponse {
+  ok: boolean;
+  result: {
+    phrase_id: string;
+    meaning_id: string;
+    packet_id: string;
+    packet_type: string;
+    created_at: number;
+    local_apply_status: string;
+    packet_size_class: string;
+    route_decision: string;
+  };
+  error?: string;
+}
+
+interface AppVoteMeaningResponse {
+  ok: boolean;
+  result: {
+    phrase_id: string;
+    meaning_id: string;
+    vote: string;
+    packet_id: string;
+    packet_type: string;
+    created_at: number;
+    local_apply_status: string;
+    packet_size_class: string;
+    route_decision: string;
+  };
+  error?: string;
+}
+
+interface AppSafetyLabelResponse {
+  ok: boolean;
+  result: {
+    phrase_id: string;
+    label: string;
+    packet_id: string;
+    packet_type: string;
+    created_at: number;
+    local_apply_status: string;
+    packet_size_class: string;
+    route_decision: string;
+  };
+  error?: string;
+}
+
 interface SyncRunResponse {
   ok: boolean;
   result: {
-    accepted_new_count: number;
     failed_count: number;
     packet_count: number;
+    summary: {
+      accepted_new: number;
+      already_stored: number;
+      rejected_invalid: number;
+      rejected_expired: number;
+      failed_apply: number;
+    };
   };
   error?: string;
 }
@@ -102,6 +156,10 @@ interface LookupPhraseResponse {
   match_count: number;
   matches: Array<{
     phrase_id: string;
+    safety_label: string;
+    meanings: Array<{
+      meaning_id: string;
+    }>;
   }>;
 }
 
@@ -266,11 +324,11 @@ function startServer(params: {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        CALLSAB_PORT: String(params.port),
-        CALLSAB_AUTHOR: params.author,
-        CALLSAB_NODE_ID: params.nodeId,
-        CALLSAB_DB_PATH: params.dbPath,
-        CALLSAB_ZONE: ZONE,
+        DAOVIBE_PORT: String(params.port),
+        DAOVIBE_AUTHOR: params.author,
+        DAOVIBE_NODE_ID: params.nodeId,
+        DAOVIBE_DB_PATH: params.dbPath,
+        DAOVIBE_ZONE: ZONE,
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -480,8 +538,8 @@ async function runSimulation(): Promise<void> {
 
     assertSimulation(firstSync.ok, firstSync.error ?? "First HTTP sync failed");
     assertSimulation(
-      firstSync.result.accepted_new_count === 1,
-      `Expected accepted_new_count 1, got ${firstSync.result.accepted_new_count}`
+      firstSync.result.summary.accepted_new === 1,
+      `Expected accepted_new 1, got ${firstSync.result.summary.accepted_new}`
     );
     assertSimulation(
       firstSync.result.failed_count === 0,
@@ -592,8 +650,8 @@ async function runSimulation(): Promise<void> {
     );
 
     assertSimulation(
-      appPhraseSync.result.accepted_new_count === 1,
-      `Expected app phrase sync accepted_new_count 1, got ${appPhraseSync.result.accepted_new_count}`
+      appPhraseSync.result.summary.accepted_new === 1,
+      `Expected app phrase sync accepted_new 1, got ${appPhraseSync.result.summary.accepted_new}`
     );
     assertSimulation(
       appPhraseSync.result.failed_count === 0,
@@ -642,6 +700,308 @@ async function runSimulation(): Promise<void> {
     );
 
     console.log("HTTP app phrase observation endpoint passed");
+
+    await delay(1100);
+
+    const meaningPhrasePayload: PhraseObservedPayload = {
+      phrase_id: "http_app_meaning_phrase_001",
+      surface_text: "meaning sync ah?",
+      phonetic_hint: "meaning-sync-aa",
+      language_hint: "Tamil-English slang",
+      input_type: "text",
+    };
+    const meaningPhraseObserve = await requestJson<AppObservePhraseResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/observePhrase`,
+      meaningPhrasePayload
+    );
+
+    await delay(1100);
+
+    const meaningPayload = {
+      phrase_id: meaningPhrasePayload.phrase_id,
+      meaning_id: "meaning_http_app_001",
+      reference_meaning: "Asking whether a meaning synced correctly.",
+      context: "HTTP app meaning flow simulation",
+      confidence: 0.72,
+      parent: meaningPhraseObserve.result.packet_id,
+    };
+    const appMeaning = await requestJson<AppProposeMeaningResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/proposeMeaning`,
+      meaningPayload
+    );
+
+    assertSimulation(appMeaning.ok, appMeaning.error ?? "App meaning failed");
+    assertSimulation(
+      appMeaning.result.packet_type === "meaning_proposal",
+      `Expected app meaning packet_type meaning_proposal, got ${appMeaning.result.packet_type}`
+    );
+    assertSimulation(
+      typeof appMeaning.result.packet_id === "string",
+      "Expected app meaning packet_id to be a string"
+    );
+    assertSimulation(
+      appMeaning.result.local_apply_status === "applied_to_knowledge",
+      `Expected app meaning local_apply_status applied_to_knowledge, got ${appMeaning.result.local_apply_status}`
+    );
+
+    console.log("HTTP app meaning proposal endpoint passed");
+
+    await delay(1100);
+
+    const votePayload = {
+      phrase_id: meaningPhrasePayload.phrase_id,
+      meaning_id: meaningPayload.meaning_id,
+      vote: "confirm",
+      confidence: 0.91,
+      parent: appMeaning.result.packet_id,
+    };
+    const appVote = await requestJson<AppVoteMeaningResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/voteMeaning`,
+      votePayload
+    );
+
+    assertSimulation(appVote.ok, appVote.error ?? "App vote failed");
+    assertSimulation(
+      appVote.result.packet_type === "meaning_vote",
+      `Expected app vote packet_type meaning_vote, got ${appVote.result.packet_type}`
+    );
+    assertSimulation(
+      typeof appVote.result.packet_id === "string",
+      "Expected app vote packet_id to be a string"
+    );
+    assertSimulation(
+      appVote.result.local_apply_status === "applied_to_knowledge",
+      `Expected app vote local_apply_status applied_to_knowledge, got ${appVote.result.local_apply_status}`
+    );
+
+    console.log("HTTP app meaning vote endpoint passed");
+
+    const nodeAMeaningLookup = await requestJson<LookupPhraseResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/lookupPhrase`,
+      {
+        query: meaningPhrasePayload.surface_text,
+      }
+    );
+
+    assertSimulation(
+      nodeAMeaningLookup.matches.some(
+        (match) =>
+          match.phrase_id === meaningPhrasePayload.phrase_id &&
+          match.meanings.some(
+            (meaning) => meaning.meaning_id === meaningPayload.meaning_id
+          )
+      ),
+      `Expected Node A lookup to include meaning ${meaningPayload.meaning_id}`
+    );
+
+    const appMeaningSync = await requestJson<SyncRunResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/sync/run`,
+      {
+        remote_base_url: NODE_A_BASE_URL,
+        peer_author: NODE_A_AUTHOR,
+        limit: 100,
+      }
+    );
+
+    assertSimulation(
+      appMeaningSync.result.summary.accepted_new === 3,
+      `Expected app meaning sync accepted_new 3, got ${appMeaningSync.result.summary.accepted_new}`
+    );
+    assertSimulation(
+      appMeaningSync.result.failed_count === 0,
+      `Expected app meaning sync failed_count 0, got ${appMeaningSync.result.failed_count}`
+    );
+
+    const nodeBMeaningLookup = await requestJson<LookupPhraseResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/app/lookupPhrase`,
+      {
+        query: meaningPhrasePayload.surface_text,
+      }
+    );
+
+    assertSimulation(
+      nodeBMeaningLookup.matches.some(
+        (match) =>
+          match.phrase_id === meaningPhrasePayload.phrase_id &&
+          match.meanings.some(
+            (meaning) => meaning.meaning_id === meaningPayload.meaning_id
+          )
+      ),
+      `Expected Node B lookup to include meaning ${meaningPayload.meaning_id}`
+    );
+
+    const missingMeaningFieldFailed = await requestFails(
+      "POST",
+      `${NODE_A_BASE_URL}/app/proposeMeaning`,
+      {
+        meaning_id: "meaning_missing_phrase",
+        reference_meaning: "Missing phrase id",
+        confidence: 0.4,
+      }
+    );
+    const missingVoteFieldFailed = await requestFails(
+      "POST",
+      `${NODE_A_BASE_URL}/app/voteMeaning`,
+      {
+        phrase_id: meaningPhrasePayload.phrase_id,
+        meaning_id: meaningPayload.meaning_id,
+        confidence: 0.4,
+      }
+    );
+
+    assertSimulation(
+      missingMeaningFieldFailed,
+      "Expected app proposeMeaning with missing phrase_id to fail"
+    );
+    assertSimulation(
+      missingVoteFieldFailed,
+      "Expected app voteMeaning with missing vote to fail"
+    );
+
+    await delay(1100);
+
+    const safetyPhrasePayload: PhraseObservedPayload = {
+      phrase_id: "http_app_safety_phrase_001",
+      surface_text: "safety label sync ah?",
+      phonetic_hint: "safety-label-sync-aa",
+      language_hint: "Tamil-English slang",
+      input_type: "text",
+    };
+    const safetyPhraseObserve = await requestJson<AppObservePhraseResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/observePhrase`,
+      safetyPhrasePayload
+    );
+
+    assertSimulation(
+      safetyPhraseObserve.ok,
+      safetyPhraseObserve.error ?? "App safety phrase observe failed"
+    );
+
+    await delay(1100);
+
+    const appSafetyLabel = await requestJson<AppSafetyLabelResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/applySafetyLabel`,
+      {
+        phrase_id: safetyPhrasePayload.phrase_id,
+        label: APP_SAFETY_LABEL,
+        reason: "HTTP app safety label flow simulation",
+        parent: safetyPhraseObserve.result.packet_id,
+      }
+    );
+
+    assertSimulation(
+      appSafetyLabel.ok,
+      appSafetyLabel.error ?? "App safety label failed"
+    );
+    assertSimulation(
+      appSafetyLabel.result.phrase_id === safetyPhrasePayload.phrase_id,
+      `Expected app safety phrase_id ${safetyPhrasePayload.phrase_id}, got ${appSafetyLabel.result.phrase_id}`
+    );
+    assertSimulation(
+      appSafetyLabel.result.label === APP_SAFETY_LABEL,
+      `Expected app safety label ${APP_SAFETY_LABEL}, got ${appSafetyLabel.result.label}`
+    );
+    assertSimulation(
+      appSafetyLabel.result.packet_type === "safety_label",
+      `Expected app safety packet_type safety_label, got ${appSafetyLabel.result.packet_type}`
+    );
+    assertSimulation(
+      typeof appSafetyLabel.result.packet_id === "string",
+      "Expected app safety packet_id to be a string"
+    );
+    assertSimulation(
+      appSafetyLabel.result.local_apply_status === "applied_to_knowledge",
+      `Expected app safety local_apply_status applied_to_knowledge, got ${appSafetyLabel.result.local_apply_status}`
+    );
+
+    const nodeASafetyLookup = await requestJson<LookupPhraseResponse>(
+      "POST",
+      `${NODE_A_BASE_URL}/app/lookupPhrase`,
+      {
+        query: safetyPhrasePayload.surface_text,
+      }
+    );
+
+    assertSimulation(
+      nodeASafetyLookup.matches.some(
+        (match) =>
+          match.phrase_id === safetyPhrasePayload.phrase_id &&
+          match.safety_label === APP_SAFETY_LABEL
+      ),
+      `Expected Node A lookup to include safety label ${APP_SAFETY_LABEL}`
+    );
+
+    const appSafetySync = await requestJson<SyncRunResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/sync/run`,
+      {
+        remote_base_url: NODE_A_BASE_URL,
+        peer_author: NODE_A_AUTHOR,
+        limit: 100,
+      }
+    );
+
+    assertSimulation(
+      appSafetySync.result.summary.accepted_new === 2,
+      `Expected app safety sync accepted_new 2, got ${appSafetySync.result.summary.accepted_new}`
+    );
+    assertSimulation(
+      appSafetySync.result.failed_count === 0,
+      `Expected app safety sync failed_count 0, got ${appSafetySync.result.failed_count}`
+    );
+
+    const nodeBSafetyLookup = await requestJson<LookupPhraseResponse>(
+      "POST",
+      `${NODE_B_BASE_URL}/app/lookupPhrase`,
+      {
+        query: safetyPhrasePayload.surface_text,
+      }
+    );
+
+    assertSimulation(
+      nodeBSafetyLookup.matches.some(
+        (match) =>
+          match.phrase_id === safetyPhrasePayload.phrase_id &&
+          match.safety_label === APP_SAFETY_LABEL
+      ),
+      `Expected Node B lookup to include safety label ${APP_SAFETY_LABEL}`
+    );
+
+    const missingSafetyPhraseIdFailed = await requestFails(
+      "POST",
+      `${NODE_A_BASE_URL}/app/applySafetyLabel`,
+      {
+        label: APP_SAFETY_LABEL,
+      }
+    );
+    const invalidSafetyLabelFailed = await requestFails(
+      "POST",
+      `${NODE_A_BASE_URL}/app/applySafetyLabel`,
+      {
+        phrase_id: safetyPhrasePayload.phrase_id,
+        label: "not_a_valid_safety_label",
+      }
+    );
+
+    assertSimulation(
+      missingSafetyPhraseIdFailed,
+      "Expected app applySafetyLabel without phrase_id to fail"
+    );
+    assertSimulation(
+      invalidSafetyLabelFailed,
+      "Expected app applySafetyLabel with invalid label to fail"
+    );
+
+    console.log("HTTP app safety label endpoint passed");
+
     console.log("HTTP success sync passed");
 
     const secondSync = await requestJson<SyncRunResponse>(
