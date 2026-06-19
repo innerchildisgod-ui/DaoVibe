@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "ts-node src/tests/runUnitTests.ts",
     "dev": "ts-node src/server.ts",
     "demo": "ts-node src/index.ts",
     "typecheck": "tsc --noEmit",
