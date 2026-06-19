@@ -1,4 +1,4 @@
-import { buildClientUrl, ClientQueryValue } from "./clientUrl";
+import { buildClientUrl, type ClientQueryValue } from "./clientUrl";
 
 export interface MyceliumClientOptions {
   baseUrl: string;

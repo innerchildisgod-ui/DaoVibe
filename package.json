@@ -6,6 +6,8 @@
     "test": "ts-node src/tests/runUnitTests.ts",
     "dev": "ts-node src/server.ts",
     "demo": "ts-node src/index.ts",
+    "app:dev": "vite --config apps/mycelium-web/vite.config.ts",
+    "app:build": "vite build --config apps/mycelium-web/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "server": "ts-node src/server.ts",
     "simulate:two-node": "ts-node src/simulations/twoNodeSyncSimulation.ts",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.9.3"
+    "@types/node": "^25.9.3",
+    "vite": "^8.0.16"
   }
 }
