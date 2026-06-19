@@ -229,6 +229,12 @@ export class SQLiteStore {
       CREATE INDEX IF NOT EXISTS idx_packets_type
         ON packets(packet_type);
 
+      CREATE INDEX IF NOT EXISTS idx_packets_phrase_type_received
+        ON packets(phrase_id, packet_type, received_at, packet_id);
+
+      CREATE INDEX IF NOT EXISTS idx_packets_type_received
+        ON packets(packet_type, received_at, packet_id);
+
       CREATE INDEX IF NOT EXISTS idx_packets_zone
         ON packets(zone);
 
@@ -795,7 +801,7 @@ export class SQLiteStore {
     return rows.map((row) => JSON.parse(row.packet_json) as LmpPacket);
   }
 
-  listPacketsByPhraseAndTypes(
+  listPacketsForPhraseByTypes(
     phraseId: string,
     packetTypes: PacketType[]
   ): LmpPacket[] {
@@ -818,5 +824,12 @@ export class SQLiteStore {
       .all(phraseId, ...packetTypes) as PacketRow[];
 
     return rows.map((row) => JSON.parse(row.packet_json) as LmpPacket);
+  }
+
+  listPacketsByPhraseAndTypes(
+    phraseId: string,
+    packetTypes: PacketType[]
+  ): LmpPacket[] {
+    return this.listPacketsForPhraseByTypes(phraseId, packetTypes);
   }
 }

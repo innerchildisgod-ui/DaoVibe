@@ -56,6 +56,7 @@ export function listTombstonePacketsForPhrase(
   phraseId: string
 ): LmpPacket[] {
   return (
+    source.listPacketsForPhraseByTypes?.(phraseId, TOMBSTONE_PACKET_TYPES) ??
     source.listPacketsByPhraseAndTypes?.(phraseId, TOMBSTONE_PACKET_TYPES) ?? []
   );
 }

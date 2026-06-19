@@ -95,6 +95,7 @@ export function listCorrectionPacketsForPhrase(
   phraseId: string
 ): LmpPacket[] {
   return (
+    source.listPacketsForPhraseByTypes?.(phraseId, CORRECTION_PACKET_TYPES) ??
     source.listPacketsByPhraseAndTypes?.(phraseId, CORRECTION_PACKET_TYPES) ?? []
   );
 }

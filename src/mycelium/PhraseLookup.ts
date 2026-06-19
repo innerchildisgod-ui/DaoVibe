@@ -43,6 +43,10 @@ export interface PhraseLookupSource {
     phraseId: string,
     packetTypes: PacketType[]
   ): LmpPacket[];
+  listPacketsForPhraseByTypes?(
+    phraseId: string,
+    packetTypes: PacketType[]
+  ): LmpPacket[];
 }
 
 export interface PhraseSearchResult {
