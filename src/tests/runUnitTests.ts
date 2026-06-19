@@ -1,4 +1,5 @@
 import assert from "assert";
+import { join } from "path";
 import { createPacket } from "../protocol/packet";
 import type { LmpPacket } from "../protocol/packet";
 import { clampPhraseSearchLimit } from "../mycelium/PhraseLookup";
@@ -18,9 +19,18 @@ import { buildTombstoneExecutionPreview } from "../mycelium/TombstoneExecutionPr
 import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
+import { SQLiteStore } from "../storage/sqliteStore";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
+
+function unitDbPath(name: string): string {
+  return join(
+    process.cwd(),
+    "data",
+    `${name}_${Date.now()}_${Math.random().toString(36).slice(2)}.db`
+  );
+}
 
 function correctionPacketsWithVotes(args: {
   phraseId: string;
@@ -200,6 +210,85 @@ test("clampCorrectionHistoryLimit uses defaults and bounds", () => {
   assert.strictEqual(clampCorrectionHistoryLimit(0), 1);
   assert.strictEqual(clampCorrectionHistoryLimit(999), 500);
   assert.strictEqual(clampCorrectionHistoryLimit(12.9), 12);
+});
+
+test("local node identity is created once", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_identity_created_once"));
+  const identity = store.getOrCreateLocalNodeIdentity();
+  const repeatedIdentity = store.getOrCreateLocalNodeIdentity();
+
+  assert.match(identity.node_id, /^mycelium_node_[0-9a-f]{16}$/);
+  assert.strictEqual(identity.display_name, "Local Mycelium Node");
+  assert.strictEqual(identity.default_author, identity.node_id);
+  assert.deepStrictEqual(repeatedIdentity, identity);
+});
+
+test("local node identity persists after restart", () => {
+  const dbPath = unitDbPath("unit_local_identity_restart");
+  const firstStore = new SQLiteStore(dbPath);
+  const firstIdentity = firstStore.getOrCreateLocalNodeIdentity();
+  const restartedStore = new SQLiteStore(dbPath);
+  const restartedIdentity = restartedStore.getOrCreateLocalNodeIdentity();
+
+  assert.strictEqual(restartedIdentity.node_id, firstIdentity.node_id);
+  assert.strictEqual(restartedIdentity.display_name, firstIdentity.display_name);
+  assert.strictEqual(
+    restartedIdentity.default_author,
+    firstIdentity.default_author
+  );
+  assert.strictEqual(restartedIdentity.created_at, firstIdentity.created_at);
+});
+
+test("local node identity display name can be updated", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_identity_display_name"));
+  const identity = store.getOrCreateLocalNodeIdentity();
+  const updatedIdentity = store.updateLocalNodeIdentity({
+    display_name: "Kitchen Mycelium Node",
+  });
+
+  assert.strictEqual(updatedIdentity.node_id, identity.node_id);
+  assert.strictEqual(updatedIdentity.display_name, "Kitchen Mycelium Node");
+  assert.strictEqual(updatedIdentity.default_author, identity.default_author);
+});
+
+test("local node identity default author can be updated", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_identity_author"));
+  const identity = store.getOrCreateLocalNodeIdentity();
+  const updatedIdentity = store.updateLocalNodeIdentity({
+    default_author: "local_author_main",
+  });
+
+  assert.strictEqual(updatedIdentity.node_id, identity.node_id);
+  assert.strictEqual(updatedIdentity.display_name, identity.display_name);
+  assert.strictEqual(updatedIdentity.default_author, "local_author_main");
+});
+
+test("local node identity update keeps node id immutable", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_identity_immutable"));
+  const identity = store.getOrCreateLocalNodeIdentity();
+  const updatedIdentity = store.updateLocalNodeIdentity({
+    display_name: "Edited Mycelium Node",
+    default_author: "edited_local_author",
+  });
+
+  assert.strictEqual(updatedIdentity.node_id, identity.node_id);
+  assert.strictEqual(
+    store.getOrCreateLocalNodeIdentity().node_id,
+    identity.node_id
+  );
+});
+
+test("local node identity rejects empty editable fields", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_identity_empty"));
+
+  assert.throws(
+    () => store.updateLocalNodeIdentity({ display_name: "   " }),
+    /display_name must be a non-empty string/
+  );
+  assert.throws(
+    () => store.updateLocalNodeIdentity({ default_author: "   " }),
+    /default_author must be a non-empty string/
+  );
 });
 
 test("correction governance rate limiter uses fixed IP windows", () => {

@@ -1,5 +1,6 @@
 import type { LanguageEngine } from "../engine";
 import type { LmpPacket } from "../protocol/packet";
+import type { LocalNodeIdentity, SQLiteStore } from "../storage/sqliteStore";
 import type {
   MeaningCorrectionProposedPayload,
   MeaningCorrectionTombstoneProposedPayload,
@@ -23,8 +24,28 @@ import {
 import { listTombstoneExecutionPreviewForPhrase } from "./TombstoneExecutionPreview";
 import { listCorrectionTombstonesForPhrase } from "./TombstoneLookup";
 
+type LocalNodeIdentityUpdate = {
+  display_name?: string;
+  default_author?: string;
+};
+
+type LocalNodeIdentityStore = Pick<
+  SQLiteStore,
+  "getOrCreateLocalNodeIdentity" | "updateLocalNodeIdentity"
+>;
+
 export class MyceliumController {
   constructor(private readonly engine: LanguageEngine) {}
+
+  getLocalNodeIdentity(): LocalNodeIdentity {
+    return this.localNodeIdentityStore().getOrCreateLocalNodeIdentity();
+  }
+
+  updateLocalNodeIdentity(
+    input: LocalNodeIdentityUpdate
+  ): LocalNodeIdentity {
+    return this.localNodeIdentityStore().updateLocalNodeIdentity(input);
+  }
 
   observePhrase(
     payload: PhraseObservedPayload,
@@ -161,5 +182,10 @@ export class MyceliumController {
 
   receivePacket(packet: LmpPacket) {
     return this.engine.receivePacket(packet);
+  }
+
+  private localNodeIdentityStore(): LocalNodeIdentityStore {
+    return (this.engine as unknown as { sqliteStore: LocalNodeIdentityStore })
+      .sqliteStore;
   }
 }

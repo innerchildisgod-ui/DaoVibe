@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { randomUUID } from "crypto";
 import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import { LmpPacket } from "../protocol/packet";
@@ -85,8 +86,20 @@ export interface PeerSyncCursor {
   updated_at: number;
 }
 
+export interface LocalNodeIdentity {
+  node_id: string;
+  display_name: string;
+  default_author: string;
+  created_at: number;
+  updated_at: number;
+}
+
 interface PacketRow extends PacketSummary {
   packet_json: string;
+}
+
+interface LocalNodeIdentityRow extends LocalNodeIdentity {
+  id: number;
 }
 
 interface SyncPacketRow {
@@ -168,6 +181,14 @@ function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
+function createLocalNodeId(): string {
+  return `mycelium_node_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+}
+
+function currentUnixSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
 function extractRefs(packet: LmpPacket): PacketRefs {
   const payload = packet.payload as Record<string, unknown>;
 
@@ -178,6 +199,16 @@ function extractRefs(packet: LmpPacket): PacketRefs {
       typeof payload.meaning_id === "string" ? payload.meaning_id : undefined,
     symbol_id:
       typeof payload.symbol_id === "string" ? payload.symbol_id : undefined,
+  };
+}
+
+function toLocalNodeIdentity(row: LocalNodeIdentityRow): LocalNodeIdentity {
+  return {
+    node_id: row.node_id,
+    display_name: row.display_name,
+    default_author: row.default_author,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   };
 }
 
@@ -276,7 +307,133 @@ export class SQLiteStore {
         cursor TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS local_node_identity (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        node_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        default_author TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `);
+  }
+
+  getOrCreateLocalNodeIdentity(): LocalNodeIdentity {
+    const existingIdentity = this.getLocalNodeIdentityRow();
+
+    if (existingIdentity) {
+      return toLocalNodeIdentity(existingIdentity);
+    }
+
+    const createdAt = currentUnixSeconds();
+    const nodeId = createLocalNodeId();
+
+    this.db
+      .prepare(
+        `
+        INSERT OR IGNORE INTO local_node_identity (
+          id,
+          node_id,
+          display_name,
+          default_author,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          1,
+          @node_id,
+          @display_name,
+          @default_author,
+          @created_at,
+          @updated_at
+        )
+      `
+      )
+      .run({
+        node_id: nodeId,
+        display_name: "Local Mycelium Node",
+        default_author: nodeId,
+        created_at: createdAt,
+        updated_at: createdAt,
+      });
+
+    const identity = this.getLocalNodeIdentityRow();
+
+    if (!identity) {
+      throw new Error("Failed to create local node identity");
+    }
+
+    return toLocalNodeIdentity(identity);
+  }
+
+  updateLocalNodeIdentity(input: {
+    display_name?: string;
+    default_author?: string;
+  }): LocalNodeIdentity {
+    const existingIdentity = this.getOrCreateLocalNodeIdentity();
+    const displayName = input.display_name?.trim();
+    const defaultAuthor = input.default_author?.trim();
+
+    if (displayName === undefined && defaultAuthor === undefined) {
+      throw new Error("display_name or default_author is required");
+    }
+
+    if (input.display_name !== undefined && !displayName) {
+      throw new Error("display_name must be a non-empty string");
+    }
+
+    if (input.default_author !== undefined && !defaultAuthor) {
+      throw new Error("default_author must be a non-empty string");
+    }
+
+    const updatedAt = Math.max(
+      currentUnixSeconds(),
+      existingIdentity.updated_at + 1
+    );
+
+    this.db
+      .prepare(
+        `
+        UPDATE local_node_identity
+        SET
+          display_name = @display_name,
+          default_author = @default_author,
+          updated_at = @updated_at
+        WHERE id = 1
+      `
+      )
+      .run({
+        display_name: displayName ?? existingIdentity.display_name,
+        default_author: defaultAuthor ?? existingIdentity.default_author,
+        updated_at: updatedAt,
+      });
+
+    const updatedIdentity = this.getLocalNodeIdentityRow();
+
+    if (!updatedIdentity) {
+      throw new Error("Failed to update local node identity");
+    }
+
+    return toLocalNodeIdentity(updatedIdentity);
+  }
+
+  private getLocalNodeIdentityRow(): LocalNodeIdentityRow | undefined {
+    return this.db
+      .prepare(
+        `
+        SELECT
+          id,
+          node_id,
+          display_name,
+          default_author,
+          created_at,
+          updated_at
+        FROM local_node_identity
+        WHERE id = 1
+      `
+      )
+      .get() as LocalNodeIdentityRow | undefined;
   }
 
   savePacket(packet: LmpPacket, packetSize: PacketSizeEstimate): void {

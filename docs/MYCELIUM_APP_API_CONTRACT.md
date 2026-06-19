@@ -10,6 +10,8 @@ Mycelium is the active language layer of the DAOVibe ecosystem. The routes below
 - Validation failures return `ok: false` with an `error` string.
 - App convenience writes under `/app/*` return a compact `result` envelope with packet metadata.
 - Existing unprefixed write routes are preserved and return the raw engine action result.
+- Local node identity is durable in SQLite and created on first read when missing.
+- Local node identity is not login, wallet, reputation, or cryptographic identity.
 - Correction and tombstone governance writes are ledger events only and return `local_apply_status: "stored_event_only"`.
 - Correction and tombstone read routes are derived from packet history; they do not execute cleanup or deletion.
 - Tombstone execution is disabled. The preview route always returns `execution_enabled: false`.
@@ -76,6 +78,78 @@ Returns app-mode status, local node identity, local state counts, and sync capab
     cursor_sync_available: true;
     inventory_sync_available: true;
   };
+}
+```
+
+## Local Node Identity Routes
+
+Local node identity is a single durable identity record for the current Mycelium node. It gives the app stable local defaults before packet creation. It does not change packet protocol, packet signing, correction governance, or sync behavior.
+
+Identity fields:
+
+```ts
+{
+  node_id: string;
+  display_name: string;
+  default_author: string;
+  created_at: number;
+  updated_at: number;
+}
+```
+
+`node_id` is generated once, stored durably, and reused after restart. It cannot be changed through the API. `display_name` and `default_author` are editable.
+
+### `GET /node/identity`
+
+Creates the local node identity if it does not exist, then returns it.
+
+```ts
+{
+  ok: true;
+  identity: {
+    node_id: string;
+    display_name: string;
+    default_author: string;
+    created_at: number;
+    updated_at: number;
+  };
+}
+```
+
+### `POST /node/identity`
+
+Updates editable local identity fields. At least one editable field is required. `node_id` is rejected if provided.
+
+Body:
+
+```ts
+{
+  display_name?: string; // non-empty after trim, max 120
+  default_author?: string; // non-empty after trim, max 160
+}
+```
+
+Response:
+
+```ts
+{
+  ok: true;
+  identity: {
+    node_id: string;
+    display_name: string;
+    default_author: string;
+    created_at: number;
+    updated_at: number;
+  };
+}
+```
+
+Validation failure:
+
+```ts
+{
+  ok: false;
+  error: string;
 }
 ```
 

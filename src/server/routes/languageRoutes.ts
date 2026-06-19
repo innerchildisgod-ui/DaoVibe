@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { MyceliumController } from "../../mycelium/MyceliumController";
 import { registerCorrectionRoutes } from "./correctionRoutes";
+import { registerNodeRoutes } from "./nodeRoutes";
 import type { LmpPacket } from "../../protocol/packet";
 import {
   MeaningProposalPayload,
@@ -116,6 +117,7 @@ export function registerLanguageRoutes(
 ): void {
   const { myceliumController } = context;
 
+  registerNodeRoutes(app, { myceliumController });
   registerCorrectionRoutes(app, { myceliumController });
 
   app.get("/phrases/search", (req, res) => {
