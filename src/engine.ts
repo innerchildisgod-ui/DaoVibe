@@ -398,6 +398,8 @@ export class LanguageEngine {
       case "correction":
       case "meaning_correction_proposed":
       case "meaning_correction_vote":
+      case "meaning_correction_tombstone_proposed":
+      case "meaning_correction_tombstone_vote":
       case "symbol_sample": {
         applyStatus = "stored_event_only";
         break;

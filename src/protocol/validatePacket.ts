@@ -16,6 +16,8 @@ const SUPPORTED_PACKET_TYPES: Set<PacketType> = new Set([
   "correction",
   "meaning_correction_proposed",
   "meaning_correction_vote",
+  "meaning_correction_tombstone_proposed",
+  "meaning_correction_tombstone_vote",
   "safety_label",
   "symbol_sample",
 ]);
@@ -28,7 +30,19 @@ export const CORRECTION_PACKET_FIELD_LIMITS = {
   correction_context: 1000,
   source: 300,
   voter: 160,
+  tombstone_id: 160,
+  details: 1000,
+  proposer: 160,
 } as const;
+
+const CORRECTION_TOMBSTONE_REASONS = new Set([
+  "rejected_status",
+  "negative_score",
+  "losing_conflict_candidate",
+  "spam",
+  "malformed",
+  "other",
+]);
 
 export type PacketSignatureStatus =
   | "missing"
@@ -193,6 +207,103 @@ function validateMeaningCorrectionVotePayload(
   }
 }
 
+function validateMeaningCorrectionTombstoneProposedPayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "phrase_id",
+    CORRECTION_PACKET_FIELD_LIMITS.phrase_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "correction_id",
+    CORRECTION_PACKET_FIELD_LIMITS.correction_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "tombstone_id",
+    CORRECTION_PACKET_FIELD_LIMITS.tombstone_id,
+    errors
+  );
+  requirePayloadString(payload, "reason", errors);
+  validateOptionalPayloadStringWithinLimit(
+    payload,
+    "details",
+    CORRECTION_PACKET_FIELD_LIMITS.details,
+    errors
+  );
+  validateOptionalPayloadStringWithinLimit(
+    payload,
+    "proposer",
+    CORRECTION_PACKET_FIELD_LIMITS.proposer,
+    errors
+  );
+
+  if (
+    typeof payload.reason === "string" &&
+    !CORRECTION_TOMBSTONE_REASONS.has(payload.reason)
+  ) {
+    errors.push("Invalid payload.reason");
+  }
+}
+
+function validateMeaningCorrectionTombstoneVotePayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "phrase_id",
+    CORRECTION_PACKET_FIELD_LIMITS.phrase_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "correction_id",
+    CORRECTION_PACKET_FIELD_LIMITS.correction_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "tombstone_id",
+    CORRECTION_PACKET_FIELD_LIMITS.tombstone_id,
+    errors
+  );
+  requirePayloadString(payload, "vote", errors);
+  validateOptionalPayloadStringWithinLimit(
+    payload,
+    "voter",
+    CORRECTION_PACKET_FIELD_LIMITS.voter,
+    errors
+  );
+
+  if (
+    typeof payload.vote === "string" &&
+    payload.vote !== "confirm" &&
+    payload.vote !== "reject"
+  ) {
+    errors.push("Invalid payload.vote");
+  }
+}
+
 function validateCorrectionPayload(packet: LmpPacket, errors: string[]): void {
   if (packet.packet_type === "meaning_correction_proposed") {
     validateMeaningCorrectionProposedPayload(packet, errors);
@@ -200,6 +311,14 @@ function validateCorrectionPayload(packet: LmpPacket, errors: string[]): void {
 
   if (packet.packet_type === "meaning_correction_vote") {
     validateMeaningCorrectionVotePayload(packet, errors);
+  }
+
+  if (packet.packet_type === "meaning_correction_tombstone_proposed") {
+    validateMeaningCorrectionTombstoneProposedPayload(packet, errors);
+  }
+
+  if (packet.packet_type === "meaning_correction_tombstone_vote") {
+    validateMeaningCorrectionTombstoneVotePayload(packet, errors);
   }
 }
 

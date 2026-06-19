@@ -7,6 +7,8 @@ export type PacketType =
   | "correction"
   | "meaning_correction_proposed"
   | "meaning_correction_vote"
+  | "meaning_correction_tombstone_proposed"
+  | "meaning_correction_tombstone_vote"
   | "safety_label"
   | "symbol_sample";
 
@@ -15,6 +17,14 @@ export type InputType = "speech" | "text" | "symbol" | "drawing";
 export type VoteValue = "confirm" | "reject" | "unsure";
 
 export type CorrectionVoteValue = "confirm" | "reject";
+
+export type CorrectionTombstoneReason =
+  | "rejected_status"
+  | "negative_score"
+  | "losing_conflict_candidate"
+  | "spam"
+  | "malformed"
+  | "other";
 
 export interface PhraseObservedPayload {
   phrase_id: string;
@@ -51,6 +61,23 @@ export interface MeaningCorrectionProposedPayload {
 export interface MeaningCorrectionVotePayload {
   phrase_id: string;
   correction_id: string;
+  vote: CorrectionVoteValue;
+  voter?: string;
+}
+
+export interface MeaningCorrectionTombstoneProposedPayload {
+  phrase_id: string;
+  correction_id: string;
+  tombstone_id: string;
+  reason: CorrectionTombstoneReason;
+  details?: string;
+  proposer?: string;
+}
+
+export interface MeaningCorrectionTombstoneVotePayload {
+  phrase_id: string;
+  correction_id: string;
+  tombstone_id: string;
   vote: CorrectionVoteValue;
   voter?: string;
 }
