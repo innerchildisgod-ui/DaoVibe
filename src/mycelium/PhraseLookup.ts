@@ -68,6 +68,23 @@ export interface BestMeaningDetails {
   correction_score?: number;
 }
 
+export interface CorrectionSummary {
+  phrase_id: string;
+  original_meaning_id: string;
+  correction_id: string;
+  corrected_reference_meaning: string;
+  correction_context?: string;
+  source?: string;
+  confirm_votes: number;
+  reject_votes: number;
+  correction_score: number;
+}
+
+export interface PhraseCorrectionsResult {
+  phrase_id: string;
+  corrections: CorrectionSummary[];
+}
+
 interface CorrectionBestMeaningDetails extends BestMeaningDetails {
   source: "correction";
   correction_id: string;
@@ -170,10 +187,14 @@ export function selectBestMeaning(
   const bestMeaning = phrase.meanings
     .map(toScoredMeaning)
     .sort((left, right) => right.score - left.score)[0];
+  const corrections = summarizeCorrectionPacketsForPhrase(
+    phrase.phrase_id,
+    correctionPackets
+  );
   const bestCorrection = selectBestCorrectionMeaning(
     phrase,
     bestMeaning.score,
-    correctionPackets
+    corrections
   );
 
   return {
@@ -190,6 +211,87 @@ export function listCorrectionPacketsForPhrase(
   return (
     source.listPacketsByPhraseAndTypes?.(phraseId, CORRECTION_PACKET_TYPES) ?? []
   );
+}
+
+export function listCorrectionsForPhrase(
+  source: PhraseLookupSource,
+  phraseId: string
+): PhraseCorrectionsResult {
+  const normalizedPhraseId = phraseId.trim();
+  const correctionPackets = listCorrectionPacketsForPhrase(
+    source,
+    normalizedPhraseId
+  );
+
+  return {
+    phrase_id: normalizedPhraseId,
+    corrections: summarizeCorrectionPacketsForPhrase(
+      normalizedPhraseId,
+      correctionPackets
+    ),
+  };
+}
+
+export function summarizeCorrectionPacketsForPhrase(
+  phraseId: string,
+  correctionPackets: LmpPacket[]
+): CorrectionSummary[] {
+  const proposals = new Map<string, MeaningCorrectionProposedPayload>();
+  const voteCounts = new Map<
+    string,
+    { confirm_votes: number; reject_votes: number }
+  >();
+
+  for (const packet of correctionPackets) {
+    if (packet.packet_type === "meaning_correction_proposed") {
+      const payload = packet.payload as MeaningCorrectionProposedPayload;
+
+      if (
+        isCorrectionProposalForPhrase(payload, phraseId) &&
+        !proposals.has(payload.correction_id)
+      ) {
+        proposals.set(payload.correction_id, payload);
+      }
+    }
+
+    if (packet.packet_type === "meaning_correction_vote") {
+      const payload = packet.payload as MeaningCorrectionVotePayload;
+
+      if (isCorrectionVoteForPhrase(payload, phraseId)) {
+        const counts = voteCounts.get(payload.correction_id) ?? {
+          confirm_votes: 0,
+          reject_votes: 0,
+        };
+
+        if (payload.vote === "confirm") {
+          counts.confirm_votes += 1;
+        }
+
+        if (payload.vote === "reject") {
+          counts.reject_votes += 1;
+        }
+
+        voteCounts.set(payload.correction_id, counts);
+      }
+    }
+  }
+
+  return [...proposals.values()]
+    .map((proposal) => {
+      const counts = voteCounts.get(proposal.correction_id) ?? {
+        confirm_votes: 0,
+        reject_votes: 0,
+      };
+
+      return toCorrectionSummary(proposal, counts);
+    })
+    .sort((left, right) => {
+      if (right.correction_score !== left.correction_score) {
+        return right.correction_score - left.correction_score;
+      }
+
+      return left.correction_id.localeCompare(right.correction_id);
+    });
 }
 
 function phraseMatchesQuery(
@@ -239,73 +341,16 @@ function toScoredMeaning(
 function selectBestCorrectionMeaning(
   phrase: KnowledgePhraseRecord,
   currentBestScore: number,
-  correctionPackets: LmpPacket[]
+  corrections: CorrectionSummary[]
 ): CorrectionBestMeaningDetails | undefined {
   const knownMeaningIds = new Set(
     phrase.meanings.map((meaning) => meaning.meaning_id)
   );
-  const proposals = new Map<string, MeaningCorrectionProposedPayload>();
-  const voteCounts = new Map<
-    string,
-    { confirm_votes: number; reject_votes: number }
-  >();
 
-  for (const packet of correctionPackets) {
-    if (packet.packet_type === "meaning_correction_proposed") {
-      const payload = packet.payload as MeaningCorrectionProposedPayload;
-
-      if (
-        isCorrectionProposalForPhrase(payload, phrase.phrase_id) &&
-        knownMeaningIds.has(payload.original_meaning_id) &&
-        !proposals.has(payload.correction_id)
-      ) {
-        proposals.set(payload.correction_id, payload);
-      }
-    }
-
-    if (packet.packet_type === "meaning_correction_vote") {
-      const payload = packet.payload as MeaningCorrectionVotePayload;
-
-      if (isCorrectionVoteForPhrase(payload, phrase.phrase_id)) {
-        const counts = voteCounts.get(payload.correction_id) ?? {
-          confirm_votes: 0,
-          reject_votes: 0,
-        };
-
-        if (payload.vote === "confirm") {
-          counts.confirm_votes += 1;
-        }
-
-        if (payload.vote === "reject") {
-          counts.reject_votes += 1;
-        }
-
-        voteCounts.set(payload.correction_id, counts);
-      }
-    }
-  }
-
-  return [...proposals.values()]
-    .map((proposal) => {
-      const counts = voteCounts.get(proposal.correction_id) ?? {
-        confirm_votes: 0,
-        reject_votes: 0,
-      };
-      const correctionScore = counts.confirm_votes - counts.reject_votes;
-
-      return toCorrectionBestMeaning(proposal, {
-        ...counts,
-        correction_score: correctionScore,
-      });
-    })
+  return corrections
     .filter((correction) => correction.correction_score > currentBestScore)
-    .sort((left, right) => {
-      if (right.correction_score !== left.correction_score) {
-        return right.correction_score - left.correction_score;
-      }
-
-      return left.correction_id.localeCompare(right.correction_id);
-    })[0];
+    .filter((correction) => knownMeaningIds.has(correction.original_meaning_id))
+    .map(toCorrectionBestMeaning)[0];
 }
 
 function isCorrectionProposalForPhrase(
@@ -314,9 +359,9 @@ function isCorrectionProposalForPhrase(
 ): boolean {
   return (
     payload.phrase_id === phraseId &&
-    typeof payload.original_meaning_id === "string" &&
-    typeof payload.correction_id === "string" &&
-    typeof payload.corrected_reference_meaning === "string"
+    isNonEmptyString(payload.original_meaning_id) &&
+    isNonEmptyString(payload.correction_id) &&
+    isNonEmptyString(payload.corrected_reference_meaning)
   );
 }
 
@@ -326,35 +371,62 @@ function isCorrectionVoteForPhrase(
 ): boolean {
   return (
     payload.phrase_id === phraseId &&
-    typeof payload.correction_id === "string" &&
+    isNonEmptyString(payload.correction_id) &&
     (payload.vote === "confirm" || payload.vote === "reject")
   );
 }
 
-function toCorrectionBestMeaning(
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function toCorrectionSummary(
   proposal: MeaningCorrectionProposedPayload,
   scores: {
     confirm_votes: number;
     reject_votes: number;
-    correction_score: number;
   }
-): CorrectionBestMeaningDetails {
-  const totalVotes = scores.confirm_votes + scores.reject_votes;
-
-  return {
-    meaning_id: proposal.original_meaning_id,
-    reference_meaning: proposal.corrected_reference_meaning,
-    context: proposal.correction_context,
-    confidence: scores.correction_score,
-    confirms: scores.confirm_votes,
-    rejects: scores.reject_votes,
-    score: scores.correction_score,
-    total_votes: totalVotes,
-    source: "correction",
-    correction_id: proposal.correction_id,
+): CorrectionSummary {
+  const correction: CorrectionSummary = {
+    phrase_id: proposal.phrase_id,
     original_meaning_id: proposal.original_meaning_id,
+    correction_id: proposal.correction_id,
+    corrected_reference_meaning: proposal.corrected_reference_meaning,
     confirm_votes: scores.confirm_votes,
     reject_votes: scores.reject_votes,
-    correction_score: scores.correction_score,
+    correction_score: scores.confirm_votes - scores.reject_votes,
+  };
+
+  if (typeof proposal.correction_context === "string") {
+    correction.correction_context = proposal.correction_context;
+  }
+
+  if (typeof proposal.source === "string") {
+    correction.source = proposal.source;
+  }
+
+  return correction;
+}
+
+function toCorrectionBestMeaning(
+  correction: CorrectionSummary
+): CorrectionBestMeaningDetails {
+  const totalVotes = correction.confirm_votes + correction.reject_votes;
+
+  return {
+    meaning_id: correction.original_meaning_id,
+    reference_meaning: correction.corrected_reference_meaning,
+    context: correction.correction_context,
+    confidence: correction.correction_score,
+    confirms: correction.confirm_votes,
+    rejects: correction.reject_votes,
+    score: correction.correction_score,
+    total_votes: totalVotes,
+    source: "correction",
+    correction_id: correction.correction_id,
+    original_meaning_id: correction.original_meaning_id,
+    confirm_votes: correction.confirm_votes,
+    reject_votes: correction.reject_votes,
+    correction_score: correction.correction_score,
   };
 }

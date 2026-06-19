@@ -177,6 +177,15 @@ export function registerLanguageRoutes(
     });
   });
 
+  app.get("/phrases/:phraseId/corrections", (req, res) => {
+    const result = myceliumController.getPhraseCorrections(req.params.phraseId);
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  });
+
   app.get("/phrases/:phraseId", (req, res) => {
     const result = myceliumController.getPhraseById(req.params.phraseId);
 
