@@ -1,4 +1,5 @@
 import assert from "assert";
+import Database from "better-sqlite3";
 import { join } from "path";
 import { createPacket } from "../protocol/packet";
 import type { LmpPacket } from "../protocol/packet";
@@ -26,6 +27,11 @@ import { createCorrectionGovernanceRateLimiter } from "../server/routes/correcti
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
 import { SQLiteStore, type KnowledgePhraseRecord } from "../storage/sqliteStore";
+import {
+  listAppliedSchemaMigrations,
+  runSqliteMigrations,
+  SQLITE_MIGRATIONS,
+} from "../storage/sqliteMigrations";
 import { buildClientUrl } from "../client/clientUrl";
 import { MyceliumClient } from "../client/MyceliumClient";
 
@@ -424,6 +430,138 @@ test("local node identity rejects empty editable fields", () => {
     () => store.updateLocalNodeIdentity({ default_author: "   " }),
     /default_author must be a non-empty string/
   );
+});
+
+test("sqlite migrations create tracking table and apply stable IDs", () => {
+  const db = new Database(":memory:");
+
+  try {
+    runSqliteMigrations(db);
+
+    const table = db
+      .prepare(
+        `
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = 'schema_migrations'
+      `
+      )
+      .get() as { name: string } | undefined;
+    const applied = listAppliedSchemaMigrations(db);
+
+    assert.strictEqual(table?.name, "schema_migrations");
+    assert.deepStrictEqual(
+      applied.map((migration) => migration.migration_id),
+      SQLITE_MIGRATIONS.map((migration) => migration.migration_id)
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("sqlite migrations are idempotent on repeated startup", () => {
+  const db = new Database(":memory:");
+
+  try {
+    runSqliteMigrations(db);
+    const firstRun = listAppliedSchemaMigrations(db);
+
+    runSqliteMigrations(db);
+    const secondRun = listAppliedSchemaMigrations(db);
+
+    assert.deepStrictEqual(secondRun, firstRun);
+  } finally {
+    db.close();
+  }
+});
+
+test("sqlite migrations mark legacy compatible schema without data loss", () => {
+  const db = new Database(":memory:");
+
+  try {
+    db.exec(`
+      CREATE TABLE packets (
+        packet_id TEXT PRIMARY KEY,
+        packet_type TEXT NOT NULL,
+        zone TEXT NOT NULL,
+        author TEXT NOT NULL,
+        parent TEXT,
+        phrase_id TEXT,
+        meaning_id TEXT,
+        symbol_id TEXT,
+        payload_hash TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        packet_json TEXT NOT NULL,
+        packet_size_bytes INTEGER NOT NULL,
+        packet_size_class TEXT NOT NULL,
+        size_recommendation TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        received_at INTEGER NOT NULL
+      );
+
+      INSERT INTO packets (
+        packet_id,
+        packet_type,
+        zone,
+        author,
+        payload_hash,
+        payload_json,
+        packet_json,
+        packet_size_bytes,
+        packet_size_class,
+        size_recommendation,
+        created_at,
+        received_at
+      )
+      VALUES (
+        'legacy_packet',
+        'phrase_observed',
+        'zone',
+        'author',
+        'hash',
+        '{}',
+        '{}',
+        2,
+        'tiny',
+        'store',
+        1,
+        1
+      );
+    `);
+
+    runSqliteMigrations(db);
+
+    const packet = db
+      .prepare(
+        `
+        SELECT packet_id
+        FROM packets
+        WHERE packet_id = 'legacy_packet'
+      `
+      )
+      .get() as { packet_id: string } | undefined;
+    const applied = listAppliedSchemaMigrations(db);
+
+    assert.strictEqual(packet?.packet_id, "legacy_packet");
+    assert.strictEqual(applied.length, SQLITE_MIGRATIONS.length);
+  } finally {
+    db.close();
+  }
+});
+
+test("sqlite store lists applied schema migrations in stable order", () => {
+  const store = new SQLiteStore(unitDbPath("unit_schema_migrations_list"));
+  const applied = store.listAppliedSchemaMigrations();
+
+  assert.deepStrictEqual(
+    applied.map((migration) => migration.migration_id),
+    SQLITE_MIGRATIONS.map((migration) => migration.migration_id)
+  );
+
+  for (const migration of applied) {
+    assert.strictEqual(typeof migration.applied_at, "number");
+  }
 });
 
 test("node status returns identity and durable packet count", () => {

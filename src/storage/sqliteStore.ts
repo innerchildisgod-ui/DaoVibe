@@ -13,6 +13,11 @@ import {
 } from "../protocol/packetTypes";
 import { MeaningRecord } from "../knowledge/phraseStore";
 import { SafetyLabel } from "../safety/safetyLabels";
+import {
+  listAppliedSchemaMigrations,
+  runSqliteMigrations,
+  type AppliedSchemaMigration,
+} from "./sqliteMigrations";
 
 interface PacketRefs {
   phrase_id?: string;
@@ -231,92 +236,11 @@ export class SQLiteStore {
   }
 
   private initialize(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS packets (
-        packet_id TEXT PRIMARY KEY,
-        packet_type TEXT NOT NULL,
-        zone TEXT NOT NULL,
-        author TEXT NOT NULL,
-        parent TEXT,
-        phrase_id TEXT,
-        meaning_id TEXT,
-        symbol_id TEXT,
-        payload_hash TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        packet_json TEXT NOT NULL,
-        packet_size_bytes INTEGER NOT NULL,
-        packet_size_class TEXT NOT NULL,
-        size_recommendation TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        received_at INTEGER NOT NULL
-      );
+    runSqliteMigrations(this.db);
+  }
 
-      CREATE INDEX IF NOT EXISTS idx_packets_phrase_id
-        ON packets(phrase_id);
-
-      CREATE INDEX IF NOT EXISTS idx_packets_meaning_id
-        ON packets(meaning_id);
-
-      CREATE INDEX IF NOT EXISTS idx_packets_type
-        ON packets(packet_type);
-
-      CREATE INDEX IF NOT EXISTS idx_packets_phrase_type_received
-        ON packets(phrase_id, packet_type, received_at, packet_id);
-
-      CREATE INDEX IF NOT EXISTS idx_packets_type_received
-        ON packets(packet_type, received_at, packet_id);
-
-      CREATE INDEX IF NOT EXISTS idx_packets_zone
-        ON packets(zone);
-
-      CREATE TABLE IF NOT EXISTS phrases (
-        phrase_id TEXT PRIMARY KEY,
-        surface_text TEXT,
-        phonetic_hint TEXT,
-        language_hint TEXT,
-        safety_label TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS meanings (
-        meaning_id TEXT PRIMARY KEY,
-        phrase_id TEXT NOT NULL,
-        reference_meaning TEXT NOT NULL,
-        context TEXT,
-        confidence REAL NOT NULL,
-        confirms INTEGER NOT NULL,
-        rejects INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_meanings_phrase_id
-        ON meanings(phrase_id);
-
-      CREATE TABLE IF NOT EXISTS votes (
-        vote_packet_id TEXT PRIMARY KEY,
-        phrase_id TEXT NOT NULL,
-        meaning_id TEXT NOT NULL,
-        vote TEXT NOT NULL,
-        confidence REAL NOT NULL,
-        author TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS peer_sync_cursors (
-        peer_author TEXT PRIMARY KEY,
-        cursor TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS local_node_identity (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        node_id TEXT NOT NULL,
-        display_name TEXT NOT NULL,
-        default_author TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-    `);
+  listAppliedSchemaMigrations(): AppliedSchemaMigration[] {
+    return listAppliedSchemaMigrations(this.db);
   }
 
   getOrCreateLocalNodeIdentity(): LocalNodeIdentity {
