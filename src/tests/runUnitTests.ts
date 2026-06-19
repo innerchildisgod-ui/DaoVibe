@@ -7,6 +7,7 @@ import {
   summarizeCorrectionPacketsForPhrase,
 } from "../mycelium/CorrectionLookup";
 import { test, runTests } from "./testHarness";
+import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
@@ -214,4 +215,41 @@ test("cleanup candidates include rejected and losing negative conflict correctio
   ]);
 });
 
+
+test("language confidence clamps invalid confidence and vote counts", () => {
+  const score = calculateMeaningScore({
+    confidence: 2,
+    confirms: 1.9,
+    rejects: -5,
+  });
+
+  assert.strictEqual(score.confidence, 1);
+  assert.strictEqual(score.confirms, 1);
+  assert.strictEqual(score.rejects, 0);
+  assert.strictEqual(score.total_votes, 1);
+  assert(score.score <= 1);
+});
+
+test("language confidence gives weak weight to a single vote", () => {
+  const score = calculateMeaningScore({
+    confidence: 0.25,
+    confirms: 1,
+    rejects: 0,
+  });
+
+  assert(score.score > 0.25);
+  assert(score.score < 0.75);
+});
+
+test("language confidence penalizes rejected meanings", () => {
+  const score = calculateMeaningScore({
+    confidence: 0.5,
+    confirms: 0,
+    rejects: 3,
+  });
+
+  assert(score.score < 0.5);
+});
+
 void runTests();
+
