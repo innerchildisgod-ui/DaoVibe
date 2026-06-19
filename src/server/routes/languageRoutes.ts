@@ -257,6 +257,20 @@ export function registerLanguageRoutes(
     });
   });
 
+  app.get("/phrases/:phraseId/correctionHistory", (req, res) => {
+    const limit =
+      typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+    const result = myceliumController.getPhraseCorrectionHistory(
+      req.params.phraseId,
+      limit
+    );
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  });
+
   app.get("/phrases/:phraseId", (req, res) => {
     const result = myceliumController.getPhraseById(req.params.phraseId);
 
