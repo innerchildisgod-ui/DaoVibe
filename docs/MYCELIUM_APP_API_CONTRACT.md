@@ -278,6 +278,51 @@ Returns the current best meaning for a phrase. Missing phrases return HTTP 404. 
 }
 ```
 
+### `GET /phrases/:phraseId/explainBestMeaning`
+
+App-facing, read-only route that explains why the local node currently selects its best meaning. It derives from existing phrase lookup, bestMeaning, correction summaries, and tombstone summaries so distributed packet state is easier to understand without exposing raw packet chaos. It does not create packets, add storage truth, execute tombstones, delete data, or change `bestMeaning`.
+
+Missing phrases return the same HTTP 404 shape as `GET /phrases/:phraseId`.
+
+```ts
+{
+  ok: true;
+  phrase_id: string;
+  phrase?: {
+    phrase_id: string;
+    surface_text?: string;
+    phonetic_hint?: string;
+    language_hint?: string;
+    safety_label?: string;
+  };
+  best_meaning?: {
+    meaning_id?: string;
+    reference_meaning?: string;
+    confidence?: number;
+    score?: number;
+    confirms?: number;
+    rejects?: number;
+    total_votes?: number;
+    source: "base_meaning" | "correction";
+  };
+  explanation: {
+    summary: string;
+    reasons: string[];
+    tombstone_execution_enabled: false;
+  };
+  evidence: {
+    meaning_count: number;
+    correction_count: number;
+    confirmed_correction_count: number;
+    maturing_correction_count: number;
+    tombstone_count: number;
+    confirmed_tombstone_count: number;
+  };
+}
+```
+
+`tombstone_execution_enabled` is always `false` in this build. Confirmed tombstones may appear as evidence, but they remain preview-only and do not suppress correction-based best meanings.
+
 ### `POST /app/lookupPhrase`
 
 Body:

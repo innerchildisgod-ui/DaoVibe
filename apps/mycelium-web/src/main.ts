@@ -1,5 +1,6 @@
 import {
   MyceliumClient,
+  type BestMeaningExplanationResponse,
   type BestMeaningResponse,
   type LocalNodeIdentity,
   type NodeStatusResponse,
@@ -22,10 +23,12 @@ const client = new MyceliumClient({ baseUrl: apiBaseUrl });
 type AppState = {
   loading: boolean;
   loadingPhrase: boolean;
+  loadingExplanation: boolean;
   observingPhrase: boolean;
   proposingMeaning: boolean;
   error?: string;
   searchError?: string;
+  explanationError?: string;
   observeResult?: FormResult;
   proposeResult?: FormResult;
   nodeStatus?: NodeStatusResponse;
@@ -37,6 +40,7 @@ type AppState = {
   searchResults?: PhraseSearchResponse["results"];
   selectedPhrase?: PhraseRecord;
   bestMeaning?: BestMeaningResponse;
+  meaningExplanation?: BestMeaningExplanationResponse;
 };
 
 type FormResult = {
@@ -60,6 +64,7 @@ type ProposeFormState = {
 const state: AppState = {
   loading: true,
   loadingPhrase: false,
+  loadingExplanation: false,
   observingPhrase: false,
   proposingMeaning: false,
   searchQuery: "",
@@ -110,6 +115,20 @@ function escapeAttribute(value: unknown): string {
 
 function statusText(value: boolean | undefined): string {
   return value === true ? "true" : value === false ? "false" : "unknown";
+}
+
+function bestMeaningSourceLabel(
+  source: "base_meaning" | "correction" | undefined
+): string {
+  if (source === "correction") {
+    return "correction";
+  }
+
+  if (source === "base_meaning") {
+    return "base meaning";
+  }
+
+  return "unknown";
 }
 
 function optionalTrimmed(value: string): string | undefined {
@@ -314,6 +333,82 @@ function renderBestMeaning(): string {
   `;
 }
 
+function renderMeaningExplanation(): string {
+  const explanation = state.meaningExplanation;
+  const evidence = explanation?.evidence;
+
+  if (state.loadingPhrase || state.loadingExplanation) {
+    return `
+      <section class="panel explanation-panel">
+        <div class="panel-heading">
+          <h2>Why this meaning?</h2>
+          <span class="status warn">loading</span>
+        </div>
+        <p class="muted">Loading explanation.</p>
+      </section>
+    `;
+  }
+
+  if (!state.selectedPhrase) {
+    return `
+      <section class="panel explanation-panel">
+        <div class="panel-heading">
+          <h2>Why this meaning?</h2>
+        </div>
+        <p class="muted">Select a phrase to inspect meaning evidence.</p>
+      </section>
+    `;
+  }
+
+  if (state.explanationError) {
+    return `
+      <section class="panel explanation-panel">
+        <div class="panel-heading">
+          <h2>Why this meaning?</h2>
+          <span class="status warn">unavailable</span>
+        </div>
+        <p class="form-message error">${escapeHtml(state.explanationError)}</p>
+      </section>
+    `;
+  }
+
+  if (!explanation || !evidence) {
+    return `
+      <section class="panel explanation-panel">
+        <div class="panel-heading">
+          <h2>Why this meaning?</h2>
+        </div>
+        <p class="muted">No explanation available.</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="panel explanation-panel">
+      <div class="panel-heading">
+        <h2>Why this meaning?</h2>
+        <span class="status warn">tombstones disabled</span>
+      </div>
+      <p class="explanation-summary">${escapeHtml(explanation.explanation.summary)}</p>
+      <div class="field-grid evidence-grid">
+        ${field("source", bestMeaningSourceLabel(explanation.best_meaning?.source))}
+        ${field("meaning_count", evidence.meaning_count)}
+        ${field("correction_count", evidence.correction_count)}
+        ${field("confirmed_corrections", evidence.confirmed_correction_count)}
+        ${field("maturing_corrections", evidence.maturing_correction_count)}
+        ${field("tombstone_count", evidence.tombstone_count)}
+        ${field("confirmed_tombstones", evidence.confirmed_tombstone_count)}
+        ${field("tombstone_execution", statusText(explanation.explanation.tombstone_execution_enabled))}
+      </div>
+      <ul class="reason-list">
+        ${explanation.explanation.reasons
+          .map((reason) => `<li>${escapeHtml(reason)}</li>`)
+          .join("")}
+      </ul>
+    </section>
+  `;
+}
+
 function renderPhraseDetail(): string {
   const phrase = state.selectedPhrase;
 
@@ -464,6 +559,7 @@ function render(): void {
         ${renderSearch()}
         ${renderObservePhrase()}
         ${renderPhraseDetail()}
+        ${renderMeaningExplanation()}
         ${renderProposeMeaning()}
       </div>
     </main>
@@ -608,28 +704,52 @@ async function searchPhrases(query: string): Promise<void> {
 async function selectPhrase(phraseId: string): Promise<void> {
   setState({
     loadingPhrase: true,
+    loadingExplanation: true,
     proposeForm: {
       ...state.proposeForm,
       phraseId,
     },
     selectedPhrase: undefined,
     bestMeaning: undefined,
+    meaningExplanation: undefined,
+    explanationError: undefined,
   });
 
   try {
-    const [phrase, bestMeaning] = await Promise.all([
+    const [phrase, bestMeaning, explanation] = await Promise.allSettled([
       client.getPhrase(phraseId),
       client.getBestMeaning(phraseId),
+      client.getBestMeaningExplanation(phraseId),
     ]);
+
+    if (phrase.status === "rejected") {
+      throw phrase.reason;
+    }
+
+    if (bestMeaning.status === "rejected") {
+      throw bestMeaning.reason;
+    }
 
     setState({
       loadingPhrase: false,
-      selectedPhrase: phrase.phrase,
-      bestMeaning,
+      loadingExplanation: false,
+      selectedPhrase: phrase.value.phrase,
+      bestMeaning: bestMeaning.value,
+      meaningExplanation:
+        explanation.status === "fulfilled" ? explanation.value : undefined,
+      explanationError:
+        explanation.status === "rejected"
+          ? explanation.reason instanceof Error
+            ? explanation.reason.message
+            : "Meaning explanation failed."
+          : undefined,
     });
   } catch (error) {
     setState({
       loadingPhrase: false,
+      loadingExplanation: false,
+      meaningExplanation: undefined,
+      explanationError: undefined,
       searchError:
         error instanceof Error ? error.message : "Phrase detail failed.",
     });

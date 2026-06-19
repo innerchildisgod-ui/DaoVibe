@@ -150,6 +150,28 @@ export function registerLanguageRoutes(
     });
   });
 
+  app.get("/phrases/:phraseId/explainBestMeaning", (req, res) => {
+    const result = myceliumController.getBestMeaningExplanation(
+      req.params.phraseId
+    );
+
+    if (!result.found) {
+      res.status(404).json({
+        ok: false,
+        error: "Phrase not found.",
+        phrase_id: result.phrase_id,
+      });
+      return;
+    }
+
+    const { found: _found, ...explanation } = result;
+
+    res.json({
+      ok: true,
+      ...explanation,
+    });
+  });
+
   app.get("/phrases/:phraseId", (req, res) => {
     const result = myceliumController.getPhraseById(req.params.phraseId);
 

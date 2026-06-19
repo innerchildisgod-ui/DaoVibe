@@ -271,6 +271,28 @@ button {
   color: #153f2b;
 }
 
+.explanation-summary {
+  margin: 0 0 12px;
+  color: #23312d;
+  font-weight: 650;
+}
+
+.evidence-grid {
+  margin-bottom: 12px;
+}
+
+.reason-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: #34443f;
+}
+
+.reason-list li {
+  overflow-wrap: anywhere;
+}
+
 .metric-row {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }

@@ -123,6 +123,41 @@ export interface BestMeaningResponse {
   reason?: string;
 }
 
+export interface BestMeaningExplanationResponse {
+  ok: true;
+  phrase_id: string;
+  phrase?: {
+    phrase_id: string;
+    surface_text?: string;
+    phonetic_hint?: string;
+    language_hint?: string;
+    safety_label?: string;
+  };
+  best_meaning?: {
+    meaning_id?: string;
+    reference_meaning?: string;
+    confidence?: number;
+    score?: number;
+    confirms?: number;
+    rejects?: number;
+    total_votes?: number;
+    source: "base_meaning" | "correction";
+  };
+  explanation: {
+    summary: string;
+    reasons: string[];
+    tombstone_execution_enabled: false;
+  };
+  evidence: {
+    meaning_count: number;
+    correction_count: number;
+    confirmed_correction_count: number;
+    maturing_correction_count: number;
+    tombstone_count: number;
+    confirmed_tombstone_count: number;
+  };
+}
+
 export type InputType = "speech" | "text" | "symbol" | "drawing";
 export type MeaningVoteValue = "confirm" | "reject" | "unsure";
 export type GovernanceVoteValue = "confirm" | "reject";
@@ -395,6 +430,14 @@ export class MyceliumClient {
   getBestMeaning(phraseId: string): Promise<BestMeaningResponse> {
     return this.getJson(
       `/phrases/${encodeURIComponent(phraseId)}/bestMeaning`
+    );
+  }
+
+  getBestMeaningExplanation(
+    phraseId: string
+  ): Promise<BestMeaningExplanationResponse> {
+    return this.getJson(
+      `/phrases/${encodeURIComponent(phraseId)}/explainBestMeaning`
     );
   }
 

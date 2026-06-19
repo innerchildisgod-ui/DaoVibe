@@ -25,6 +25,10 @@ import {
   searchPhrases,
   selectBestMeaning,
 } from "./PhraseLookup";
+import {
+  buildBestMeaningExplanation,
+  type BestMeaningExplanationResult,
+} from "./MeaningExplanation";
 import { listTombstoneExecutionPreviewForPhrase } from "./TombstoneExecutionPreview";
 import { listCorrectionTombstonesForPhrase } from "./TombstoneLookup";
 
@@ -40,6 +44,15 @@ type LocalNodeStore = Pick<
   | "getPacketCount"
   | "listPeerSyncCursors"
 >;
+
+type BestMeaningExplanationControllerResult =
+  | {
+      found: false;
+      phrase_id: string;
+    }
+  | ({
+      found: true;
+    } & BestMeaningExplanationResult);
 
 export interface MyceliumNodeStatus {
   ok: true;
@@ -268,6 +281,36 @@ export class MyceliumController {
       phraseResult.phrase_id,
       correctionPackets
     );
+  }
+
+  getBestMeaningExplanation(
+    phraseId: string
+  ): BestMeaningExplanationControllerResult {
+    const phraseResult = this.getPhraseById(phraseId);
+
+    if (!phraseResult.found) {
+      return {
+        found: false,
+        phrase_id: phraseResult.phrase_id,
+      };
+    }
+
+    const bestMeaningResult = this.getBestMeaning(phraseResult.phrase_id);
+    const correctionsResult = this.getPhraseCorrections(phraseResult.phrase_id);
+    const tombstonesResult = this.getCorrectionTombstonesForPhrase(
+      phraseResult.phrase_id
+    );
+
+    return {
+      found: true,
+      ...buildBestMeaningExplanation({
+        phraseId: phraseResult.phrase_id,
+        phrase: phraseResult.phrase,
+        bestMeaningResult,
+        corrections: correctionsResult.corrections,
+        tombstones: tombstonesResult.tombstones,
+      }),
+    };
   }
 
   listNodes() {

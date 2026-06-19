@@ -2,7 +2,10 @@ import assert from "assert";
 import { join } from "path";
 import { createPacket } from "../protocol/packet";
 import type { LmpPacket } from "../protocol/packet";
-import { clampPhraseSearchLimit } from "../mycelium/PhraseLookup";
+import {
+  clampPhraseSearchLimit,
+  selectBestMeaning,
+} from "../mycelium/PhraseLookup";
 import {
   clampCorrectionHistoryLimit,
   type CorrectionSummary,
@@ -18,10 +21,11 @@ import { LanguageEngine } from "../engine";
 import { MyceliumController } from "../mycelium/MyceliumController";
 import { compareRankedCorrections } from "../mycelium/CorrectionConflict";
 import { buildTombstoneExecutionPreview } from "../mycelium/TombstoneExecutionPreview";
+import { buildBestMeaningExplanation } from "../mycelium/MeaningExplanation";
 import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
-import { SQLiteStore } from "../storage/sqliteStore";
+import { SQLiteStore, type KnowledgePhraseRecord } from "../storage/sqliteStore";
 import { buildClientUrl } from "../client/clientUrl";
 import { MyceliumClient } from "../client/MyceliumClient";
 
@@ -912,6 +916,166 @@ test("tombstone execution preview suppresses correction with any confirmed tombs
     preview.suppressed_corrections[0].tombstone_id,
     "confirmed_second"
   );
+});
+
+test("meaning explanation reports disabled tombstone execution and evidence counts", () => {
+  const phraseId = "unit_phrase_meaning_explanation";
+  const originalMeaningId = "unit_meaning_explanation_original";
+  const phrase: KnowledgePhraseRecord = {
+    phrase_id: phraseId,
+    surface_text: "explain this",
+    language_hint: "en",
+    safety_label: "normal",
+    meanings: [
+      {
+        meaning_id: originalMeaningId,
+        reference_meaning: "Base meaning.",
+        confidence: 0.4,
+        confirms: 0,
+        rejects: 0,
+      },
+    ],
+  };
+  const correctionPackets = [
+    ...correctionPacketsWithVotes({
+      phraseId,
+      originalMeaningId,
+      correctionId: "unit_explanation_confirmed",
+      confirmVotes: 3,
+    }),
+    ...correctionPacketsWithVotes({
+      phraseId,
+      originalMeaningId,
+      correctionId: "unit_explanation_maturing",
+      confirmVotes: 1,
+    }),
+  ];
+  const tombstonePackets = tombstonePacketsWithVotes({
+    phraseId,
+    correctionId: "unit_explanation_confirmed",
+    tombstoneId: "unit_explanation_tombstone",
+    confirmVotes: 3,
+  });
+  const corrections = summarizeCorrectionPacketsForPhrase(
+    phraseId,
+    correctionPackets
+  );
+  const tombstones = summarizeTombstonePacketsForPhrase(
+    phraseId,
+    tombstonePackets
+  );
+  const bestMeaning = selectBestMeaning(
+    phrase,
+    phraseId,
+    correctionPackets
+  );
+  const explanation = buildBestMeaningExplanation({
+    phraseId,
+    phrase,
+    bestMeaningResult: bestMeaning,
+    corrections,
+    tombstones,
+  });
+
+  assert.strictEqual(
+    explanation.explanation.tombstone_execution_enabled,
+    false
+  );
+  assert.strictEqual(explanation.best_meaning?.source, "correction");
+  assert.strictEqual(explanation.evidence.meaning_count, 1);
+  assert.strictEqual(explanation.evidence.correction_count, 2);
+  assert.strictEqual(explanation.evidence.confirmed_correction_count, 1);
+  assert.strictEqual(explanation.evidence.maturing_correction_count, 1);
+  assert.strictEqual(explanation.evidence.tombstone_count, 1);
+  assert.strictEqual(explanation.evidence.confirmed_tombstone_count, 1);
+
+  for (const value of Object.values(explanation.evidence)) {
+    assert.strictEqual(typeof value, "number");
+  }
+
+  assert(
+    explanation.explanation.reasons.some((reason) =>
+      reason.includes("Tombstone execution is disabled")
+    )
+  );
+  assert(
+    explanation.explanation.reasons.some((reason) =>
+      reason.includes("Correction evidence")
+    )
+  );
+});
+
+test("meaning explanation is read-only and leaves bestMeaning unchanged", () => {
+  const phraseId = "unit_phrase_meaning_explanation_read_only";
+  const meaningId = "unit_meaning_explanation_read_only";
+  const correctionId = "unit_correction_explanation_read_only";
+  const tombstoneId = "unit_tombstone_explanation_read_only";
+  const engine = unitEngine("unit_meaning_explanation_read_only");
+  const controller = new MyceliumController(engine);
+
+  controller.observePhrase({
+    phrase_id: phraseId,
+    surface_text: "read only explanation",
+    language_hint: "en",
+    input_type: "text",
+  });
+  controller.proposeMeaning({
+    phrase_id: phraseId,
+    meaning_id: meaningId,
+    reference_meaning: "Base meaning.",
+    confidence: 0.3,
+  });
+  controller.proposeMeaningCorrection({
+    phrase_id: phraseId,
+    original_meaning_id: meaningId,
+    correction_id: correctionId,
+    corrected_reference_meaning: "Corrected meaning.",
+  });
+
+  for (let index = 0; index < 3; index += 1) {
+    controller.voteMeaningCorrection({
+      phrase_id: phraseId,
+      correction_id: correctionId,
+      vote: "confirm",
+      voter: `read_only_correction_voter_${index}`,
+    });
+  }
+
+  controller.proposeMeaningCorrectionTombstone({
+    phrase_id: phraseId,
+    correction_id: correctionId,
+    tombstone_id: tombstoneId,
+    reason: "negative_score",
+  });
+
+  for (let index = 0; index < 3; index += 1) {
+    controller.voteMeaningCorrectionTombstone({
+      phrase_id: phraseId,
+      correction_id: correctionId,
+      tombstone_id: tombstoneId,
+      vote: "confirm",
+      voter: `read_only_tombstone_voter_${index}`,
+    });
+  }
+
+  const packetCountBefore = controller.packetCount();
+  const bestMeaningBefore = controller.getBestMeaning(phraseId);
+  const explanation = controller.getBestMeaningExplanation(phraseId);
+  const bestMeaningAfter = controller.getBestMeaning(phraseId);
+
+  assert.strictEqual(controller.packetCount(), packetCountBefore);
+  assert.deepStrictEqual(bestMeaningAfter, bestMeaningBefore);
+
+  if (!explanation.found) {
+    assert.fail("Expected explanation for existing phrase.");
+  }
+
+  assert.strictEqual(
+    explanation.explanation.tombstone_execution_enabled,
+    false
+  );
+  assert.strictEqual(explanation.evidence.confirmed_tombstone_count, 1);
+  assert.strictEqual(bestMeaningAfter.best_meaning?.source, "correction");
 });
 
 test("correction voter duplicate protection counts first identified voter vote only", () => {
