@@ -85,6 +85,9 @@ export interface CorrectionSummary {
   reject_votes: number;
   correction_score: number;
   status: CorrectionStatus;
+  conflict_group_id: string;
+  conflict_rank: number;
+  is_conflicting: boolean;
 }
 
 export interface PhraseCorrectionsResult {
@@ -99,6 +102,15 @@ interface CorrectionBestMeaningDetails extends BestMeaningDetails {
   confirm_votes: number;
   reject_votes: number;
   correction_score: number;
+}
+
+interface CorrectionProposalCandidate {
+  payload: MeaningCorrectionProposedPayload;
+  created_at?: number;
+}
+
+interface RankedCorrectionSummary extends CorrectionSummary {
+  proposal_created_at?: number;
 }
 
 const DEFAULT_SEARCH_LIMIT = 25;
@@ -243,7 +255,7 @@ export function summarizeCorrectionPacketsForPhrase(
   phraseId: string,
   correctionPackets: LmpPacket[]
 ): CorrectionSummary[] {
-  const proposals = new Map<string, MeaningCorrectionProposedPayload>();
+  const proposals = new Map<string, CorrectionProposalCandidate>();
   const voteCounts = new Map<
     string,
     { confirm_votes: number; reject_votes: number }
@@ -258,7 +270,13 @@ export function summarizeCorrectionPacketsForPhrase(
         isCorrectionProposalForPhrase(payload, phraseId) &&
         !proposals.has(payload.correction_id)
       ) {
-        proposals.set(payload.correction_id, payload);
+        proposals.set(payload.correction_id, {
+          payload,
+          created_at:
+            typeof packet.created_at === "number"
+              ? packet.created_at
+              : undefined,
+        });
       }
     }
 
@@ -294,22 +312,18 @@ export function summarizeCorrectionPacketsForPhrase(
     }
   }
 
-  return [...proposals.values()]
+  const corrections = [...proposals.values()]
     .map((proposal) => {
-      const counts = voteCounts.get(proposal.correction_id) ?? {
+      const counts = voteCounts.get(proposal.payload.correction_id) ?? {
         confirm_votes: 0,
         reject_votes: 0,
       };
 
       return toCorrectionSummary(proposal, counts);
     })
-    .sort((left, right) => {
-      if (right.correction_score !== left.correction_score) {
-        return right.correction_score - left.correction_score;
-      }
+    .sort(compareRankedCorrections);
 
-      return left.correction_id.localeCompare(right.correction_id);
-    });
+  return applyConflictMetadata(corrections);
 }
 
 function phraseMatchesQuery(
@@ -366,6 +380,7 @@ function selectBestCorrectionMeaning(
   );
 
   return corrections
+    .filter((correction) => correction.conflict_rank === 1)
     .filter((correction) => correction.correction_score > currentBestScore)
     .filter((correction) => knownMeaningIds.has(correction.original_meaning_id))
     .map(toCorrectionBestMeaning)[0];
@@ -414,17 +429,22 @@ function correctionVoteVoterKey(
 }
 
 function toCorrectionSummary(
-  proposal: MeaningCorrectionProposedPayload,
+  proposal: CorrectionProposalCandidate,
   scores: {
     confirm_votes: number;
     reject_votes: number;
   }
-): CorrectionSummary {
-  const correction: CorrectionSummary = {
-    phrase_id: proposal.phrase_id,
-    original_meaning_id: proposal.original_meaning_id,
-    correction_id: proposal.correction_id,
-    corrected_reference_meaning: proposal.corrected_reference_meaning,
+): RankedCorrectionSummary {
+  const payload = proposal.payload;
+  const conflictGroupId = correctionConflictGroupId(
+    payload.phrase_id,
+    payload.original_meaning_id
+  );
+  const correction: RankedCorrectionSummary = {
+    phrase_id: payload.phrase_id,
+    original_meaning_id: payload.original_meaning_id,
+    correction_id: payload.correction_id,
+    corrected_reference_meaning: payload.corrected_reference_meaning,
     confirm_votes: scores.confirm_votes,
     reject_votes: scores.reject_votes,
     correction_score: scores.confirm_votes - scores.reject_votes,
@@ -432,17 +452,105 @@ function toCorrectionSummary(
       scores.confirm_votes,
       scores.reject_votes
     ),
+    conflict_group_id: conflictGroupId,
+    conflict_rank: 1,
+    is_conflicting: false,
+    proposal_created_at: proposal.created_at,
   };
 
-  if (typeof proposal.correction_context === "string") {
-    correction.correction_context = proposal.correction_context;
+  if (typeof payload.correction_context === "string") {
+    correction.correction_context = payload.correction_context;
   }
 
-  if (typeof proposal.source === "string") {
-    correction.source = proposal.source;
+  if (typeof payload.source === "string") {
+    correction.source = payload.source;
   }
 
   return correction;
+}
+
+function correctionConflictGroupId(
+  phraseId: string,
+  originalMeaningId: string
+): string {
+  return `${phraseId}::${originalMeaningId}`;
+}
+
+function applyConflictMetadata(
+  corrections: RankedCorrectionSummary[]
+): CorrectionSummary[] {
+  const groups = new Map<string, RankedCorrectionSummary[]>();
+
+  for (const correction of corrections) {
+    const group = groups.get(correction.conflict_group_id) ?? [];
+
+    group.push(correction);
+    groups.set(correction.conflict_group_id, group);
+  }
+
+  for (const [groupId, group] of groups) {
+    const rankedGroup = [...group].sort(compareRankedCorrections);
+    const isConflicting = rankedGroup.length > 1;
+
+    rankedGroup.forEach((correction, index) => {
+      correction.conflict_group_id = groupId;
+      correction.conflict_rank = index + 1;
+      correction.is_conflicting = isConflicting;
+    });
+  }
+
+  return corrections
+    .sort(compareRankedCorrections)
+    .map(toPublicCorrectionSummary);
+}
+
+function compareRankedCorrections(
+  left: RankedCorrectionSummary,
+  right: RankedCorrectionSummary
+): number {
+  if (right.correction_score !== left.correction_score) {
+    return right.correction_score - left.correction_score;
+  }
+
+  if (right.confirm_votes !== left.confirm_votes) {
+    return right.confirm_votes - left.confirm_votes;
+  }
+
+  if (left.reject_votes !== right.reject_votes) {
+    return left.reject_votes - right.reject_votes;
+  }
+
+  if (
+    left.proposal_created_at !== undefined &&
+    right.proposal_created_at !== undefined &&
+    left.proposal_created_at !== right.proposal_created_at
+  ) {
+    return left.proposal_created_at - right.proposal_created_at;
+  }
+
+  if (
+    left.proposal_created_at !== undefined &&
+    right.proposal_created_at === undefined
+  ) {
+    return -1;
+  }
+
+  if (
+    left.proposal_created_at === undefined &&
+    right.proposal_created_at !== undefined
+  ) {
+    return 1;
+  }
+
+  return left.correction_id.localeCompare(right.correction_id);
+}
+
+function toPublicCorrectionSummary(
+  correction: RankedCorrectionSummary
+): CorrectionSummary {
+  const { proposal_created_at, ...publicCorrection } = correction;
+
+  return publicCorrection;
 }
 
 function determineCorrectionStatus(
