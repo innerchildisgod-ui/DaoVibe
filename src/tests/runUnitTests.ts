@@ -14,6 +14,8 @@ import {
   type CorrectionTombstoneSummary,
   summarizeTombstonePacketsForPhrase,
 } from "../mycelium/TombstoneLookup";
+import { LanguageEngine } from "../engine";
+import { MyceliumController } from "../mycelium/MyceliumController";
 import { compareRankedCorrections } from "../mycelium/CorrectionConflict";
 import { buildTombstoneExecutionPreview } from "../mycelium/TombstoneExecutionPreview";
 import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
@@ -30,6 +32,15 @@ function unitDbPath(name: string): string {
     "data",
     `${name}_${Date.now()}_${Math.random().toString(36).slice(2)}.db`
   );
+}
+
+function unitEngine(name: string): LanguageEngine {
+  return new LanguageEngine({
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    nodeAgeGroup: "adult",
+    dbPath: unitDbPath(name),
+  });
 }
 
 function correctionPacketsWithVotes(args: {
@@ -288,6 +299,86 @@ test("local node identity rejects empty editable fields", () => {
   assert.throws(
     () => store.updateLocalNodeIdentity({ default_author: "   " }),
     /default_author must be a non-empty string/
+  );
+});
+
+test("node status returns identity and durable packet count", () => {
+  const engine = unitEngine("unit_node_status_identity");
+  const controller = new MyceliumController(engine);
+
+  engine.observePhrase({
+    phrase_id: "unit_phrase_node_status",
+    surface_text: "hello",
+    language_hint: "en",
+    input_type: "text",
+  });
+
+  const status = controller.getNodeStatus();
+
+  assert.strictEqual(status.ok, true);
+  assert.match(status.node.node_id, /^mycelium_node_[0-9a-f]{16}$/);
+  assert.strictEqual(status.node.display_name, "Local Mycelium Node");
+  assert.strictEqual(status.node.default_author, status.node.node_id);
+  assert.strictEqual(status.service.name, "Mycelium");
+  assert.strictEqual(status.service.status, "ready");
+  assert.strictEqual(typeof status.service.uptime_seconds, "number");
+  assert.strictEqual(typeof status.service.server_time, "number");
+  assert.strictEqual(typeof status.ledger.packet_count, "number");
+  assert(status.ledger.packet_count >= 1);
+});
+
+test("node status reports tombstone execution as disabled", () => {
+  const status = new MyceliumController(
+    unitEngine("unit_node_status_tombstone_execution")
+  ).getNodeStatus();
+
+  assert.strictEqual(status.capabilities.tombstone_packets, true);
+  assert.strictEqual(status.capabilities.tombstone_execution, false);
+});
+
+test("sync status returns local peer cursor array", () => {
+  const engine = unitEngine("unit_sync_status_peer_list");
+  const controller = new MyceliumController(engine);
+
+  engine.setPeerSyncCursor("peer_author_a", "10:packet_a");
+
+  const status = controller.getSyncStatus();
+
+  assert.strictEqual(status.ok, true);
+  assert.strictEqual(status.sync.enabled, true);
+  assert.strictEqual(status.sync.mode, "manual");
+  assert.strictEqual(status.sync.known_peer_count, 1);
+  assert(Array.isArray(status.sync.peers));
+  assert.strictEqual(status.sync.peers[0].peer_author, "peer_author_a");
+  assert.strictEqual(status.sync.peers[0].cursor, "10:packet_a");
+  assert.strictEqual(typeof status.sync.peers[0].updated_at, "number");
+});
+
+test("sync status does not run packet sync", () => {
+  let pullSyncBatchCalled = false;
+  const fakeEngine = {
+    sqliteStore: {
+      listPeerSyncCursors: () => [
+        {
+          peer_author: "peer_author_local_only",
+          cursor: "0:",
+          updated_at: 0,
+        },
+      ],
+    },
+    pullSyncBatch: () => {
+      pullSyncBatchCalled = true;
+      throw new Error("sync status must not pull packets");
+    },
+  } as unknown as LanguageEngine;
+
+  const status = new MyceliumController(fakeEngine).getSyncStatus();
+
+  assert.strictEqual(pullSyncBatchCalled, false);
+  assert.strictEqual(status.sync.known_peer_count, 1);
+  assert.strictEqual(
+    status.sync.peers[0].peer_author,
+    "peer_author_local_only"
   );
 });
 

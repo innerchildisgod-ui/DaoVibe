@@ -855,6 +855,10 @@ export class SQLiteStore {
     return row.count;
   }
 
+  getPacketCount(): number {
+    return this.countPackets();
+  }
+
   hasPacket(packetId: string): boolean {
     const row = this.db
       .prepare(
@@ -936,6 +940,18 @@ export class SQLiteStore {
       cursor: normalizedCursor,
       updated_at: updatedAt,
     };
+  }
+
+  listPeerSyncCursors(): PeerSyncCursor[] {
+    return this.db
+      .prepare(
+        `
+        SELECT peer_author, cursor, updated_at
+        FROM peer_sync_cursors
+        ORDER BY updated_at DESC, peer_author ASC
+      `
+      )
+      .all() as PeerSyncCursor[];
   }
 
   getPacketsByIds(packetIds: string[]): LmpPacket[] {

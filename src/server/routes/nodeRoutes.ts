@@ -23,6 +23,17 @@ export function registerNodeRoutes(
 ): void {
   const { myceliumController } = context;
 
+  app.get("/node/status", (_req, res) => {
+    try {
+      res.json(myceliumController.getNodeStatus());
+    } catch (error) {
+      res.status(400).json({
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.get("/node/identity", (_req, res) => {
     try {
       res.json({
@@ -45,6 +56,17 @@ export function registerNodeRoutes(
         ok: true,
         identity: myceliumController.updateLocalNodeIdentity(payload),
       });
+    } catch (error) {
+      res.status(400).json({
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.get("/sync/status", (_req, res) => {
+    try {
+      res.json(myceliumController.getSyncStatus());
     } catch (error) {
       res.status(400).json({
         ok: false,

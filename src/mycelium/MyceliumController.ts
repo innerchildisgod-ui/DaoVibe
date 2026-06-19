@@ -1,6 +1,10 @@
 import type { LanguageEngine } from "../engine";
 import type { LmpPacket } from "../protocol/packet";
-import type { LocalNodeIdentity, SQLiteStore } from "../storage/sqliteStore";
+import type {
+  LocalNodeIdentity,
+  PeerSyncCursor,
+  SQLiteStore,
+} from "../storage/sqliteStore";
 import type {
   MeaningCorrectionProposedPayload,
   MeaningCorrectionTombstoneProposedPayload,
@@ -29,12 +33,60 @@ type LocalNodeIdentityUpdate = {
   default_author?: string;
 };
 
-type LocalNodeIdentityStore = Pick<
+type LocalNodeStore = Pick<
   SQLiteStore,
-  "getOrCreateLocalNodeIdentity" | "updateLocalNodeIdentity"
+  | "getOrCreateLocalNodeIdentity"
+  | "updateLocalNodeIdentity"
+  | "getPacketCount"
+  | "listPeerSyncCursors"
 >;
 
+export interface MyceliumNodeStatus {
+  ok: true;
+  node: {
+    node_id: string;
+    display_name: string;
+    default_author: string;
+  };
+  service: {
+    name: "Mycelium";
+    layer: "DAOVibe Mycelium";
+    status: "ready";
+    uptime_seconds: number;
+    server_time: number;
+  };
+  ledger: {
+    packet_count: number;
+  };
+  storage: {
+    durable: true;
+    engine: "sqlite";
+  };
+  capabilities: {
+    phrase_lookup: true;
+    meaning_proposals: true;
+    meaning_votes: true;
+    corrections: true;
+    correction_maturity: true;
+    tombstone_packets: true;
+    tombstone_execution: false;
+    sync: true;
+  };
+}
+
+export interface MyceliumSyncStatus {
+  ok: true;
+  sync: {
+    enabled: true;
+    mode: "manual";
+    known_peer_count: number;
+    peers: PeerSyncCursor[];
+  };
+}
+
 export class MyceliumController {
+  private readonly startedAtMs = Date.now();
+
   constructor(private readonly engine: LanguageEngine) {}
 
   getLocalNodeIdentity(): LocalNodeIdentity {
@@ -45,6 +97,60 @@ export class MyceliumController {
     input: LocalNodeIdentityUpdate
   ): LocalNodeIdentity {
     return this.localNodeIdentityStore().updateLocalNodeIdentity(input);
+  }
+
+  getNodeStatus(): MyceliumNodeStatus {
+    const identity = this.getLocalNodeIdentity();
+
+    return {
+      ok: true,
+      node: {
+        node_id: identity.node_id,
+        display_name: identity.display_name,
+        default_author: identity.default_author,
+      },
+      service: {
+        name: "Mycelium",
+        layer: "DAOVibe Mycelium",
+        status: "ready",
+        uptime_seconds: Math.max(
+          0,
+          Math.floor((Date.now() - this.startedAtMs) / 1000)
+        ),
+        server_time: Math.floor(Date.now() / 1000),
+      },
+      ledger: {
+        packet_count: this.localNodeStore().getPacketCount(),
+      },
+      storage: {
+        durable: true,
+        engine: "sqlite",
+      },
+      capabilities: {
+        phrase_lookup: true,
+        meaning_proposals: true,
+        meaning_votes: true,
+        corrections: true,
+        correction_maturity: true,
+        tombstone_packets: true,
+        tombstone_execution: false,
+        sync: true,
+      },
+    };
+  }
+
+  getSyncStatus(): MyceliumSyncStatus {
+    const peers = this.localNodeStore().listPeerSyncCursors();
+
+    return {
+      ok: true,
+      sync: {
+        enabled: true,
+        mode: "manual",
+        known_peer_count: peers.length,
+        peers,
+      },
+    };
   }
 
   observePhrase(
@@ -184,8 +290,12 @@ export class MyceliumController {
     return this.engine.receivePacket(packet);
   }
 
-  private localNodeIdentityStore(): LocalNodeIdentityStore {
-    return (this.engine as unknown as { sqliteStore: LocalNodeIdentityStore })
+  private localNodeIdentityStore(): LocalNodeStore {
+    return this.localNodeStore();
+  }
+
+  private localNodeStore(): LocalNodeStore {
+    return (this.engine as unknown as { sqliteStore: LocalNodeStore })
       .sqliteStore;
   }
 }

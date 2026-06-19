@@ -81,6 +81,45 @@ Returns app-mode status, local node identity, local state counts, and sync capab
 }
 ```
 
+### `GET /node/status`
+
+Returns local Mycelium node readiness, durable identity, packet ledger count, storage engine, and app capability flags. This route does not create packets, run sync, or contact peers.
+
+```ts
+{
+  ok: true;
+  node: {
+    node_id: string;
+    display_name: string;
+    default_author: string;
+  };
+  service: {
+    name: "Mycelium";
+    layer: "DAOVibe Mycelium";
+    status: "ready";
+    uptime_seconds: number;
+    server_time: number;
+  };
+  ledger: {
+    packet_count: number;
+  };
+  storage: {
+    durable: true;
+    engine: "sqlite";
+  };
+  capabilities: {
+    phrase_lookup: true;
+    meaning_proposals: true;
+    meaning_votes: true;
+    corrections: true;
+    correction_maturity: true;
+    tombstone_packets: true;
+    tombstone_execution: false;
+    sync: true;
+  };
+}
+```
+
 ## Local Node Identity Routes
 
 Local node identity is a single durable identity record for the current Mycelium node. It gives the app stable local defaults before packet creation. It does not change packet protocol, packet signing, correction governance, or sync behavior.
@@ -815,6 +854,7 @@ They are preserved for local Mycelium operation. `POST /receivePacket` stores va
 
 Sync routes are node-to-node packet exchange routes. They are not UI workflow routes.
 
+- `GET /sync/status`
 - `GET /sync/pull?cursor={cursor}&limit={limit}`
 - `POST /packetsByIds`
 - `GET /sync/cursor/:peerAuthor`
@@ -822,5 +862,25 @@ Sync routes are node-to-node packet exchange routes. They are not UI workflow ro
 - `POST /sync/missingPacketIds`
 - `POST /sync/importBatch`
 - `POST /sync/run`
+
+### `GET /sync/status`
+
+Returns locally stored sync cursor state only. This route does not run sync, pull packets, import packets, or contact peers.
+
+```ts
+{
+  ok: true;
+  sync: {
+    enabled: true;
+    mode: "manual";
+    known_peer_count: number;
+    peers: Array<{
+      peer_author: string;
+      cursor: string;
+      updated_at: number;
+    }>;
+  };
+}
+```
 
 Sync responses use the same top-level `ok` convention. Batch import and pull routes exchange packet data and cursor metadata. Sync preserves packet validation and event-only behavior for correction and tombstone governance packets.
