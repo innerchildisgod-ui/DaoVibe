@@ -176,6 +176,12 @@ Language knowledge must be correctable. Mycelium should not only store and vote 
 
 ---
 
+## Current Milestone: Correction APIs Started
+
+Mycelium now exposes correction packet APIs for proposing a meaning correction and voting on a proposed correction. These APIs create correction packets and feed them through the existing Mycelium packet validation, routing, and ledger flow.
+
+---
+
 ## Current Build Flow
 
 - Current active layer: Mycelium language layer.
@@ -469,6 +475,8 @@ GET  /
 POST /observePhrase
 POST /proposeMeaning
 POST /voteMeaning
+POST /proposeMeaningCorrection
+POST /voteMeaningCorrection
 POST /applySafetyLabel
 POST /receivePacket
 GET  /listKnowledge

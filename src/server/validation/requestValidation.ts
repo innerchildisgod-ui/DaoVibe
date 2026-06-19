@@ -34,6 +34,23 @@ export function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+export function optionalStringField(
+  body: Record<string, unknown>,
+  fieldName: string
+): string | undefined {
+  const value = body[fieldName];
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    validationError(`${fieldName} is invalid`);
+  }
+
+  return value.trim() ? value.trim() : undefined;
+}
+
 export function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value

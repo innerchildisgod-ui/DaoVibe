@@ -3,6 +3,8 @@ import { estimatePacketSize, PacketSizeEstimate } from "./protocol/packetSize";
 import { SQLiteStore } from "./storage/sqliteStore";
 
 import {
+  MeaningCorrectionProposedPayload,
+  MeaningCorrectionVotePayload,
   MeaningProposalPayload,
   MeaningVotePayload,
   PhraseObservedPayload,
@@ -225,6 +227,36 @@ export class LanguageEngine {
     };
   }
 
+  proposeMeaningCorrection(
+    payload: MeaningCorrectionProposedPayload,
+    parent?: string
+  ): EngineActionResult<MeaningCorrectionProposedPayload> {
+    const packet = createPacket({
+      packet_type: "meaning_correction_proposed",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  voteMeaningCorrection(
+    payload: MeaningCorrectionVotePayload,
+    parent?: string
+  ): EngineActionResult<MeaningCorrectionVotePayload> {
+    const packet = createPacket({
+      packet_type: "meaning_correction_vote",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
   listKnowledge() {
     return this.sqliteStore.listKnowledge();
   }
@@ -398,5 +430,24 @@ export class LanguageEngine {
         `Packet was not accepted: ${route.decision}. ${route.errors.join(", ")}`
       );
     }
+  }
+
+  private storeEventOnlyPacket<TPayload>(
+    packet: LmpPacket<TPayload>
+  ): EngineActionResult<TPayload> {
+    const packetSize = estimatePacketSize(packet);
+    const packetRoute = this.packetRouter.routeIncoming(packet);
+
+    this.assertPacketAccepted(packetRoute);
+    this.sqliteStore.savePacket(packet, packetSize);
+
+    const nodeRoute = this.routePlanner.planRoute(packet, "normal");
+
+    return {
+      packet,
+      packetSize,
+      packetRoute,
+      nodeRoute,
+    };
   }
 }

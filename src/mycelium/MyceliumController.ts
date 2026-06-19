@@ -1,6 +1,8 @@
 import type { LanguageEngine } from "../engine";
 import type { LmpPacket } from "../protocol/packet";
 import type {
+  MeaningCorrectionProposedPayload,
+  MeaningCorrectionVotePayload,
   MeaningProposalPayload,
   MeaningVotePayload,
   PhraseObservedPayload,
@@ -33,6 +35,17 @@ export class MyceliumController {
 
   applySafetyLabel(payload: SafetyLabelPayload, parent?: string) {
     return this.engine.applySafetyLabel(payload, parent);
+  }
+
+  proposeMeaningCorrection(
+    payload: MeaningCorrectionProposedPayload,
+    parent?: string
+  ) {
+    return this.engine.proposeMeaningCorrection(payload, parent);
+  }
+
+  voteMeaningCorrection(payload: MeaningCorrectionVotePayload, parent?: string) {
+    return this.engine.voteMeaningCorrection(payload, parent);
   }
 
   listKnowledge() {

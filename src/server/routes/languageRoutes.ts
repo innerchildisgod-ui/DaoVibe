@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { MyceliumController } from "../../mycelium/MyceliumController";
 import type { LmpPacket } from "../../protocol/packet";
 import {
+  MeaningCorrectionProposedPayload,
+  MeaningCorrectionVotePayload,
   MeaningProposalPayload,
   MeaningVotePayload,
   PhraseObservedPayload,
@@ -12,6 +14,7 @@ import {
   asRequestObject,
   optionalNumber,
   optionalString,
+  optionalStringField,
   payloadOrBody,
   requireAllowedString,
   requireOneString,
@@ -86,6 +89,35 @@ function legacyVotePayload(body: unknown): MeaningVotePayload {
   };
 }
 
+function meaningCorrectionProposedPayload(
+  body: unknown
+): MeaningCorrectionProposedPayload {
+  const payload = payloadOrBody(body);
+
+  return {
+    phrase_id: requireString(payload, "phrase_id"),
+    original_meaning_id: requireString(payload, "original_meaning_id"),
+    correction_id: requireString(payload, "correction_id"),
+    corrected_reference_meaning: requireString(
+      payload,
+      "corrected_reference_meaning"
+    ),
+    correction_context: optionalStringField(payload, "correction_context"),
+    source: optionalStringField(payload, "source"),
+  };
+}
+
+function meaningCorrectionVotePayload(body: unknown): MeaningCorrectionVotePayload {
+  const payload = payloadOrBody(body);
+
+  return {
+    phrase_id: requireString(payload, "phrase_id"),
+    correction_id: requireString(payload, "correction_id"),
+    vote: requireAllowedString(payload, "vote", ["confirm", "reject"]),
+    voter: optionalStringField(payload, "voter"),
+  };
+}
+
 function legacySafetyLabelPayload(body: unknown): SafetyLabelPayload {
   const payload = payloadOrBody(body);
   const safetyLabel = requireOneString(
@@ -103,6 +135,10 @@ function legacySafetyLabelPayload(body: unknown): SafetyLabelPayload {
     label: safetyLabel,
     reason: optionalString(payload.reason),
   };
+}
+
+function parentFromBody(body: unknown): string | undefined {
+  return optionalString(asRequestObject(body).parent);
 }
 
 export function registerLanguageRoutes(
@@ -510,7 +546,7 @@ export function registerLanguageRoutes(
   app.post("/voteMeaning", (req, res) => {
     try {
       const payload = legacyVotePayload(req.body);
-      const parent = req.body.parent as string | undefined;
+      const parent = parentFromBody(req.body);
 
       const result = myceliumController.voteMeaning(payload, parent);
 
@@ -526,10 +562,75 @@ export function registerLanguageRoutes(
     }
   });
 
+  app.post("/proposeMeaningCorrection", (req, res) => {
+    try {
+      const payload = meaningCorrectionProposedPayload(req.body);
+      const parent = parentFromBody(req.body);
+      const result = myceliumController.proposeMeaningCorrection(
+        payload,
+        parent
+      );
+
+      res.json({
+        ok: true,
+        accepted: true,
+        result: {
+          phrase_id: payload.phrase_id,
+          original_meaning_id: payload.original_meaning_id,
+          correction_id: payload.correction_id,
+          packet_id: result.packet.packet_id,
+          packet_type: result.packet.packet_type,
+          created_at: result.packet.created_at,
+          local_apply_status: "stored_event_only",
+          packet_size_class: result.packetSize.sizeClass,
+          route_decision: result.packetRoute.decision,
+        },
+      });
+    } catch (error) {
+      res.status(400).json({
+        ok: false,
+        accepted: false,
+        rejected: true,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/voteMeaningCorrection", (req, res) => {
+    try {
+      const payload = meaningCorrectionVotePayload(req.body);
+      const parent = parentFromBody(req.body);
+      const result = myceliumController.voteMeaningCorrection(payload, parent);
+
+      res.json({
+        ok: true,
+        accepted: true,
+        result: {
+          phrase_id: payload.phrase_id,
+          correction_id: payload.correction_id,
+          vote: payload.vote,
+          packet_id: result.packet.packet_id,
+          packet_type: result.packet.packet_type,
+          created_at: result.packet.created_at,
+          local_apply_status: "stored_event_only",
+          packet_size_class: result.packetSize.sizeClass,
+          route_decision: result.packetRoute.decision,
+        },
+      });
+    } catch (error) {
+      res.status(400).json({
+        ok: false,
+        accepted: false,
+        rejected: true,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.post("/applySafetyLabel", (req, res) => {
     try {
       const payload = legacySafetyLabelPayload(req.body);
-      const parent = req.body.parent as string | undefined;
+      const parent = parentFromBody(req.body);
 
       const result = myceliumController.applySafetyLabel(payload, parent);
 
