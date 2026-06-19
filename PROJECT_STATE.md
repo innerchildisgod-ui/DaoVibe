@@ -129,6 +129,37 @@ All higher DAOVibe layers depend on meaning lookup. Service requests, marketplac
 
 ---
 
+## Mycelium Language Source Policy
+
+Mycelium must not depend on paid or proprietary language databases as its core source of truth.
+
+High-resource language systems such as Google-style translation databases, Duolingo-style language databases, large commercial dictionaries, or paid language tools may be treated only as optional references when access is free, permitted, public, or user-provided.
+
+The core value of Mycelium is learning what existing systems do not cover well:
+
+- local slang
+- dialects
+- low-resource languages
+- mixed-language speech
+- transliteration
+- spoken community usage
+- phrase context
+- meaning corrections
+- local cultural meaning
+- new or undocumented expressions
+
+Community-observed language packets are core Mycelium truth. External language systems are optional teachers or references only.
+
+The current node server may be TypeScript, but Mycelium language knowledge must not be limited to TypeScript-only formats. Future ingestion may support permitted JSON, CSV, TXT, SQLite, local files, public datasets, community packets, and native-processing outputs.
+
+---
+
+## Current Milestone: Language Source Boundary
+
+Mycelium now has a source-policy boundary that prevents paid/proprietary language databases from becoming core dependencies. This protects independence and keeps the project focused on missing local language knowledge.
+
+---
+
 ## Language Route Validation
 
 Language routes now validate required request fields and return clear errors instead of crashing on malformed input.
@@ -261,6 +292,9 @@ repo-root
 |  |  +- LanguageConfidence.ts
 |  |  +- MyceliumController.ts
 |  |  +- PhraseLookup.ts
+|  |  +- sources
+|  |  |  +- LanguageSourcePolicy.ts
+|  |  |  +- LanguageSourceRegistry.ts
 |  +- storage
 |  |  +- sqliteStore.ts
 |  +- sync
