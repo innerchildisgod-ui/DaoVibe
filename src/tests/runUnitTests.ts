@@ -4,14 +4,17 @@ import type { LmpPacket } from "../protocol/packet";
 import { clampPhraseSearchLimit } from "../mycelium/PhraseLookup";
 import {
   clampCorrectionHistoryLimit,
+  type CorrectionSummary,
   selectCorrectionCleanupCandidates,
   summarizeCorrectionPacketsForPhrase,
 } from "../mycelium/CorrectionLookup";
 import {
   compareTombstoneSummaries,
+  type CorrectionTombstoneSummary,
   summarizeTombstonePacketsForPhrase,
 } from "../mycelium/TombstoneLookup";
 import { compareRankedCorrections } from "../mycelium/CorrectionConflict";
+import { buildTombstoneExecutionPreview } from "../mycelium/TombstoneExecutionPreview";
 import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
@@ -143,6 +146,46 @@ function tombstonePacketsWithVotes(args: {
   }
 
   return packets;
+}
+
+function previewCorrection(
+  correctionId: string,
+  overrides: Partial<CorrectionSummary> = {}
+): CorrectionSummary {
+  return {
+    phrase_id: "unit_phrase_tombstone_execution_preview",
+    original_meaning_id: `${correctionId}_original`,
+    correction_id: correctionId,
+    corrected_reference_meaning: `${correctionId} corrected meaning`,
+    confirm_votes: 1,
+    reject_votes: 0,
+    correction_score: 1,
+    status: "maturing",
+    conflict_group_id: `group_${correctionId}`,
+    conflict_rank: 1,
+    is_conflicting: false,
+    ...overrides,
+  };
+}
+
+function previewTombstone(
+  correctionId: string,
+  tombstoneId: string,
+  overrides: Partial<CorrectionTombstoneSummary> = {}
+): CorrectionTombstoneSummary {
+  return {
+    phrase_id: "unit_phrase_tombstone_execution_preview",
+    correction_id: correctionId,
+    tombstone_id: tombstoneId,
+    reason: "negative_score",
+    proposal_packet_id: `${tombstoneId}_proposal_packet`,
+    proposed_at: 1_000,
+    confirm_votes: 0,
+    reject_votes: 0,
+    tombstone_score: 0,
+    status: "pending",
+    ...overrides,
+  };
 }
 
 test("clampPhraseSearchLimit uses defaults and bounds", () => {
@@ -458,6 +501,117 @@ test("tombstone sorting still applies lower-reject tie-break", () => {
   };
 
   assert(compareTombstoneSummaries(lowerRejects, higherRejects) < 0);
+});
+
+test("tombstone execution preview leaves corrections active without tombstones", () => {
+  const phraseId = "unit_phrase_tombstone_execution_preview";
+  const preview = buildTombstoneExecutionPreview(
+    phraseId,
+    [previewCorrection("active_without_tombstone")],
+    []
+  );
+
+  assert.strictEqual(preview.execution_enabled, false);
+  assert.strictEqual(preview.suppressed_count, 0);
+  assert.strictEqual(preview.active_count, 1);
+  assert.deepStrictEqual(preview.suppressed_corrections, []);
+  assert.strictEqual(
+    preview.active_corrections[0].correction_id,
+    "active_without_tombstone"
+  );
+});
+
+test("tombstone execution preview only suppresses confirmed tombstones", () => {
+  const phraseId = "unit_phrase_tombstone_execution_preview";
+  const corrections = [
+    previewCorrection("pending_tombstone"),
+    previewCorrection("maturing_tombstone"),
+    previewCorrection("confirmed_tombstone"),
+    previewCorrection("rejected_tombstone"),
+    previewCorrection("contested_tombstone"),
+  ];
+  const tombstones = [
+    previewTombstone("pending_tombstone", "pending", {
+      status: "pending",
+      tombstone_score: 0,
+    }),
+    previewTombstone("maturing_tombstone", "maturing", {
+      status: "maturing",
+      confirm_votes: 1,
+      tombstone_score: 1,
+    }),
+    previewTombstone("confirmed_tombstone", "confirmed", {
+      status: "confirmed",
+      confirm_votes: 3,
+      tombstone_score: 3,
+    }),
+    previewTombstone("rejected_tombstone", "rejected", {
+      status: "rejected",
+      reject_votes: 3,
+      tombstone_score: -3,
+    }),
+    previewTombstone("contested_tombstone", "contested", {
+      status: "contested",
+      confirm_votes: 1,
+      reject_votes: 1,
+      tombstone_score: 0,
+    }),
+  ];
+
+  const preview = buildTombstoneExecutionPreview(
+    phraseId,
+    corrections,
+    tombstones
+  );
+
+  assert.strictEqual(preview.execution_enabled, false);
+  assert.strictEqual(preview.suppressed_count, 1);
+  assert.strictEqual(preview.active_count, 4);
+  assert.strictEqual(
+    preview.suppressed_corrections[0].correction_id,
+    "confirmed_tombstone"
+  );
+  assert.strictEqual(
+    preview.suppressed_corrections[0].tombstone_status,
+    "confirmed"
+  );
+  assert.deepStrictEqual(
+    preview.active_corrections.map((correction) => correction.correction_id),
+    [
+      "pending_tombstone",
+      "maturing_tombstone",
+      "rejected_tombstone",
+      "contested_tombstone",
+    ]
+  );
+});
+
+test("tombstone execution preview suppresses correction with any confirmed tombstone", () => {
+  const phraseId = "unit_phrase_tombstone_execution_preview";
+  const preview = buildTombstoneExecutionPreview(
+    phraseId,
+    [previewCorrection("multiple_tombstones")],
+    [
+      previewTombstone("multiple_tombstones", "rejected_first", {
+        status: "rejected",
+        reject_votes: 3,
+        tombstone_score: -3,
+      }),
+      previewTombstone("multiple_tombstones", "confirmed_second", {
+        status: "confirmed",
+        confirm_votes: 3,
+        tombstone_score: 3,
+      }),
+    ]
+  );
+
+  assert.strictEqual(preview.execution_enabled, false);
+  assert.strictEqual(preview.suppressed_count, 1);
+  assert.strictEqual(preview.active_count, 0);
+  assert.strictEqual(
+    preview.suppressed_corrections[0].tombstone_id,
+    "confirmed_second"
+  );
 });
 
 test("correction voter duplicate protection counts first identified voter vote only", () => {

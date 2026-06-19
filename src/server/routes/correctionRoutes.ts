@@ -276,6 +276,17 @@ export function registerCorrectionRoutes(
     });
   });
 
+  app.get("/phrases/:phraseId/tombstoneExecutionPreview", (req, res) => {
+    const result = myceliumController.getTombstoneExecutionPreviewForPhrase(
+      req.params.phraseId
+    );
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  });
+
   app.post("/proposeMeaningCorrection", (req, res) => {
     if (isCorrectionGovernanceRateLimited(req, res)) {
       return;
