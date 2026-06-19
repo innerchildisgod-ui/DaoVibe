@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, unlinkSync } from "fs";
 import path from "path";
 import { LanguageEngine } from "../engine";
+import { MyceliumController } from "../mycelium/MyceliumController";
 import { createPacket } from "../protocol/packet";
-import { PhraseObservedPayload } from "../protocol/packetTypes";
+import type { PacketType, PhraseObservedPayload } from "../protocol/packetTypes";
 import { SafetyLabel } from "../safety/safetyLabels";
+import type { SyncResultSummary } from "../sync/SyncResultSummary";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const NODE_A_DB = path.join(DATA_DIR, "two_node_sync_node_a.db");
@@ -14,6 +16,13 @@ const NODE_A_AUTHOR = "dev_public_key_two_node_a";
 const NODE_B_AUTHOR = "dev_public_key_two_node_b";
 
 const NON_NORMAL_SAFETY_LABEL: SafetyLabel | undefined = "mild_slang";
+const SYNC_SUMMARY_FIELDS: (keyof SyncResultSummary)[] = [
+  "accepted_new",
+  "already_stored",
+  "rejected_invalid",
+  "rejected_expired",
+  "failed_apply",
+];
 
 function clearSqliteDatabase(dbPath: string): void {
   for (const filePath of [dbPath, `${dbPath}-shm`, `${dbPath}-wal`]) {
@@ -39,6 +48,49 @@ function findPhrase(engine: LanguageEngine, phraseId: string) {
   return engine
     .listKnowledge()
     .find((phrase) => phrase.phrase_id === phraseId);
+}
+
+function assertSyncSummaryFields(summary: SyncResultSummary): void {
+  for (const field of SYNC_SUMMARY_FIELDS) {
+    assertSimulation(
+      typeof summary[field] === "number",
+      `Expected sync summary field ${field} to be present as a number`
+    );
+  }
+}
+
+function assertStoredPacketTypes(
+  engine: LanguageEngine,
+  expectedPackets: Array<{ packetId: string; packetType: PacketType }>
+): void {
+  const storedPackets = engine.getPacketsByIds(
+    expectedPackets.map((packet) => packet.packetId)
+  );
+  const storedById = new Map(
+    storedPackets.map((packet) => [packet.packet_id, packet])
+  );
+
+  for (const expectedPacket of expectedPackets) {
+    const storedPacket = storedById.get(expectedPacket.packetId);
+
+    assertSimulation(
+      storedPacket?.packet_type === expectedPacket.packetType,
+      `Expected node B to store ${expectedPacket.packetType} packet ${expectedPacket.packetId}`
+    );
+  }
+}
+
+function assertPacketResultStatus(
+  results: Array<{ packet_id: string; status: string }>,
+  packetId: string,
+  expectedStatus: string
+): void {
+  const result = results.find((candidate) => candidate.packet_id === packetId);
+
+  assertSimulation(
+    result?.status === expectedStatus,
+    `Expected packet ${packetId} to have sync status ${expectedStatus}, got ${result?.status}`
+  );
 }
 
 function createEngine(author: string, dbPath: string): LanguageEngine {
@@ -208,6 +260,148 @@ async function runSimulation(): Promise<void> {
 
     console.log(`safety label survival passed: ${NON_NORMAL_SAFETY_LABEL}`);
   }
+
+  await delay(1100);
+
+  const correctionOriginalMeaningId = "two_node_sync_original_meaning_001";
+  const correctionId = "two_node_sync_correction_001";
+  const correctionMeaningResult = nodeA.proposeMeaning(
+    {
+      phrase_id: phrasePayload.phrase_id,
+      meaning_id: correctionOriginalMeaningId,
+      reference_meaning: "A rough meaning before correction.",
+      context: "two-node correction sync baseline",
+      confidence: 0.25,
+    },
+    phraseResult.packet.packet_id
+  );
+  const correctionProposalResult = nodeA.proposeMeaningCorrection(
+    {
+      phrase_id: phrasePayload.phrase_id,
+      original_meaning_id: correctionOriginalMeaningId,
+      correction_id: correctionId,
+      corrected_reference_meaning:
+        "A corrected meaning synced through correction packets.",
+      correction_context: "two-node correction sync verification",
+      source: "two-node-sync-simulation",
+    },
+    correctionMeaningResult.packet.packet_id
+  );
+  const correctionVoteResult = nodeA.voteMeaningCorrection(
+    {
+      phrase_id: phrasePayload.phrase_id,
+      correction_id: correctionId,
+      vote: "confirm",
+      voter: NODE_A_AUTHOR,
+    },
+    correctionProposalResult.packet.packet_id
+  );
+
+  const correctionCursorBefore = nodeB.getPeerSyncCursor(NODE_A_AUTHOR).cursor;
+  const correctionBatch = nodeA.pullSyncBatch(correctionCursorBefore);
+  const correctionImport = nodeB.importSyncBatch({
+    peerAuthor: NODE_A_AUTHOR,
+    cursorBefore: correctionBatch.cursor_before,
+    cursorAfter: correctionBatch.cursor_after,
+    packets: correctionBatch.packets,
+  });
+
+  assertSyncSummaryFields(correctionImport.summary);
+  assertSimulation(
+    correctionBatch.packet_count === 3,
+    `Expected correction sync batch to contain 3 packets, got ${correctionBatch.packet_count}`
+  );
+  assertSimulation(
+    correctionImport.summary.accepted_new === 3,
+    `Expected node B to accept 3 correction-flow packets, got ${correctionImport.summary.accepted_new}`
+  );
+  assertSimulation(
+    correctionImport.summary.already_stored === 0 &&
+      correctionImport.summary.rejected_invalid === 0 &&
+      correctionImport.summary.rejected_expired === 0 &&
+      correctionImport.summary.failed_apply === 0,
+    `Expected correction sync to have no duplicate or failed packets, got ${JSON.stringify(correctionImport.summary)}`
+  );
+  assertStoredPacketTypes(nodeB, [
+    {
+      packetId: correctionProposalResult.packet.packet_id,
+      packetType: "meaning_correction_proposed",
+    },
+    {
+      packetId: correctionVoteResult.packet.packet_id,
+      packetType: "meaning_correction_vote",
+    },
+  ]);
+  assertPacketResultStatus(
+    correctionImport.results,
+    correctionProposalResult.packet.packet_id,
+    "accepted_new"
+  );
+  assertPacketResultStatus(
+    correctionImport.results,
+    correctionVoteResult.packet.packet_id,
+    "accepted_new"
+  );
+
+  const duplicateCorrectionCursor = nodeB.getPeerSyncCursor(
+    NODE_A_AUTHOR
+  ).cursor;
+  const duplicateCorrectionImport = nodeB.importSyncBatch({
+    peerAuthor: NODE_A_AUTHOR,
+    cursorBefore: duplicateCorrectionCursor,
+    cursorAfter: duplicateCorrectionCursor,
+    packets: [
+      correctionProposalResult.packet,
+      correctionVoteResult.packet,
+    ],
+  });
+
+  assertSyncSummaryFields(duplicateCorrectionImport.summary);
+  assertSimulation(
+    duplicateCorrectionImport.summary.accepted_new === 0,
+    `Expected duplicate correction sync to accept 0 new packets, got ${duplicateCorrectionImport.summary.accepted_new}`
+  );
+  assertSimulation(
+    duplicateCorrectionImport.summary.already_stored === 2,
+    `Expected duplicate correction sync to report 2 already stored packets, got ${duplicateCorrectionImport.summary.already_stored}`
+  );
+  assertSimulation(
+    duplicateCorrectionImport.summary.rejected_invalid === 0 &&
+      duplicateCorrectionImport.summary.rejected_expired === 0 &&
+      duplicateCorrectionImport.summary.failed_apply === 0,
+    `Expected duplicate correction sync to have no rejected or failed packets, got ${JSON.stringify(duplicateCorrectionImport.summary)}`
+  );
+  assertPacketResultStatus(
+    duplicateCorrectionImport.results,
+    correctionProposalResult.packet.packet_id,
+    "already_stored"
+  );
+  assertPacketResultStatus(
+    duplicateCorrectionImport.results,
+    correctionVoteResult.packet.packet_id,
+    "already_stored"
+  );
+
+  const nodeBBestMeaning = new MyceliumController(nodeB).getBestMeaning(
+    phrasePayload.phrase_id
+  );
+
+  assertSimulation(
+    nodeBBestMeaning.best_meaning?.source === "correction",
+    `Expected node B best meaning to use synced correction, got ${nodeBBestMeaning.best_meaning?.source ?? "base meaning"}`
+  );
+  assertSimulation(
+    nodeBBestMeaning.best_meaning?.correction_id === correctionId,
+    `Expected node B best meaning correction ${correctionId}, got ${nodeBBestMeaning.best_meaning?.correction_id}`
+  );
+  assertSimulation(
+    nodeBBestMeaning.best_meaning?.correction_score === 1,
+    `Expected node B synced correction score to be 1, got ${nodeBBestMeaning.best_meaning?.correction_score}`
+  );
+
+  console.log("correction packet sync passed");
+  console.log("correction duplicate protection passed");
+  console.log("synced correction best meaning passed");
 
   const corruptCursorBefore = nodeB.getPeerSyncCursor(NODE_A_AUTHOR).cursor;
   const corruptPhrasePayload: PhraseObservedPayload = {
