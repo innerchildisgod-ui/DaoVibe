@@ -7,7 +7,7 @@ import {
   selectCorrectionCleanupCandidates,
   summarizeCorrectionPacketsForPhrase,
 } from "../mycelium/CorrectionLookup";
-import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRoutes";
+import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
 

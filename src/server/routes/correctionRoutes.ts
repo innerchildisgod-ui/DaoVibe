@@ -8,6 +8,10 @@ import {
 } from "../../protocol/packetTypes";
 import { CORRECTION_PACKET_FIELD_LIMITS } from "../../protocol/validatePacket";
 import {
+  CORRECTION_GOVERNANCE_RATE_LIMIT_ERROR,
+  createCorrectionGovernanceRateLimiter,
+} from "./correctionRateLimiter";
+import {
   asRequestObject,
   optionalString,
   payloadOrBody,
@@ -28,54 +32,6 @@ const CORRECTION_TOMBSTONE_REASONS = [
   "malformed",
   "other",
 ] as const;
-const CORRECTION_GOVERNANCE_RATE_LIMIT = 30;
-const CORRECTION_GOVERNANCE_RATE_LIMIT_WINDOW_MS = 60_000;
-const CORRECTION_GOVERNANCE_RATE_LIMIT_ERROR =
-  "Too many correction requests. Try again later.";
-
-interface CorrectionGovernanceRateLimiterOptions {
-  limit?: number;
-  windowMs?: number;
-  now?: () => number;
-}
-
-interface CorrectionGovernanceRateLimitBucket {
-  windowStartedAt: number;
-  count: number;
-}
-
-export function createCorrectionGovernanceRateLimiter(
-  options: CorrectionGovernanceRateLimiterOptions = {}
-) {
-  const limit = options.limit ?? CORRECTION_GOVERNANCE_RATE_LIMIT;
-  const windowMs =
-    options.windowMs ?? CORRECTION_GOVERNANCE_RATE_LIMIT_WINDOW_MS;
-  const now = options.now ?? Date.now;
-  const buckets = new Map<string, CorrectionGovernanceRateLimitBucket>();
-
-  return {
-    allow(ip?: string): boolean {
-      const key = ip || "unknown";
-      const currentTime = now();
-      const bucket = buckets.get(key);
-
-      if (!bucket || currentTime - bucket.windowStartedAt >= windowMs) {
-        buckets.set(key, {
-          windowStartedAt: currentTime,
-          count: 1,
-        });
-        return true;
-      }
-
-      if (bucket.count >= limit) {
-        return false;
-      }
-
-      bucket.count += 1;
-      return true;
-    },
-  };
-}
 
 function requireLimitedString(
   body: Record<string, unknown>,
