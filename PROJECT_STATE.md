@@ -129,6 +129,12 @@ All higher DAOVibe layers depend on meaning lookup. Service requests, marketplac
 
 ---
 
+## Language Route Validation
+
+Language routes now validate required request fields and return clear errors instead of crashing on malformed input.
+
+---
+
 ## Current Build Flow
 
 - Current active layer: Mycelium language layer.

@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { MyceliumController } from "../../mycelium/MyceliumController";
+import type { LmpPacket } from "../../protocol/packet";
 import {
   MeaningProposalPayload,
   MeaningVotePayload,
@@ -7,6 +8,16 @@ import {
   SafetyLabelPayload,
 } from "../../protocol/packetTypes";
 import { SafetyLabel } from "../../safety/safetyLabels";
+import {
+  asRequestObject,
+  optionalNumber,
+  optionalString,
+  payloadOrBody,
+  requireAllowedString,
+  requireOneString,
+  requireString,
+  validationError,
+} from "../validation/requestValidation";
 
 const VALID_SAFETY_LABELS: readonly SafetyLabel[] = [
   "normal",
@@ -29,39 +40,18 @@ function isValidSafetyLabel(value: unknown): value is SafetyLabel {
   );
 }
 
-function asObject(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function routePayload(body: unknown): Record<string, unknown> {
-  const objectBody = asObject(body);
-  const nestedPayload = asObject(objectBody.payload);
-
-  return Object.keys(nestedPayload).length > 0 ? nestedPayload : objectBody;
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function optionalNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
 function legacyPhrasePayload(body: unknown): PhraseObservedPayload {
-  const payload = routePayload(body);
+  const payload = payloadOrBody(body);
 
   return {
-    phrase_id: optionalString(payload.phrase_id) ?? "",
-    surface_text:
-      optionalString(payload.surface_text) ?? optionalString(payload.text),
+    phrase_id: requireString(payload, "phrase_id"),
+    surface_text: requireOneString(payload, ["text", "surface_text"], "text"),
     phonetic_hint: optionalString(payload.phonetic_hint),
-    language_hint:
-      optionalString(payload.language_hint) ?? optionalString(payload.language),
+    language_hint: requireOneString(
+      payload,
+      ["language", "language_hint"],
+      "language"
+    ),
     input_type:
       typeof payload.input_type === "string"
         ? (payload.input_type as PhraseObservedPayload["input_type"])
@@ -70,28 +60,48 @@ function legacyPhrasePayload(body: unknown): PhraseObservedPayload {
 }
 
 function legacyMeaningPayload(body: unknown): MeaningProposalPayload {
-  const payload = routePayload(body);
+  const payload = payloadOrBody(body);
 
   return {
-    phrase_id: optionalString(payload.phrase_id) ?? "",
-    meaning_id: optionalString(payload.meaning_id) ?? "",
-    reference_meaning: optionalString(payload.reference_meaning) ?? "",
+    phrase_id: requireString(payload, "phrase_id"),
+    meaning_id: requireString(payload, "meaning_id"),
+    reference_meaning: requireString(payload, "reference_meaning"),
     context: optionalString(payload.context),
     confidence: optionalNumber(payload.confidence) ?? 0.5,
   };
 }
 
 function legacyVotePayload(body: unknown): MeaningVotePayload {
-  const payload = routePayload(body);
+  const payload = payloadOrBody(body);
 
   return {
-    phrase_id: optionalString(payload.phrase_id) ?? "",
-    meaning_id: optionalString(payload.meaning_id) ?? "",
-    vote:
-      typeof payload.vote === "string"
-        ? (payload.vote as MeaningVotePayload["vote"])
-        : "unsure",
+    phrase_id: requireString(payload, "phrase_id"),
+    meaning_id: requireString(payload, "meaning_id"),
+    vote: requireAllowedString(payload, "vote", [
+      "confirm",
+      "reject",
+      "unsure",
+    ]),
     confidence: optionalNumber(payload.confidence) ?? 0.5,
+  };
+}
+
+function legacySafetyLabelPayload(body: unknown): SafetyLabelPayload {
+  const payload = payloadOrBody(body);
+  const safetyLabel = requireOneString(
+    payload,
+    ["safety_label", "label"],
+    "safety_label"
+  );
+
+  if (!isValidSafetyLabel(safetyLabel)) {
+    validationError("safety_label is invalid");
+  }
+
+  return {
+    phrase_id: requireString(payload, "phrase_id"),
+    label: safetyLabel,
+    reason: optionalString(payload.reason),
   };
 }
 
@@ -518,7 +528,7 @@ export function registerLanguageRoutes(
 
   app.post("/applySafetyLabel", (req, res) => {
     try {
-      const payload = req.body.payload as SafetyLabelPayload;
+      const payload = legacySafetyLabelPayload(req.body);
       const parent = req.body.parent as string | undefined;
 
       const result = myceliumController.applySafetyLabel(payload, parent);
@@ -577,7 +587,15 @@ export function registerLanguageRoutes(
 
   app.post("/receivePacket", (req, res) => {
     try {
-      const result = myceliumController.receivePacket(req.body);
+      const packet = asRequestObject(req.body);
+
+      if (Object.keys(packet).length === 0) {
+        validationError("packet is required");
+      }
+
+      const result = myceliumController.receivePacket(
+        packet as unknown as LmpPacket
+      );
 
       res.json({
         ok: true,
