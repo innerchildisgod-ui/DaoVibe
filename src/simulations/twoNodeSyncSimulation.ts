@@ -407,12 +407,8 @@ async function runSimulation(): Promise<void> {
   await delay(1100);
 
   const tombstoneId = "two_node_sync_correction_tombstone_001";
-  const tombstoneProposalPacket = createPacket({
-    packet_type: "meaning_correction_tombstone_proposed",
-    zone: ZONE,
-    author: NODE_A_AUTHOR,
-    parent: correctionVoteResult.packet.packet_id,
-    payload: {
+  const tombstoneProposalResult = nodeA.proposeMeaningCorrectionTombstone(
+    {
       phrase_id: phrasePayload.phrase_id,
       correction_id: correctionId,
       tombstone_id: tombstoneId,
@@ -420,31 +416,21 @@ async function runSimulation(): Promise<void> {
       details: "two-node tombstone sync verification",
       proposer: NODE_A_AUTHOR,
     },
-  });
-  const tombstoneVotePacket = createPacket({
-    packet_type: "meaning_correction_tombstone_vote",
-    zone: ZONE,
-    author: NODE_A_AUTHOR,
-    parent: tombstoneProposalPacket.packet_id,
-    payload: {
-      phrase_id: phrasePayload.phrase_id,
-      correction_id: correctionId,
-      tombstone_id: tombstoneId,
-      vote: "confirm",
-      voter: NODE_A_AUTHOR,
-    },
-  });
-
-  const tombstoneProposalReceive = nodeA.receivePacket(tombstoneProposalPacket);
-  const tombstoneVoteReceive = nodeA.receivePacket(tombstoneVotePacket);
-
-  assertSimulation(
-    tombstoneProposalReceive.applyStatus === "stored_event_only",
-    `Expected tombstone proposal to be stored event only, got ${tombstoneProposalReceive.applyStatus}`
+    correctionVoteResult.packet.packet_id
   );
-  assertSimulation(
-    tombstoneVoteReceive.applyStatus === "stored_event_only",
-    `Expected tombstone vote to be stored event only, got ${tombstoneVoteReceive.applyStatus}`
+  const tombstoneVoteResults = [1, 2, 3].map((index) =>
+    nodeA.voteMeaningCorrectionTombstone(
+      {
+        phrase_id: phrasePayload.phrase_id,
+        correction_id: correctionId,
+        tombstone_id: tombstoneId,
+        vote: "confirm",
+        voter: `${NODE_A_AUTHOR}_tombstone_voter_${index}`,
+      },
+      index === 1
+        ? tombstoneProposalResult.packet.packet_id
+        : undefined
+    )
   );
 
   const tombstoneCursorBefore = nodeB.getPeerSyncCursor(NODE_A_AUTHOR).cursor;
@@ -458,12 +444,12 @@ async function runSimulation(): Promise<void> {
 
   assertSyncSummaryFields(tombstoneImport.summary);
   assertSimulation(
-    tombstoneBatch.packet_count === 2,
-    `Expected tombstone sync batch to contain 2 packets, got ${tombstoneBatch.packet_count}`
+    tombstoneBatch.packet_count === 4,
+    `Expected tombstone sync batch to contain 4 packets, got ${tombstoneBatch.packet_count}`
   );
   assertSimulation(
-    tombstoneImport.summary.accepted_new === 2,
-    `Expected node B to accept 2 tombstone packets, got ${tombstoneImport.summary.accepted_new}`
+    tombstoneImport.summary.accepted_new === 4,
+    `Expected node B to accept 4 tombstone packets, got ${tombstoneImport.summary.accepted_new}`
   );
   assertSimulation(
     tombstoneImport.summary.already_stored === 0 &&
@@ -474,23 +460,108 @@ async function runSimulation(): Promise<void> {
   );
   assertStoredPacketTypes(nodeB, [
     {
-      packetId: tombstoneProposalPacket.packet_id,
+      packetId: tombstoneProposalResult.packet.packet_id,
       packetType: "meaning_correction_tombstone_proposed",
     },
-    {
-      packetId: tombstoneVotePacket.packet_id,
-      packetType: "meaning_correction_tombstone_vote",
-    },
+    ...tombstoneVoteResults.map((result) => ({
+      packetId: result.packet.packet_id,
+      packetType: "meaning_correction_tombstone_vote" as const,
+    })),
   ]);
   assertPacketResultStatus(
     tombstoneImport.results,
-    tombstoneProposalPacket.packet_id,
+    tombstoneProposalResult.packet.packet_id,
     "accepted_new"
   );
-  assertPacketResultStatus(
-    tombstoneImport.results,
-    tombstoneVotePacket.packet_id,
-    "accepted_new"
+  for (const tombstoneVoteResult of tombstoneVoteResults) {
+    assertPacketResultStatus(
+      tombstoneImport.results,
+      tombstoneVoteResult.packet.packet_id,
+      "accepted_new"
+    );
+  }
+
+  const nodeBControllerAfterTombstone = new MyceliumController(nodeB);
+  const nodeBTombstones =
+    nodeBControllerAfterTombstone.getCorrectionTombstonesForPhrase(
+      phrasePayload.phrase_id
+    );
+  const nodeBTombstone = nodeBTombstones.tombstones.find(
+    (candidate) => candidate.tombstone_id === tombstoneId
+  );
+
+  assertSimulation(
+    nodeBTombstones.phrase_id === phrasePayload.phrase_id,
+    `Expected node B tombstone lookup phrase ${phrasePayload.phrase_id}, got ${nodeBTombstones.phrase_id}`
+  );
+  assertSimulation(
+    nodeBTombstone !== undefined,
+    `Expected node B tombstone lookup to include tombstone ${tombstoneId}`
+  );
+  assertSimulation(
+    nodeBTombstone?.correction_id === correctionId,
+    `Expected node B tombstone correction ${correctionId}, got ${nodeBTombstone?.correction_id}`
+  );
+  assertSimulation(
+    (nodeBTombstone?.confirm_votes ?? 0) >= 3,
+    `Expected confirmed tombstone to have at least 3 confirms, got ${nodeBTombstone?.confirm_votes}`
+  );
+  assertSimulation(
+    nodeBTombstone?.reject_votes === 0,
+    `Expected confirmed tombstone to have 0 rejects, got ${nodeBTombstone?.reject_votes}`
+  );
+  assertSimulation(
+    (nodeBTombstone?.tombstone_score ?? 0) >= 3,
+    `Expected confirmed tombstone score to be at least 3, got ${nodeBTombstone?.tombstone_score}`
+  );
+  assertSimulation(
+    nodeBTombstone?.status === "confirmed",
+    `Expected node B tombstone status confirmed, got ${nodeBTombstone?.status}`
+  );
+
+  const nodeBPreview =
+    nodeBControllerAfterTombstone.getTombstoneExecutionPreviewForPhrase(
+      phrasePayload.phrase_id
+    );
+  const suppressedCorrection = nodeBPreview.suppressed_corrections.find(
+    (candidate) => candidate.correction_id === correctionId
+  );
+
+  assertSimulation(
+    nodeBPreview.execution_enabled === false,
+    "Expected tombstone execution preview to remain disabled"
+  );
+  assertSimulation(
+    nodeBPreview.suppressed_count === 1,
+    `Expected tombstone execution preview suppressed_count 1, got ${nodeBPreview.suppressed_count}`
+  );
+  assertSimulation(
+    nodeBPreview.active_count === 0,
+    `Expected tombstone execution preview active_count 0, got ${nodeBPreview.active_count}`
+  );
+  assertSimulation(
+    suppressedCorrection?.tombstone_id === tombstoneId,
+    `Expected preview to suppress correction ${correctionId} with tombstone ${tombstoneId}`
+  );
+  assertSimulation(
+    suppressedCorrection?.tombstone_status === "confirmed",
+    `Expected preview tombstone status confirmed, got ${suppressedCorrection?.tombstone_status}`
+  );
+  assertSimulation(
+    (suppressedCorrection?.tombstone_score ?? 0) >= 3,
+    `Expected preview tombstone score at least 3, got ${suppressedCorrection?.tombstone_score}`
+  );
+
+  const nodeBBestMeaningAfterTombstone =
+    nodeBControllerAfterTombstone.getBestMeaning(phrasePayload.phrase_id);
+
+  assertSimulation(
+    nodeBBestMeaningAfterTombstone.best_meaning?.source === "correction",
+    `Expected tombstone preview not to suppress live bestMeaning, got ${nodeBBestMeaningAfterTombstone.best_meaning?.source ?? "base meaning"}`
+  );
+  assertSimulation(
+    nodeBBestMeaningAfterTombstone.best_meaning?.correction_id === correctionId,
+    `Expected live bestMeaning correction ${correctionId} after tombstone preview, got ${nodeBBestMeaningAfterTombstone.best_meaning?.correction_id}`
   );
 
   const duplicateTombstoneCursor = nodeB.getPeerSyncCursor(
@@ -500,7 +571,10 @@ async function runSimulation(): Promise<void> {
     peerAuthor: NODE_A_AUTHOR,
     cursorBefore: duplicateTombstoneCursor,
     cursorAfter: duplicateTombstoneCursor,
-    packets: [tombstoneProposalPacket, tombstoneVotePacket],
+    packets: [
+      tombstoneProposalResult.packet,
+      ...tombstoneVoteResults.map((result) => result.packet),
+    ],
   });
 
   assertSyncSummaryFields(duplicateTombstoneImport.summary);
@@ -509,8 +583,8 @@ async function runSimulation(): Promise<void> {
     `Expected duplicate tombstone sync to accept 0 new packets, got ${duplicateTombstoneImport.summary.accepted_new}`
   );
   assertSimulation(
-    duplicateTombstoneImport.summary.already_stored === 2,
-    `Expected duplicate tombstone sync to report 2 already stored packets, got ${duplicateTombstoneImport.summary.already_stored}`
+    duplicateTombstoneImport.summary.already_stored === 4,
+    `Expected duplicate tombstone sync to report 4 already stored packets, got ${duplicateTombstoneImport.summary.already_stored}`
   );
   assertSimulation(
     duplicateTombstoneImport.summary.rejected_invalid === 0 &&
@@ -520,17 +594,20 @@ async function runSimulation(): Promise<void> {
   );
   assertPacketResultStatus(
     duplicateTombstoneImport.results,
-    tombstoneProposalPacket.packet_id,
+    tombstoneProposalResult.packet.packet_id,
     "already_stored"
   );
-  assertPacketResultStatus(
-    duplicateTombstoneImport.results,
-    tombstoneVotePacket.packet_id,
-    "already_stored"
-  );
+  for (const tombstoneVoteResult of tombstoneVoteResults) {
+    assertPacketResultStatus(
+      duplicateTombstoneImport.results,
+      tombstoneVoteResult.packet.packet_id,
+      "already_stored"
+    );
+  }
 
   console.log("correction tombstone packet sync passed");
   console.log("correction tombstone duplicate protection passed");
+  console.log("correction tombstone inspection preview sync passed");
 
   const corruptCursorBefore = nodeB.getPeerSyncCursor(NODE_A_AUTHOR).cursor;
   const corruptPhrasePayload: PhraseObservedPayload = {
