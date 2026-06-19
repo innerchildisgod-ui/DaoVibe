@@ -7,6 +7,7 @@ import {
   MeaningCorrectionVotePayload,
   MeaningProposalPayload,
   MeaningVotePayload,
+  PacketType,
   PhraseObservedPayload,
   SafetyLabelPayload,
 } from "./protocol/packetTypes";
@@ -283,6 +284,10 @@ export class LanguageEngine {
 
   getPacketsByIds(packetIds: string[]) {
     return this.sqliteStore.getPacketsByIds(packetIds);
+  }
+
+  listPacketsByPhraseAndTypes(phraseId: string, packetTypes: PacketType[]) {
+    return this.sqliteStore.listPacketsByPhraseAndTypes(phraseId, packetTypes);
   }
 
   findMissingPacketIds(packetIds: string[]): string[] {

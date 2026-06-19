@@ -11,6 +11,7 @@ import type {
 import type { SafetyLabel } from "../safety/safetyLabels";
 import {
   findPhraseById,
+  listCorrectionPacketsForPhrase,
   searchPhrases,
   selectBestMeaning,
 } from "./PhraseLookup";
@@ -89,8 +90,16 @@ export class MyceliumController {
 
   getBestMeaning(phraseId: string) {
     const phraseResult = this.getPhraseById(phraseId);
+    const correctionPackets = listCorrectionPacketsForPhrase(
+      this.engine,
+      phraseResult.phrase_id
+    );
 
-    return selectBestMeaning(phraseResult.phrase, phraseResult.phrase_id);
+    return selectBestMeaning(
+      phraseResult.phrase,
+      phraseResult.phrase_id,
+      correctionPackets
+    );
   }
 
   listNodes() {

@@ -6,6 +6,7 @@ import { PacketSizeEstimate } from "../protocol/packetSize";
 import {
   MeaningProposalPayload,
   MeaningVotePayload,
+  PacketType,
   PhraseObservedPayload,
   SafetyLabelPayload,
 } from "../protocol/packetTypes";
@@ -790,6 +791,31 @@ export class SQLiteStore {
       `
       )
       .all(...packetIds) as PacketRow[];
+
+    return rows.map((row) => JSON.parse(row.packet_json) as LmpPacket);
+  }
+
+  listPacketsByPhraseAndTypes(
+    phraseId: string,
+    packetTypes: PacketType[]
+  ): LmpPacket[] {
+    if (packetTypes.length === 0) {
+      return [];
+    }
+
+    const placeholders = packetTypes.map(() => "?").join(",");
+
+    const rows = this.db
+      .prepare(
+        `
+        SELECT packet_json
+        FROM packets
+        WHERE phrase_id = ?
+          AND packet_type IN (${placeholders})
+        ORDER BY received_at ASC, packet_id ASC
+      `
+      )
+      .all(phraseId, ...packetTypes) as PacketRow[];
 
     return rows.map((row) => JSON.parse(row.packet_json) as LmpPacket);
   }

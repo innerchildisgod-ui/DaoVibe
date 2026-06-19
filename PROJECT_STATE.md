@@ -182,6 +182,12 @@ Mycelium now exposes correction packet APIs for proposing a meaning correction a
 
 ---
 
+## Current Milestone: Correction-Aware Best Meaning
+
+Mycelium best-meaning lookup now considers meaning correction proposal and correction vote packets from the packet ledger. A correction can become the best meaning when its simple correction score beats the current meaning score.
+
+---
+
 ## Current Build Flow
 
 - Current active layer: Mycelium language layer.
