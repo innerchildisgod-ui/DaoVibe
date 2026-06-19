@@ -1,4 +1,7 @@
-import type { CorrectionStatus } from "./CorrectionStatus";
+import {
+  MIN_CORRECTION_MATURITY_SCORE,
+  type CorrectionStatus,
+} from "./CorrectionStatus";
 
 export type CorrectionCleanupReason =
   | "rejected_status"
@@ -54,14 +57,14 @@ function correctionCleanupReasons(
     reasons.push("rejected_status");
   }
 
-  if (correction.correction_score < 0) {
+  if (correction.correction_score <= -MIN_CORRECTION_MATURITY_SCORE) {
     reasons.push("negative_score");
   }
 
   if (
     correction.is_conflicting &&
     correction.conflict_rank > 1 &&
-    correction.correction_score <= 0
+    correction.correction_score <= -MIN_CORRECTION_MATURITY_SCORE
   ) {
     reasons.push("losing_conflict_candidate");
   }

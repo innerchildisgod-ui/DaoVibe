@@ -1,5 +1,6 @@
 import assert from "assert";
 import { createPacket } from "../protocol/packet";
+import type { LmpPacket } from "../protocol/packet";
 import { clampPhraseSearchLimit } from "../mycelium/PhraseLookup";
 import {
   clampCorrectionHistoryLimit,
@@ -11,6 +12,64 @@ import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
+
+function correctionPacketsWithVotes(args: {
+  phraseId: string;
+  correctionId: string;
+  originalMeaningId?: string;
+  confirmVotes?: number;
+  rejectVotes?: number;
+}): LmpPacket[] {
+  const originalMeaningId =
+    args.originalMeaningId ?? `${args.correctionId}_original_meaning`;
+  const packets: LmpPacket[] = [
+    createPacket({
+      packet_type: "meaning_correction_proposed",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: args.phraseId,
+        original_meaning_id: originalMeaningId,
+        correction_id: args.correctionId,
+        corrected_reference_meaning: "Corrected meaning.",
+      },
+    }),
+  ];
+
+  for (let index = 0; index < (args.confirmVotes ?? 0); index += 1) {
+    packets.push(
+      createPacket({
+        packet_type: "meaning_correction_vote",
+        zone: TEST_ZONE,
+        author: TEST_AUTHOR,
+        payload: {
+          phrase_id: args.phraseId,
+          correction_id: args.correctionId,
+          vote: "confirm",
+          voter: `${args.correctionId}_confirm_voter_${index}`,
+        },
+      })
+    );
+  }
+
+  for (let index = 0; index < (args.rejectVotes ?? 0); index += 1) {
+    packets.push(
+      createPacket({
+        packet_type: "meaning_correction_vote",
+        zone: TEST_ZONE,
+        author: TEST_AUTHOR,
+        payload: {
+          phrase_id: args.phraseId,
+          correction_id: args.correctionId,
+          vote: "reject",
+          voter: `${args.correctionId}_reject_voter_${index}`,
+        },
+      })
+    );
+  }
+
+  return packets;
+}
 
 test("clampPhraseSearchLimit uses defaults and bounds", () => {
   assert.strictEqual(clampPhraseSearchLimit(undefined), 25);
@@ -72,7 +131,36 @@ test("correction voter duplicate protection counts first identified voter vote o
   assert.strictEqual(corrections[0].confirm_votes, 1);
   assert.strictEqual(corrections[0].reject_votes, 0);
   assert.strictEqual(corrections[0].correction_score, 1);
-  assert.strictEqual(corrections[0].status, "confirmed");
+  assert.strictEqual(corrections[0].status, "maturing");
+});
+
+test("correction status requires maturity threshold", () => {
+  const cases = [
+    { confirmVotes: 1, rejectVotes: 0, status: "maturing" },
+    { confirmVotes: 2, rejectVotes: 0, status: "maturing" },
+    { confirmVotes: 3, rejectVotes: 0, status: "confirmed" },
+    { confirmVotes: 0, rejectVotes: 1, status: "maturing" },
+    { confirmVotes: 0, rejectVotes: 2, status: "maturing" },
+    { confirmVotes: 0, rejectVotes: 3, status: "rejected" },
+    { confirmVotes: 1, rejectVotes: 1, status: "contested" },
+  ];
+
+  for (const testCase of cases) {
+    const phraseId = `unit_phrase_status_${testCase.confirmVotes}_${testCase.rejectVotes}`;
+    const correctionId = `unit_correction_status_${testCase.confirmVotes}_${testCase.rejectVotes}`;
+    const corrections = summarizeCorrectionPacketsForPhrase(
+      phraseId,
+      correctionPacketsWithVotes({
+        phraseId,
+        correctionId,
+        confirmVotes: testCase.confirmVotes,
+        rejectVotes: testCase.rejectVotes,
+      })
+    );
+
+    assert.strictEqual(corrections.length, 1);
+    assert.strictEqual(corrections[0].status, testCase.status);
+  }
 });
 
 test("correction conflict ranking chooses higher score first", () => {
@@ -150,7 +238,48 @@ test("correction conflict ranking chooses higher score first", () => {
   assert.strictEqual(corrections[1].is_conflicting, true);
 });
 
-test("cleanup candidates include rejected and losing negative conflict corrections", () => {
+test("weak negative correction is not a cleanup candidate", () => {
+  const phraseId = "unit_phrase_weak_negative_cleanup";
+  const correctionId = "unit_correction_weak_negative_cleanup";
+  const corrections = summarizeCorrectionPacketsForPhrase(
+    phraseId,
+    correctionPacketsWithVotes({
+      phraseId,
+      correctionId,
+      rejectVotes: 1,
+    })
+  );
+  const candidates = selectCorrectionCleanupCandidates(corrections);
+
+  assert.strictEqual(corrections.length, 1);
+  assert.strictEqual(corrections[0].status, "maturing");
+  assert.strictEqual(candidates.length, 0);
+});
+
+test("mature rejected correction is a cleanup candidate", () => {
+  const phraseId = "unit_phrase_mature_rejected_cleanup";
+  const correctionId = "unit_correction_mature_rejected_cleanup";
+  const corrections = summarizeCorrectionPacketsForPhrase(
+    phraseId,
+    correctionPacketsWithVotes({
+      phraseId,
+      correctionId,
+      rejectVotes: 3,
+    })
+  );
+  const candidates = selectCorrectionCleanupCandidates(corrections);
+
+  assert.strictEqual(corrections.length, 1);
+  assert.strictEqual(corrections[0].status, "rejected");
+  assert.strictEqual(candidates.length, 1);
+  assert.strictEqual(candidates[0].correction_id, correctionId);
+  assert.deepStrictEqual(candidates[0].cleanup_reasons, [
+    "rejected_status",
+    "negative_score",
+  ]);
+});
+
+test("cleanup candidates include mature losing conflict corrections", () => {
   const phraseId = "unit_phrase_cleanup_candidates";
   const originalMeaningId = "unit_original_meaning_cleanup_candidates";
   const winningCorrectionId = "unit_cleanup_winner";
@@ -199,6 +328,28 @@ test("cleanup candidates include rejected and losing negative conflict correctio
         correction_id: losingCorrectionId,
         vote: "reject",
         voter: "voter_2",
+      },
+    }),
+    createPacket({
+      packet_type: "meaning_correction_vote",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: phraseId,
+        correction_id: losingCorrectionId,
+        vote: "reject",
+        voter: "voter_3",
+      },
+    }),
+    createPacket({
+      packet_type: "meaning_correction_vote",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: phraseId,
+        correction_id: losingCorrectionId,
+        vote: "reject",
+        voter: "voter_4",
       },
     }),
   ];
