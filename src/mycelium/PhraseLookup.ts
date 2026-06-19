@@ -68,6 +68,12 @@ export interface BestMeaningDetails {
   correction_score?: number;
 }
 
+export type CorrectionStatus =
+  | "pending"
+  | "confirmed"
+  | "rejected"
+  | "contested";
+
 export interface CorrectionSummary {
   phrase_id: string;
   original_meaning_id: string;
@@ -78,6 +84,7 @@ export interface CorrectionSummary {
   confirm_votes: number;
   reject_votes: number;
   correction_score: number;
+  status: CorrectionStatus;
 }
 
 export interface PhraseCorrectionsResult {
@@ -395,6 +402,10 @@ function toCorrectionSummary(
     confirm_votes: scores.confirm_votes,
     reject_votes: scores.reject_votes,
     correction_score: scores.confirm_votes - scores.reject_votes,
+    status: determineCorrectionStatus(
+      scores.confirm_votes,
+      scores.reject_votes
+    ),
   };
 
   if (typeof proposal.correction_context === "string") {
@@ -406,6 +417,25 @@ function toCorrectionSummary(
   }
 
   return correction;
+}
+
+function determineCorrectionStatus(
+  confirmVotes: number,
+  rejectVotes: number
+): CorrectionStatus {
+  if (confirmVotes === 0 && rejectVotes === 0) {
+    return "pending";
+  }
+
+  if (confirmVotes > rejectVotes) {
+    return "confirmed";
+  }
+
+  if (rejectVotes > confirmVotes) {
+    return "rejected";
+  }
+
+  return "contested";
 }
 
 function toCorrectionBestMeaning(
