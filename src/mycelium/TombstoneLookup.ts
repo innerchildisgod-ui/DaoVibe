@@ -263,7 +263,7 @@ function toTombstoneSummary(
   return summary;
 }
 
-function compareTombstoneSummaries(
+export function compareTombstoneSummaries(
   left: CorrectionTombstoneSummary,
   right: CorrectionTombstoneSummary
 ): number {
@@ -279,9 +279,9 @@ function compareTombstoneSummaries(
     return left.reject_votes - right.reject_votes;
   }
 
-  if (left.proposed_at !== right.proposed_at) {
-    return left.proposed_at - right.proposed_at;
+  if (left.tombstone_id !== right.tombstone_id) {
+    return left.tombstone_id.localeCompare(right.tombstone_id);
   }
 
-  return left.tombstone_id.localeCompare(right.tombstone_id);
+  return left.proposal_packet_id.localeCompare(right.proposal_packet_id);
 }

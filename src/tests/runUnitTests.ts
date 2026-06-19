@@ -7,7 +7,11 @@ import {
   selectCorrectionCleanupCandidates,
   summarizeCorrectionPacketsForPhrase,
 } from "../mycelium/CorrectionLookup";
-import { summarizeTombstonePacketsForPhrase } from "../mycelium/TombstoneLookup";
+import {
+  compareTombstoneSummaries,
+  summarizeTombstonePacketsForPhrase,
+} from "../mycelium/TombstoneLookup";
+import { compareRankedCorrections } from "../mycelium/CorrectionConflict";
 import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
@@ -21,22 +25,27 @@ function correctionPacketsWithVotes(args: {
   originalMeaningId?: string;
   confirmVotes?: number;
   rejectVotes?: number;
+  proposedAt?: number;
 }): LmpPacket[] {
   const originalMeaningId =
     args.originalMeaningId ?? `${args.correctionId}_original_meaning`;
-  const packets: LmpPacket[] = [
-    createPacket({
-      packet_type: "meaning_correction_proposed",
-      zone: TEST_ZONE,
-      author: TEST_AUTHOR,
-      payload: {
-        phrase_id: args.phraseId,
-        original_meaning_id: originalMeaningId,
-        correction_id: args.correctionId,
-        corrected_reference_meaning: "Corrected meaning.",
-      },
-    }),
-  ];
+  const proposal = createPacket({
+    packet_type: "meaning_correction_proposed",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      phrase_id: args.phraseId,
+      original_meaning_id: originalMeaningId,
+      correction_id: args.correctionId,
+      corrected_reference_meaning: "Corrected meaning.",
+    },
+  });
+
+  if (args.proposedAt !== undefined) {
+    proposal.created_at = args.proposedAt;
+  }
+
+  const packets: LmpPacket[] = [proposal];
 
   for (let index = 0; index < (args.confirmVotes ?? 0); index += 1) {
     packets.push(
@@ -294,11 +303,161 @@ test("correction tombstone summaries sort deterministically", () => {
     [
       "sort_high_score",
       "sort_more_confirms",
-      "sort_early",
       "sort_alpha",
       "sort_beta",
+      "sort_early",
     ]
   );
+});
+
+test("correction ranking ignores fake proposal timestamps in tied governance", () => {
+  const phraseId = "unit_phrase_correction_timestamp_tie";
+  const originalMeaningId = "unit_meaning_correction_timestamp_tie";
+  const packets = [
+    ...correctionPacketsWithVotes({
+      phraseId,
+      originalMeaningId,
+      correctionId: "z_older_fake_timestamp",
+      proposedAt: 1,
+    }),
+    ...correctionPacketsWithVotes({
+      phraseId,
+      originalMeaningId,
+      correctionId: "a_newer_fake_timestamp",
+      proposedAt: 9_999,
+    }),
+  ];
+
+  const firstRun = summarizeCorrectionPacketsForPhrase(phraseId, packets);
+  const secondRun = summarizeCorrectionPacketsForPhrase(phraseId, packets);
+
+  assert.strictEqual(firstRun[0].correction_id, "a_newer_fake_timestamp");
+  assert.deepStrictEqual(
+    secondRun.map((correction) => correction.correction_id),
+    firstRun.map((correction) => correction.correction_id)
+  );
+});
+
+test("correction ranking still prefers higher confirms when scores tie", () => {
+  const phraseId = "unit_phrase_correction_higher_confirms";
+  const originalMeaningId = "unit_meaning_correction_higher_confirms";
+  const packets = [
+    ...correctionPacketsWithVotes({
+      phraseId,
+      originalMeaningId,
+      correctionId: "one_confirm_zero_reject",
+      confirmVotes: 1,
+    }),
+    ...correctionPacketsWithVotes({
+      phraseId,
+      originalMeaningId,
+      correctionId: "two_confirms_one_reject",
+      confirmVotes: 2,
+      rejectVotes: 1,
+    }),
+  ];
+
+  const corrections = summarizeCorrectionPacketsForPhrase(phraseId, packets);
+
+  assert.strictEqual(corrections[0].correction_id, "two_confirms_one_reject");
+});
+
+test("correction ranking still applies lower-reject tie-break", () => {
+  const lowerRejects = {
+    correction_id: "lower_rejects",
+    confirm_votes: 2,
+    reject_votes: 1,
+    correction_score: 1,
+    conflict_group_id: "group",
+    conflict_rank: 1,
+    is_conflicting: true,
+  };
+  const higherRejects = {
+    ...lowerRejects,
+    correction_id: "higher_rejects",
+    reject_votes: 2,
+  };
+
+  assert(compareRankedCorrections(lowerRejects, higherRejects) < 0);
+});
+
+test("tombstone sorting ignores fake proposal timestamps in tied governance", () => {
+  const phraseId = "unit_phrase_tombstone_timestamp_tie";
+  const correctionId = "unit_correction_tombstone_timestamp_tie";
+  const packets = [
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "z_older_fake_timestamp",
+      proposedAt: 1,
+    }),
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "a_newer_fake_timestamp",
+      proposedAt: 9_999,
+    }),
+  ];
+
+  const summaries = summarizeTombstonePacketsForPhrase(phraseId, packets);
+
+  assert.strictEqual(summaries[0].tombstone_id, "a_newer_fake_timestamp");
+});
+
+test("tombstone sorting still applies score and vote-count tie-breaks", () => {
+  const phraseId = "unit_phrase_tombstone_score_tie_breaks";
+  const correctionId = "unit_correction_tombstone_score_tie_breaks";
+  const packets = [
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "score_one_one_confirm",
+      confirmVotes: 1,
+    }),
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "score_one_more_confirms",
+      confirmVotes: 2,
+      rejectVotes: 1,
+    }),
+    ...tombstonePacketsWithVotes({
+      phraseId,
+      correctionId,
+      tombstoneId: "score_three",
+      confirmVotes: 3,
+    }),
+  ];
+
+  const summaries = summarizeTombstonePacketsForPhrase(phraseId, packets);
+
+  assert.deepStrictEqual(
+    summaries.map((summary) => summary.tombstone_id),
+    ["score_three", "score_one_more_confirms", "score_one_one_confirm"]
+  );
+});
+
+test("tombstone sorting still applies lower-reject tie-break", () => {
+  const lowerRejects = {
+    phrase_id: "phrase",
+    correction_id: "correction",
+    tombstone_id: "lower_rejects",
+    reason: "negative_score" as const,
+    proposal_packet_id: "packet_a",
+    proposed_at: 2,
+    confirm_votes: 2,
+    reject_votes: 1,
+    tombstone_score: 1,
+    status: "maturing" as const,
+  };
+  const higherRejects = {
+    ...lowerRejects,
+    tombstone_id: "higher_rejects",
+    proposal_packet_id: "packet_b",
+    reject_votes: 2,
+  };
+
+  assert(compareTombstoneSummaries(lowerRejects, higherRejects) < 0);
 });
 
 test("correction voter duplicate protection counts first identified voter vote only", () => {

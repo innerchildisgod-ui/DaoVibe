@@ -6,12 +6,12 @@ export interface RankedCorrectionFields {
   conflict_group_id: string;
   conflict_rank: number;
   is_conflicting: boolean;
-  proposal_created_at?: number;
+  proposal_packet_id?: string;
 }
 
 export type PublicRankedCorrection<T extends RankedCorrectionFields> = Omit<
   T,
-  "proposal_created_at"
+  "proposal_packet_id"
 >;
 
 export function correctionConflictGroupId(
@@ -65,35 +65,36 @@ export function compareRankedCorrections(
     return left.reject_votes - right.reject_votes;
   }
 
-  if (
-    left.proposal_created_at !== undefined &&
-    right.proposal_created_at !== undefined &&
-    left.proposal_created_at !== right.proposal_created_at
-  ) {
-    return left.proposal_created_at - right.proposal_created_at;
+  if (left.correction_id !== right.correction_id) {
+    return left.correction_id.localeCompare(right.correction_id);
   }
 
-  if (
-    left.proposal_created_at !== undefined &&
-    right.proposal_created_at === undefined
-  ) {
-    return -1;
-  }
-
-  if (
-    left.proposal_created_at === undefined &&
-    right.proposal_created_at !== undefined
-  ) {
-    return 1;
-  }
-
-  return left.correction_id.localeCompare(right.correction_id);
+  return compareOptionalStrings(left.proposal_packet_id, right.proposal_packet_id);
 }
 
 function toPublicRankedCorrection<T extends RankedCorrectionFields>(
   correction: T
 ): PublicRankedCorrection<T> {
-  const { proposal_created_at, ...publicCorrection } = correction;
+  const { proposal_packet_id, ...publicCorrection } = correction;
 
   return publicCorrection;
+}
+
+function compareOptionalStrings(
+  left: string | undefined,
+  right: string | undefined
+): number {
+  if (left === undefined && right === undefined) {
+    return 0;
+  }
+
+  if (left === undefined) {
+    return 1;
+  }
+
+  if (right === undefined) {
+    return -1;
+  }
+
+  return left.localeCompare(right);
 }

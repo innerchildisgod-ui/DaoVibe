@@ -78,11 +78,11 @@ interface CorrectionBestMeaningDetails extends BestMeaningDetails {
 
 interface CorrectionProposalCandidate {
   payload: MeaningCorrectionProposedPayload;
-  created_at?: number;
+  packet_id: string;
 }
 
 interface RankedCorrectionSummary extends CorrectionSummary {
-  proposal_created_at?: number;
+  proposal_packet_id: string;
 }
 
 const CORRECTION_PACKET_TYPES: PacketType[] = [
@@ -200,10 +200,7 @@ export function summarizeCorrectionPacketsForPhrase(
       ) {
         proposals.set(payload.correction_id, {
           payload,
-          created_at:
-            typeof packet.created_at === "number"
-              ? packet.created_at
-              : undefined,
+          packet_id: packet.packet_id,
         });
       }
     }
@@ -338,7 +335,7 @@ function toCorrectionSummary(
     conflict_group_id: conflictGroupId,
     conflict_rank: 1,
     is_conflicting: false,
-    proposal_created_at: proposal.created_at,
+    proposal_packet_id: proposal.packet_id,
   };
 
   if (typeof payload.correction_context === "string") {
