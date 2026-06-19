@@ -22,6 +22,8 @@ import { createCorrectionGovernanceRateLimiter } from "../server/routes/correcti
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
 import { SQLiteStore } from "../storage/sqliteStore";
+import { buildClientUrl } from "../client/clientUrl";
+import { MyceliumClient } from "../client/MyceliumClient";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
@@ -41,6 +43,30 @@ function unitEngine(name: string): LanguageEngine {
     nodeAgeGroup: "adult",
     dbPath: unitDbPath(name),
   });
+}
+
+function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+    },
+    ...init,
+  });
+}
+
+async function withMockFetch(
+  mockFetch: typeof fetch,
+  run: () => Promise<void>
+): Promise<void> {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch;
+
+  try {
+    await run();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }
 
 function correctionPacketsWithVotes(args: {
@@ -221,6 +247,100 @@ test("clampCorrectionHistoryLimit uses defaults and bounds", () => {
   assert.strictEqual(clampCorrectionHistoryLimit(0), 1);
   assert.strictEqual(clampCorrectionHistoryLimit(999), 500);
   assert.strictEqual(clampCorrectionHistoryLimit(12.9), 12);
+});
+
+test("client URL builder encodes phrase IDs safely", () => {
+  const phraseId = "local/slang phrase?x=1";
+  const url = buildClientUrl(
+    "http://localhost:3000/",
+    `/phrases/${encodeURIComponent(phraseId)}`
+  );
+
+  assert.strictEqual(
+    url,
+    "http://localhost:3000/phrases/local%2Fslang%20phrase%3Fx%3D1"
+  );
+});
+
+test("client URL builder encodes GET query params", () => {
+  const url = buildClientUrl("http://localhost:3000", "/phrases/search", {
+    q: "hello world & tea",
+    limit: 25,
+  });
+
+  assert.strictEqual(
+    url,
+    "http://localhost:3000/phrases/search?q=hello+world+%26+tea&limit=25"
+  );
+});
+
+test("client handles baseUrl trailing slash", async () => {
+  let capturedUrl = "";
+  const mockFetch: typeof fetch = async (input) => {
+    capturedUrl = String(input);
+
+    return jsonResponse({
+      ok: true,
+      node: {
+        node_id: "node",
+        display_name: "Local Mycelium Node",
+        default_author: "node",
+      },
+      service: {
+        name: "Mycelium",
+        layer: "DAOVibe Mycelium",
+        status: "ready",
+        uptime_seconds: 1,
+        server_time: 1,
+      },
+      ledger: {
+        packet_count: 0,
+      },
+      storage: {
+        durable: true,
+        engine: "sqlite",
+      },
+      capabilities: {
+        phrase_lookup: true,
+        meaning_proposals: true,
+        meaning_votes: true,
+        corrections: true,
+        correction_maturity: true,
+        tombstone_packets: true,
+        tombstone_execution: false,
+        sync: true,
+      },
+    });
+  };
+
+  await withMockFetch(mockFetch, async () => {
+    const client = new MyceliumClient({
+      baseUrl: "http://localhost:3000///",
+    });
+
+    await client.getNodeStatus();
+  });
+
+  assert.strictEqual(capturedUrl, "http://localhost:3000/node/status");
+});
+
+test("client HTTP errors include response body text", async () => {
+  const mockFetch: typeof fetch = async () =>
+    new Response('{"ok":false,"error":"bad phrase"}', {
+      status: 400,
+      statusText: "Bad Request",
+    });
+
+  await withMockFetch(mockFetch, async () => {
+    const client = new MyceliumClient({
+      baseUrl: "http://localhost:3000",
+    });
+
+    await assert.rejects(
+      () => client.getPhrase("bad phrase"),
+      /400 Bad Request.*bad phrase/
+    );
+  });
 });
 
 test("local node identity is created once", () => {
