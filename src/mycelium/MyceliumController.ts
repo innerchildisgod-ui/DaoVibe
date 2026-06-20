@@ -29,6 +29,11 @@ import {
   buildBestMeaningExplanation,
   type BestMeaningExplanationResult,
 } from "./MeaningExplanation";
+import {
+  MYCELIUM_API_VERSION,
+  MYCELIUM_APP_CONTRACT_VERSION,
+  MYCELIUM_PROTOCOL_VERSION,
+} from "./MyceliumVersions";
 import { listTombstoneExecutionPreviewForPhrase } from "./TombstoneExecutionPreview";
 import { listCorrectionTombstonesForPhrase } from "./TombstoneLookup";
 
@@ -74,6 +79,11 @@ export interface MyceliumNodeStatus {
   storage: {
     durable: true;
     engine: "sqlite";
+  };
+  versions: {
+    api_version: typeof MYCELIUM_API_VERSION;
+    protocol_version: typeof MYCELIUM_PROTOCOL_VERSION;
+    app_contract_version: typeof MYCELIUM_APP_CONTRACT_VERSION;
   };
   capabilities: {
     phrase_lookup: true;
@@ -138,6 +148,11 @@ export class MyceliumController {
       storage: {
         durable: true,
         engine: "sqlite",
+      },
+      versions: {
+        api_version: MYCELIUM_API_VERSION,
+        protocol_version: MYCELIUM_PROTOCOL_VERSION,
+        app_contract_version: MYCELIUM_APP_CONTRACT_VERSION,
       },
       capabilities: {
         phrase_lookup: true,

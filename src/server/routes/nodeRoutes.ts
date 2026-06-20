@@ -4,6 +4,7 @@ import {
   asRequestObject,
   validationError,
 } from "../validation/requestValidation";
+import { errorMessage, sendApiError } from "./apiResponses";
 
 interface NodeRoutesContext {
   myceliumController: MyceliumController;
@@ -27,10 +28,7 @@ export function registerNodeRoutes(
     try {
       res.json(myceliumController.getNodeStatus());
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "INTERNAL_ERROR", errorMessage(error));
     }
   });
 
@@ -41,10 +39,7 @@ export function registerNodeRoutes(
         identity: myceliumController.getLocalNodeIdentity(),
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "INTERNAL_ERROR", errorMessage(error));
     }
   });
 
@@ -57,10 +52,7 @@ export function registerNodeRoutes(
         identity: myceliumController.updateLocalNodeIdentity(payload),
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -68,10 +60,7 @@ export function registerNodeRoutes(
     try {
       res.json(myceliumController.getSyncStatus());
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "INTERNAL_ERROR", errorMessage(error));
     }
   });
 }

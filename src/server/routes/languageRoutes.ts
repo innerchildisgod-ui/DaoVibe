@@ -20,6 +20,7 @@ import {
   requireString,
   validationError,
 } from "../validation/requestValidation";
+import { errorMessage, sendApiError } from "./apiResponses";
 
 const VALID_SAFETY_LABELS: readonly SafetyLabel[] = [
   "normal",
@@ -136,9 +137,7 @@ export function registerLanguageRoutes(
     const result = myceliumController.getBestMeaning(req.params.phraseId);
 
     if (result.reason === "Phrase not found.") {
-      res.status(404).json({
-        ok: false,
-        error: "Phrase not found.",
+      sendApiError(res, 404, "NOT_FOUND", "Phrase not found.", {
         phrase_id: result.phrase_id,
       });
       return;
@@ -156,9 +155,7 @@ export function registerLanguageRoutes(
     );
 
     if (!result.found) {
-      res.status(404).json({
-        ok: false,
-        error: "Phrase not found.",
+      sendApiError(res, 404, "NOT_FOUND", "Phrase not found.", {
         phrase_id: result.phrase_id,
       });
       return;
@@ -176,9 +173,7 @@ export function registerLanguageRoutes(
     const result = myceliumController.getPhraseById(req.params.phraseId);
 
     if (!result.found) {
-      res.status(404).json({
-        ok: false,
-        error: "Phrase not found.",
+      sendApiError(res, 404, "NOT_FOUND", "Phrase not found.", {
         phrase_id: result.phrase_id,
       });
       return;
@@ -195,10 +190,7 @@ export function registerLanguageRoutes(
       typeof req.body.query === "string" ? req.body.query.trim() : "";
 
     if (!query) {
-      res.status(400).json({
-        ok: false,
-        error: "query is required",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", "query is required");
       return;
     }
 
@@ -230,18 +222,17 @@ export function registerLanguageRoutes(
           : "";
 
       if (!phraseId) {
-        res.status(400).json({
-          ok: false,
-          error: "phrase_id is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "phrase_id is required");
         return;
       }
 
       if (!surfaceText && !phoneticHint && !languageHint) {
-        res.status(400).json({
-          ok: false,
-          error: "at least one phrase text field is required",
-        });
+        sendApiError(
+          res,
+          400,
+          "VALIDATION_ERROR",
+          "at least one phrase text field is required"
+        );
         return;
       }
 
@@ -270,10 +261,7 @@ export function registerLanguageRoutes(
         },
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -300,34 +288,27 @@ export function registerLanguageRoutes(
         typeof req.body.parent === "string" ? req.body.parent : undefined;
 
       if (!phraseId) {
-        res.status(400).json({
-          ok: false,
-          error: "phrase_id is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "phrase_id is required");
         return;
       }
 
       if (!meaningId) {
-        res.status(400).json({
-          ok: false,
-          error: "meaning_id is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "meaning_id is required");
         return;
       }
 
       if (!referenceMeaning) {
-        res.status(400).json({
-          ok: false,
-          error: "reference_meaning is required",
-        });
+        sendApiError(
+          res,
+          400,
+          "VALIDATION_ERROR",
+          "reference_meaning is required"
+        );
         return;
       }
 
       if (confidence === undefined) {
-        res.status(400).json({
-          ok: false,
-          error: "confidence is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "confidence is required");
         return;
       }
 
@@ -354,10 +335,7 @@ export function registerLanguageRoutes(
         },
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -379,42 +357,27 @@ export function registerLanguageRoutes(
         typeof req.body.parent === "string" ? req.body.parent : undefined;
 
       if (!phraseId) {
-        res.status(400).json({
-          ok: false,
-          error: "phrase_id is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "phrase_id is required");
         return;
       }
 
       if (!meaningId) {
-        res.status(400).json({
-          ok: false,
-          error: "meaning_id is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "meaning_id is required");
         return;
       }
 
       if (!vote) {
-        res.status(400).json({
-          ok: false,
-          error: "vote is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "vote is required");
         return;
       }
 
       if (vote !== "confirm" && vote !== "reject" && vote !== "unsure") {
-        res.status(400).json({
-          ok: false,
-          error: "vote is invalid",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "vote is invalid");
         return;
       }
 
       if (confidence === undefined) {
-        res.status(400).json({
-          ok: false,
-          error: "confidence is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "confidence is required");
         return;
       }
 
@@ -441,10 +404,7 @@ export function registerLanguageRoutes(
         },
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -459,18 +419,17 @@ export function registerLanguageRoutes(
         typeof req.body.parent === "string" ? req.body.parent : undefined;
 
       if (!phraseId) {
-        res.status(400).json({
-          ok: false,
-          error: "phrase_id is required",
-        });
+        sendApiError(res, 400, "VALIDATION_ERROR", "phrase_id is required");
         return;
       }
 
       if (!isValidSafetyLabel(label)) {
-        res.status(400).json({
-          ok: false,
-          error: "valid safety label is required",
-        });
+        sendApiError(
+          res,
+          400,
+          "VALIDATION_ERROR",
+          "valid safety label is required"
+        );
         return;
       }
 
@@ -495,10 +454,7 @@ export function registerLanguageRoutes(
         },
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -512,10 +468,7 @@ export function registerLanguageRoutes(
         result,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -531,10 +484,7 @@ export function registerLanguageRoutes(
         result,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -550,10 +500,7 @@ export function registerLanguageRoutes(
         result,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -569,10 +516,7 @@ export function registerLanguageRoutes(
         result,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -633,10 +577,7 @@ export function registerLanguageRoutes(
         result,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "PACKET_REJECTED", errorMessage(error));
     }
   });
 }

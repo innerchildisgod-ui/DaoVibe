@@ -23,7 +23,13 @@ import { MyceliumController } from "../mycelium/MyceliumController";
 import { compareRankedCorrections } from "../mycelium/CorrectionConflict";
 import { buildTombstoneExecutionPreview } from "../mycelium/TombstoneExecutionPreview";
 import { buildBestMeaningExplanation } from "../mycelium/MeaningExplanation";
+import {
+  MYCELIUM_API_VERSION,
+  MYCELIUM_APP_CONTRACT_VERSION,
+  MYCELIUM_PROTOCOL_VERSION,
+} from "../mycelium/MyceliumVersions";
 import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
+import { apiError } from "../server/routes/apiResponses";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
 import { SQLiteStore, type KnowledgePhraseRecord } from "../storage/sqliteStore";
@@ -33,7 +39,7 @@ import {
   SQLITE_MIGRATIONS,
 } from "../storage/sqliteMigrations";
 import { buildClientUrl } from "../client/clientUrl";
-import { MyceliumClient } from "../client/MyceliumClient";
+import { MyceliumClient, MyceliumClientError } from "../client/MyceliumClient";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
@@ -310,6 +316,11 @@ test("client handles baseUrl trailing slash", async () => {
         durable: true,
         engine: "sqlite",
       },
+      versions: {
+        api_version: "mycelium-api.v1",
+        protocol_version: "mycelium-lmp.v1",
+        app_contract_version: "mycelium-app.v1",
+      },
       capabilities: {
         phrase_lookup: true,
         meaning_proposals: true,
@@ -334,7 +345,78 @@ test("client handles baseUrl trailing slash", async () => {
   assert.strictEqual(capturedUrl, "http://localhost:3000/node/status");
 });
 
-test("client HTTP errors include response body text", async () => {
+test("apiError returns stable object shape", () => {
+  assert.deepStrictEqual(apiError("VALIDATION_ERROR", "query is required"), {
+    ok: false,
+    error: {
+      code: "VALIDATION_ERROR",
+      message: "query is required",
+    },
+  });
+
+  assert.deepStrictEqual(apiError("NOT_FOUND", "Phrase not found.", {
+    phrase_id: "missing_phrase",
+  }), {
+    ok: false,
+    error: {
+      code: "NOT_FOUND",
+      message: "Phrase not found.",
+      details: {
+        phrase_id: "missing_phrase",
+      },
+    },
+  });
+
+  assert.deepStrictEqual(apiError("RATE_LIMITED", "Too many requests."), {
+    ok: false,
+    error: {
+      code: "RATE_LIMITED",
+      message: "Too many requests.",
+    },
+  });
+});
+
+test("client HTTP errors extract stable error code and message", async () => {
+  const mockFetch: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        ok: false,
+        error: {
+          code: "NOT_FOUND",
+          message: "Phrase not found.",
+          details: {
+            phrase_id: "missing_phrase",
+          },
+        },
+      }),
+      {
+        status: 404,
+        statusText: "Not Found",
+      }
+    );
+
+  await withMockFetch(mockFetch, async () => {
+    const client = new MyceliumClient({
+      baseUrl: "http://localhost:3000",
+    });
+
+    await assert.rejects(
+      () => client.getPhrase("missing_phrase"),
+      (error) => {
+        assert(error instanceof MyceliumClientError);
+        assert.strictEqual(error.status, 404);
+        assert.strictEqual(error.code, "NOT_FOUND");
+        assert.deepStrictEqual(error.details, {
+          phrase_id: "missing_phrase",
+        });
+        assert.match(error.message, /404 Not Found.*NOT_FOUND.*Phrase not found/);
+        return true;
+      }
+    );
+  });
+});
+
+test("client HTTP errors include legacy response body text", async () => {
   const mockFetch: typeof fetch = async () =>
     new Response('{"ok":false,"error":"bad phrase"}', {
       status: 400,
@@ -349,6 +431,25 @@ test("client HTTP errors include response body text", async () => {
     await assert.rejects(
       () => client.getPhrase("bad phrase"),
       /400 Bad Request.*bad phrase/
+    );
+  });
+});
+
+test("client HTTP errors handle plain text responses", async () => {
+  const mockFetch: typeof fetch = async () =>
+    new Response("plain backend failure", {
+      status: 500,
+      statusText: "Internal Server Error",
+    });
+
+  await withMockFetch(mockFetch, async () => {
+    const client = new MyceliumClient({
+      baseUrl: "http://localhost:3000",
+    });
+
+    await assert.rejects(
+      () => client.getPhrase("plain"),
+      /500 Internal Server Error.*plain backend failure/
     );
   });
 });
@@ -596,6 +697,18 @@ test("node status reports tombstone execution as disabled", () => {
 
   assert.strictEqual(status.capabilities.tombstone_packets, true);
   assert.strictEqual(status.capabilities.tombstone_execution, false);
+});
+
+test("node status includes stable Mycelium version fields", () => {
+  const status = new MyceliumController(
+    unitEngine("unit_node_status_versions")
+  ).getNodeStatus();
+
+  assert.deepStrictEqual(status.versions, {
+    api_version: MYCELIUM_API_VERSION,
+    protocol_version: MYCELIUM_PROTOCOL_VERSION,
+    app_contract_version: MYCELIUM_APP_CONTRACT_VERSION,
+  });
 });
 
 test("sync status returns local peer cursor array", () => {

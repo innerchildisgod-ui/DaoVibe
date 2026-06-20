@@ -7,7 +7,7 @@ Mycelium is the active language layer of the DAOVibe ecosystem. The routes below
 ## Contract Guarantees
 
 - JSON responses use a top-level `ok` boolean.
-- Validation failures return `ok: false` with an `error` string.
+- Error responses use a stable `ok: false` shape with an `error` object.
 - App convenience writes under `/app/*` return a compact `result` envelope with packet metadata.
 - Existing unprefixed write routes are preserved and return the raw engine action result.
 - Local node identity is durable in SQLite and created on first read when missing.
@@ -18,6 +18,32 @@ Mycelium is the active language layer of the DAOVibe ecosystem. The routes below
 - `bestMeaning` selection is unchanged by the tombstone preview layer.
 - Writable correction governance routes are in-process rate-limited.
 - Sync routes exchange packets and cursors only; they do not introduce tombstone execution.
+
+## Standard Error Responses
+
+Success response shapes remain route-specific. Errors use this shared shape:
+
+```ts
+{
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
+```
+
+Known error codes:
+
+- `INVALID_REQUEST`
+- `NOT_FOUND`
+- `VALIDATION_ERROR`
+- `RATE_LIMITED`
+- `PACKET_REJECTED`
+- `INTERNAL_ERROR`
+
+Routes keep their existing HTTP status codes where practical. Validation messages remain app-readable, but internal stack traces are not returned. Tombstone execution remains disabled in this contract.
 
 ## Status Routes
 
@@ -83,7 +109,7 @@ Returns app-mode status, local node identity, local state counts, and sync capab
 
 ### `GET /node/status`
 
-Returns local Mycelium node readiness, durable identity, packet ledger count, storage engine, and app capability flags. This route does not create packets, run sync, or contact peers.
+Returns local Mycelium node readiness, durable identity, packet ledger count, storage engine, version metadata, and app capability flags. This route does not create packets, run sync, or contact peers. Version fields are API metadata only; they do not change packet protocol behavior.
 
 ```ts
 {
@@ -106,6 +132,11 @@ Returns local Mycelium node readiness, durable identity, packet ledger count, st
   storage: {
     durable: true;
     engine: "sqlite";
+  };
+  versions: {
+    api_version: "mycelium-api.v1";
+    protocol_version: "mycelium-lmp.v1";
+    app_contract_version: "mycelium-app.v1";
   };
   capabilities: {
     phrase_lookup: true;
@@ -188,7 +219,11 @@ Validation failure:
 ```ts
 {
   ok: false;
-  error: string;
+  error: {
+    code: "VALIDATION_ERROR";
+    message: string;
+    details?: unknown;
+  };
 }
 ```
 
@@ -244,8 +279,13 @@ Returns one local phrase record. Missing phrases return HTTP 404.
 ```ts
 {
   ok: false;
-  error: "Phrase not found.";
-  phrase_id: string;
+  error: {
+    code: "NOT_FOUND";
+    message: "Phrase not found.";
+    details: {
+      phrase_id: string;
+    };
+  };
 }
 ```
 
@@ -711,11 +751,27 @@ Correction governance write validation failures use:
   ok: false;
   accepted: false;
   rejected: true;
-  error: string;
+  error: {
+    code: "VALIDATION_ERROR";
+    message: string;
+    details?: unknown;
+  };
 }
 ```
 
-Rate-limit failures return HTTP 429 with the same shape and the error `Too many correction requests. Try again later.`
+Rate-limit failures return HTTP 429 with the same compatibility fields and stable error object:
+
+```ts
+{
+  ok: false;
+  accepted: false;
+  rejected: true;
+  error: {
+    code: "RATE_LIMITED";
+    message: "Too many correction requests. Try again later.";
+  };
+}
+```
 
 ## Tombstone Governance Routes
 

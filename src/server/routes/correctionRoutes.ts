@@ -11,6 +11,7 @@ import {
   CORRECTION_GOVERNANCE_RATE_LIMIT_ERROR,
   createCorrectionGovernanceRateLimiter,
 } from "./correctionRateLimiter";
+import { apiError, errorMessage } from "./apiResponses";
 import {
   asRequestObject,
   optionalString,
@@ -223,10 +224,9 @@ export function registerCorrectionRoutes(
     }
 
     res.status(429).json({
-      ok: false,
+      ...apiError("RATE_LIMITED", CORRECTION_GOVERNANCE_RATE_LIMIT_ERROR),
       accepted: false,
       rejected: true,
-      error: CORRECTION_GOVERNANCE_RATE_LIMIT_ERROR,
     });
     return true;
   }
@@ -317,10 +317,9 @@ export function registerCorrectionRoutes(
       });
     } catch (error) {
       res.status(400).json({
-        ok: false,
+        ...apiError("VALIDATION_ERROR", errorMessage(error)),
         accepted: false,
         rejected: true,
-        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });
@@ -352,10 +351,9 @@ export function registerCorrectionRoutes(
       });
     } catch (error) {
       res.status(400).json({
-        ok: false,
+        ...apiError("VALIDATION_ERROR", errorMessage(error)),
         accepted: false,
         rejected: true,
-        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });
@@ -391,10 +389,9 @@ export function registerCorrectionRoutes(
       });
     } catch (error) {
       res.status(400).json({
-        ok: false,
+        ...apiError("VALIDATION_ERROR", errorMessage(error)),
         accepted: false,
         rejected: true,
-        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });
@@ -430,10 +427,9 @@ export function registerCorrectionRoutes(
       });
     } catch (error) {
       res.status(400).json({
-        ok: false,
+        ...apiError("VALIDATION_ERROR", errorMessage(error)),
         accepted: false,
         rejected: true,
-        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });

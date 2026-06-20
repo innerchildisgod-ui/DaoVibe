@@ -43,6 +43,11 @@ export interface NodeStatusResponse {
     durable: true;
     engine: "sqlite";
   };
+  versions: {
+    api_version: "mycelium-api.v1";
+    protocol_version: "mycelium-lmp.v1";
+    app_contract_version: "mycelium-app.v1";
+  };
   capabilities: {
     phrase_lookup: true;
     meaning_proposals: true;
@@ -391,6 +396,52 @@ export interface VoteMeaningCorrectionTombstoneInput {
   parent?: string;
 }
 
+export interface ApiErrorBody {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
+
+export class MyceliumClientError extends Error {
+  readonly status: number;
+  readonly statusText: string;
+  readonly url: string;
+  readonly code?: string;
+  readonly details?: unknown;
+
+  constructor(args: {
+    status: number;
+    statusText: string;
+    url: string;
+    code?: string;
+    message?: string;
+    details?: unknown;
+    bodyText?: string;
+  }) {
+    const codePrefix = args.code ? `${args.code}: ` : "";
+    const detail =
+      args.message !== undefined && args.message.length > 0
+        ? `: ${codePrefix}${args.message}`
+        : args.bodyText
+          ? `: ${args.bodyText}`
+          : "";
+
+    super(
+      `Mycelium request failed (${args.status} ${args.statusText}) ${args.url}${detail}`
+    );
+
+    this.name = "MyceliumClientError";
+    this.status = args.status;
+    this.statusText = args.statusText;
+    this.url = args.url;
+    this.code = args.code;
+    this.details = args.details;
+  }
+}
+
 export class MyceliumClient {
   private readonly baseUrl: string;
 
@@ -547,13 +598,71 @@ export class MyceliumClient {
 
     if (!response.ok) {
       const bodyText = await response.text().catch(() => "");
-      const detail = bodyText ? `: ${bodyText}` : "";
+      const parsedError = parseErrorBody(bodyText);
 
-      throw new Error(
-        `Mycelium request failed (${response.status} ${response.statusText}) ${url}${detail}`
-      );
+      throw new MyceliumClientError({
+        status: response.status,
+        statusText: response.statusText,
+        url,
+        code: parsedError.code,
+        message: parsedError.message,
+        details: parsedError.details,
+        bodyText,
+      });
     }
 
     return (await response.json()) as T;
   }
+}
+
+function parseErrorBody(bodyText: string): {
+  code?: string;
+  message?: string;
+  details?: unknown;
+} {
+  if (!bodyText) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(bodyText) as unknown;
+
+    if (parsed !== null && typeof parsed === "object") {
+      const error = (parsed as { error?: unknown }).error;
+
+      if (error !== null && typeof error === "object") {
+        const errorRecord = error as {
+          code?: unknown;
+          message?: unknown;
+          details?: unknown;
+        };
+
+        return {
+          code:
+            typeof errorRecord.code === "string"
+              ? errorRecord.code
+              : undefined,
+          message:
+            typeof errorRecord.message === "string"
+              ? errorRecord.message
+              : undefined,
+          details: errorRecord.details,
+        };
+      }
+
+      if (typeof error === "string") {
+        return {
+          message: error,
+        };
+      }
+    }
+  } catch (_error) {
+    return {
+      message: bodyText,
+    };
+  }
+
+  return {
+    message: bodyText,
+  };
 }

@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { LmpPacket } from "../../protocol/packet";
 import { SyncController } from "../../sync/SyncController";
+import { errorMessage, sendApiError } from "./apiResponses";
 
 interface SyncRoutesContext {
   syncController: SyncController;
@@ -28,10 +29,7 @@ export function registerSyncRoutes(
         ...batch,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -53,10 +51,7 @@ export function registerSyncRoutes(
         cursor: syncController.getPeerSyncCursor(req.params.peerAuthor),
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -70,10 +65,7 @@ export function registerSyncRoutes(
         cursor: syncController.setPeerSyncCursor(req.params.peerAuthor, cursor),
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -95,10 +87,7 @@ export function registerSyncRoutes(
         missing_packet_ids: missingPacketIds,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 
@@ -140,10 +129,7 @@ export function registerSyncRoutes(
         result,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "PACKET_REJECTED", errorMessage(error));
     }
   });
 
@@ -176,10 +162,7 @@ export function registerSyncRoutes(
         ...result,
       });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
     }
   });
 }
