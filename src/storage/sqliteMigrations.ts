@@ -133,6 +133,22 @@ export const SQLITE_MIGRATIONS: SqliteMigration[] = [
       `);
     },
   },
+  {
+    migration_id: "006_local_node_settings",
+    run: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS local_node_settings (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          default_language_hint TEXT NOT NULL,
+          default_safety_label TEXT NOT NULL,
+          sync_mode TEXT NOT NULL,
+          developer_mode INTEGER NOT NULL,
+          show_debug_panels INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 export function runSqliteMigrations(db: Database.Database): void {

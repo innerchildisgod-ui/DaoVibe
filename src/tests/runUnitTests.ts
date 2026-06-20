@@ -316,6 +316,11 @@ test("client handles baseUrl trailing slash", async () => {
         durable: true,
         engine: "sqlite",
       },
+      settings: {
+        sync_mode: "manual",
+        developer_mode: true,
+        show_debug_panels: true,
+      },
       versions: {
         api_version: "mycelium-api.v1",
         protocol_version: "mycelium-lmp.v1",
@@ -533,6 +538,66 @@ test("local node identity rejects empty editable fields", () => {
   );
 });
 
+test("local node settings are created with defaults", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_settings_defaults"));
+  const settings = store.getOrCreateLocalNodeSettings();
+
+  assert.deepStrictEqual(
+    {
+      default_language_hint: settings.default_language_hint,
+      default_safety_label: settings.default_safety_label,
+      sync_mode: settings.sync_mode,
+      developer_mode: settings.developer_mode,
+      show_debug_panels: settings.show_debug_panels,
+    },
+    {
+      default_language_hint: "und",
+      default_safety_label: "normal",
+      sync_mode: "manual",
+      developer_mode: true,
+      show_debug_panels: true,
+    }
+  );
+  assert.strictEqual(typeof settings.updated_at, "number");
+});
+
+test("local node settings repeated reads return same values", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_settings_repeated"));
+  const settings = store.getOrCreateLocalNodeSettings();
+  const repeatedSettings = store.getOrCreateLocalNodeSettings();
+
+  assert.deepStrictEqual(repeatedSettings, settings);
+});
+
+test("local node settings update editable fields", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_settings_update"));
+  const initialSettings = store.getOrCreateLocalNodeSettings();
+  const updatedSettings = store.updateLocalNodeSettings({
+    default_language_hint: " en ",
+    developer_mode: false,
+    show_debug_panels: false,
+  });
+
+  assert.strictEqual(updatedSettings.default_language_hint, "en");
+  assert.strictEqual(updatedSettings.default_safety_label, "normal");
+  assert.strictEqual(updatedSettings.sync_mode, "manual");
+  assert.strictEqual(updatedSettings.developer_mode, false);
+  assert.strictEqual(updatedSettings.show_debug_panels, false);
+  assert(updatedSettings.updated_at > initialSettings.updated_at);
+});
+
+test("local node settings reject invalid sync mode", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_settings_sync_mode"));
+
+  assert.throws(
+    () =>
+      store.updateLocalNodeSettings({
+        sync_mode: "auto" as unknown as "manual",
+      }),
+    /sync_mode must be manual/
+  );
+});
+
 test("sqlite migrations create tracking table and apply stable IDs", () => {
   const db = new Database(":memory:");
 
@@ -688,6 +753,11 @@ test("node status returns identity and durable packet count", () => {
   assert.strictEqual(typeof status.service.server_time, "number");
   assert.strictEqual(typeof status.ledger.packet_count, "number");
   assert(status.ledger.packet_count >= 1);
+  assert.deepStrictEqual(status.settings, {
+    sync_mode: "manual",
+    developer_mode: true,
+    show_debug_panels: true,
+  });
 });
 
 test("node status reports tombstone execution as disabled", () => {

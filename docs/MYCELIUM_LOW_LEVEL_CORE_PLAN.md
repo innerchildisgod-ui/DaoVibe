@@ -59,6 +59,11 @@ SQLite migration orchestration stays TypeScript for now.
 Future low-level Rust/WASM work should target packet validation, hashing, signing, canonicalization, ledger verification, ranking, and cryptography first.
 Database schema migration coordination should remain in the app/server layer unless a native storage engine is introduced later.
 
+## Local Settings Boundary
+Local settings and config stay in the TypeScript/server layer.
+Do not move settings to Rust/WASM.
+Rust/WASM work should remain focused on packet validation, hashing, signing, canonicalization, ledger verification, ranking, sync conflict resolution, and cryptography.
+
 ## Future phases
 1. Freeze TypeScript interfaces.
 2. Build Rust/WASM proof for packet hashing and validation.

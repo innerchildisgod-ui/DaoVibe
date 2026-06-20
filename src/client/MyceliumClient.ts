@@ -17,9 +17,31 @@ export interface LocalNodeIdentityResponse {
   identity: LocalNodeIdentity;
 }
 
+export interface LocalNodeSettings {
+  default_language_hint: string;
+  default_safety_label: string;
+  sync_mode: "manual";
+  developer_mode: boolean;
+  show_debug_panels: boolean;
+  updated_at: number;
+}
+
+export interface NodeSettingsResponse {
+  ok: true;
+  settings: LocalNodeSettings;
+}
+
 export interface UpdateNodeIdentityInput {
   display_name?: string;
   default_author?: string;
+}
+
+export interface UpdateNodeSettingsInput {
+  default_language_hint?: string;
+  default_safety_label?: string;
+  sync_mode?: "manual";
+  developer_mode?: boolean;
+  show_debug_panels?: boolean;
 }
 
 export interface NodeStatusResponse {
@@ -42,6 +64,11 @@ export interface NodeStatusResponse {
   storage: {
     durable: true;
     engine: "sqlite";
+  };
+  settings: {
+    sync_mode: "manual";
+    developer_mode: boolean;
+    show_debug_panels: boolean;
   };
   versions: {
     api_version: "mycelium-api.v1";
@@ -451,6 +478,16 @@ export class MyceliumClient {
 
   getNodeIdentity(): Promise<LocalNodeIdentityResponse> {
     return this.getJson("/node/identity");
+  }
+
+  getNodeSettings(): Promise<NodeSettingsResponse> {
+    return this.getJson("/node/settings");
+  }
+
+  updateNodeSettings(
+    input: UpdateNodeSettingsInput
+  ): Promise<NodeSettingsResponse> {
+    return this.postJson("/node/settings", input);
   }
 
   updateNodeIdentity(

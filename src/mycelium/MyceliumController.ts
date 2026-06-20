@@ -1,6 +1,8 @@
 import type { LanguageEngine } from "../engine";
 import type { LmpPacket } from "../protocol/packet";
 import type {
+  LocalNodeSettings,
+  LocalNodeSettingsUpdate,
   LocalNodeIdentity,
   PeerSyncCursor,
   SQLiteStore,
@@ -46,6 +48,8 @@ type LocalNodeStore = Pick<
   SQLiteStore,
   | "getOrCreateLocalNodeIdentity"
   | "updateLocalNodeIdentity"
+  | "getOrCreateLocalNodeSettings"
+  | "updateLocalNodeSettings"
   | "getPacketCount"
   | "listPeerSyncCursors"
 >;
@@ -79,6 +83,11 @@ export interface MyceliumNodeStatus {
   storage: {
     durable: true;
     engine: "sqlite";
+  };
+  settings: {
+    sync_mode: "manual";
+    developer_mode: boolean;
+    show_debug_panels: boolean;
   };
   versions: {
     api_version: typeof MYCELIUM_API_VERSION;
@@ -122,8 +131,19 @@ export class MyceliumController {
     return this.localNodeIdentityStore().updateLocalNodeIdentity(input);
   }
 
+  getLocalNodeSettings(): LocalNodeSettings {
+    return this.localNodeStore().getOrCreateLocalNodeSettings();
+  }
+
+  updateLocalNodeSettings(
+    input: LocalNodeSettingsUpdate
+  ): LocalNodeSettings {
+    return this.localNodeStore().updateLocalNodeSettings(input);
+  }
+
   getNodeStatus(): MyceliumNodeStatus {
     const identity = this.getLocalNodeIdentity();
+    const settings = this.getLocalNodeSettings();
 
     return {
       ok: true,
@@ -148,6 +168,11 @@ export class MyceliumController {
       storage: {
         durable: true,
         engine: "sqlite",
+      },
+      settings: {
+        sync_mode: settings.sync_mode,
+        developer_mode: settings.developer_mode,
+        show_debug_panels: settings.show_debug_panels,
       },
       versions: {
         api_version: MYCELIUM_API_VERSION,

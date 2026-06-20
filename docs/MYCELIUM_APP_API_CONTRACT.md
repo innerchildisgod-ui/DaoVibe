@@ -133,6 +133,11 @@ Returns local Mycelium node readiness, durable identity, packet ledger count, st
     durable: true;
     engine: "sqlite";
   };
+  settings: {
+    sync_mode: "manual";
+    developer_mode: boolean;
+    show_debug_panels: boolean;
+  };
   versions: {
     api_version: "mycelium-api.v1";
     protocol_version: "mycelium-lmp.v1";
@@ -226,6 +231,93 @@ Validation failure:
   };
 }
 ```
+
+## Local Node Settings Routes
+
+Local node settings are durable server/app configuration for the current Mycelium node. They are local-only, not packet-ledger truth, not sync governance, and not a remote profile or account.
+
+Settings fields:
+
+```ts
+{
+  default_language_hint: string;
+  default_safety_label: string;
+  sync_mode: "manual";
+  developer_mode: boolean;
+  show_debug_panels: boolean;
+  updated_at: number;
+}
+```
+
+Defaults:
+
+```ts
+{
+  default_language_hint: "und";
+  default_safety_label: "normal";
+  sync_mode: "manual";
+  developer_mode: true;
+  show_debug_panels: true;
+}
+```
+
+### `GET /node/settings`
+
+Creates the local settings row if it does not exist, then returns it.
+
+```ts
+{
+  ok: true;
+  settings: {
+    default_language_hint: string;
+    default_safety_label: string;
+    sync_mode: "manual";
+    developer_mode: boolean;
+    show_debug_panels: boolean;
+    updated_at: number;
+  };
+}
+```
+
+### `POST /node/settings`
+
+Updates allowed local settings fields. Unknown fields are ignored consistently with current route style.
+
+Request:
+
+```ts
+{
+  default_language_hint?: string;
+  default_safety_label?: string;
+  sync_mode?: "manual";
+  developer_mode?: boolean;
+  show_debug_panels?: boolean;
+}
+```
+
+Response:
+
+```ts
+{
+  ok: true;
+  settings: {
+    default_language_hint: string;
+    default_safety_label: string;
+    sync_mode: "manual";
+    developer_mode: boolean;
+    show_debug_panels: boolean;
+    updated_at: number;
+  };
+}
+```
+
+Validation rules:
+
+- `default_language_hint` must be a non-empty trimmed string of 40 characters or less when provided.
+- `default_safety_label` must be one of the current Mycelium safety labels.
+- `sync_mode` only accepts `"manual"` in this build.
+- `developer_mode` and `show_debug_panels` must be booleans when provided.
+- At least one supported settings field is required for updates.
 
 ## Phrase And Meaning Routes
 

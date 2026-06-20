@@ -27,6 +27,10 @@ Mycelium uses SQLite for durable local node state. Schema migrations give the ap
 - Prefer additive tables, columns, and indexes.
 - Use transactions through the migration runner.
 
+## Current Settings Migration
+
+`006_local_node_settings` adds the single-row `local_node_settings` table for durable local app/node configuration. These settings are server/app config only; they are not packet-ledger truth, not sync governance, and not part of the low-level Rust/WASM core.
+
 ## Low-Level Boundary
 
 SQLite migration orchestration stays TypeScript for now. Future Rust/WASM work should target packet validation, hashing, signing, canonicalization, ledger verification, ranking, and cryptography first. Database schema migration coordination should remain in the app/server layer unless a native storage engine is introduced later.

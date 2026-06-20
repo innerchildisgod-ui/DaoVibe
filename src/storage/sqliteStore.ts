@@ -99,12 +99,39 @@ export interface LocalNodeIdentity {
   updated_at: number;
 }
 
+export interface LocalNodeSettings {
+  default_language_hint: string;
+  default_safety_label: SafetyLabel;
+  sync_mode: "manual";
+  developer_mode: boolean;
+  show_debug_panels: boolean;
+  updated_at: number;
+}
+
+export interface LocalNodeSettingsUpdate {
+  default_language_hint?: string;
+  default_safety_label?: SafetyLabel;
+  sync_mode?: "manual";
+  developer_mode?: boolean;
+  show_debug_panels?: boolean;
+}
+
 interface PacketRow extends PacketSummary {
   packet_json: string;
 }
 
 interface LocalNodeIdentityRow extends LocalNodeIdentity {
   id: number;
+}
+
+interface LocalNodeSettingsRow {
+  id: number;
+  default_language_hint: string;
+  default_safety_label: SafetyLabel;
+  sync_mode: string;
+  developer_mode: number;
+  show_debug_panels: number;
+  updated_at: number;
 }
 
 interface SyncPacketRow {
@@ -190,6 +217,14 @@ function createLocalNodeId(): string {
   return `mycelium_node_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
 
+const DEFAULT_LOCAL_NODE_SETTINGS: Omit<LocalNodeSettings, "updated_at"> = {
+  default_language_hint: "und",
+  default_safety_label: "normal",
+  sync_mode: "manual",
+  developer_mode: true,
+  show_debug_panels: true,
+};
+
 function currentUnixSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -215,6 +250,25 @@ function toLocalNodeIdentity(row: LocalNodeIdentityRow): LocalNodeIdentity {
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+function toLocalNodeSettings(row: LocalNodeSettingsRow): LocalNodeSettings {
+  if (row.sync_mode !== "manual") {
+    throw new Error(`Unsupported local settings sync_mode: ${row.sync_mode}`);
+  }
+
+  return {
+    default_language_hint: row.default_language_hint,
+    default_safety_label: row.default_safety_label,
+    sync_mode: "manual",
+    developer_mode: row.developer_mode === 1,
+    show_debug_panels: row.show_debug_panels === 1,
+    updated_at: row.updated_at,
+  };
+}
+
+function booleanToSqliteInteger(value: boolean): number {
+  return value ? 1 : 0;
 }
 
 export class SQLiteStore {
@@ -342,6 +396,134 @@ export class SQLiteStore {
     return toLocalNodeIdentity(updatedIdentity);
   }
 
+  getOrCreateLocalNodeSettings(): LocalNodeSettings {
+    const existingSettings = this.getLocalNodeSettingsRow();
+
+    if (existingSettings) {
+      return toLocalNodeSettings(existingSettings);
+    }
+
+    const updatedAt = currentUnixSeconds();
+
+    this.db
+      .prepare(
+        `
+        INSERT OR IGNORE INTO local_node_settings (
+          id,
+          default_language_hint,
+          default_safety_label,
+          sync_mode,
+          developer_mode,
+          show_debug_panels,
+          updated_at
+        )
+        VALUES (
+          1,
+          @default_language_hint,
+          @default_safety_label,
+          @sync_mode,
+          @developer_mode,
+          @show_debug_panels,
+          @updated_at
+        )
+      `
+      )
+      .run({
+        default_language_hint:
+          DEFAULT_LOCAL_NODE_SETTINGS.default_language_hint,
+        default_safety_label: DEFAULT_LOCAL_NODE_SETTINGS.default_safety_label,
+        sync_mode: DEFAULT_LOCAL_NODE_SETTINGS.sync_mode,
+        developer_mode: booleanToSqliteInteger(
+          DEFAULT_LOCAL_NODE_SETTINGS.developer_mode
+        ),
+        show_debug_panels: booleanToSqliteInteger(
+          DEFAULT_LOCAL_NODE_SETTINGS.show_debug_panels
+        ),
+        updated_at: updatedAt,
+      });
+
+    const settings = this.getLocalNodeSettingsRow();
+
+    if (!settings) {
+      throw new Error("Failed to create local node settings");
+    }
+
+    return toLocalNodeSettings(settings);
+  }
+
+  updateLocalNodeSettings(
+    input: LocalNodeSettingsUpdate
+  ): LocalNodeSettings {
+    const existingSettings = this.getOrCreateLocalNodeSettings();
+    const languageHint = input.default_language_hint?.trim();
+
+    if (
+      input.default_language_hint === undefined &&
+      input.default_safety_label === undefined &&
+      input.sync_mode === undefined &&
+      input.developer_mode === undefined &&
+      input.show_debug_panels === undefined
+    ) {
+      throw new Error("at least one settings field is required");
+    }
+
+    if (input.default_language_hint !== undefined) {
+      if (!languageHint) {
+        throw new Error("default_language_hint must be a non-empty string");
+      }
+
+      if (languageHint.length > 40) {
+        throw new Error("default_language_hint must be 40 characters or less");
+      }
+    }
+
+    if (input.sync_mode !== undefined && input.sync_mode !== "manual") {
+      throw new Error("sync_mode must be manual");
+    }
+
+    const updatedAt = Math.max(
+      currentUnixSeconds(),
+      existingSettings.updated_at + 1
+    );
+
+    this.db
+      .prepare(
+        `
+        UPDATE local_node_settings
+        SET
+          default_language_hint = @default_language_hint,
+          default_safety_label = @default_safety_label,
+          sync_mode = @sync_mode,
+          developer_mode = @developer_mode,
+          show_debug_panels = @show_debug_panels,
+          updated_at = @updated_at
+        WHERE id = 1
+      `
+      )
+      .run({
+        default_language_hint:
+          languageHint ?? existingSettings.default_language_hint,
+        default_safety_label:
+          input.default_safety_label ?? existingSettings.default_safety_label,
+        sync_mode: input.sync_mode ?? existingSettings.sync_mode,
+        developer_mode: booleanToSqliteInteger(
+          input.developer_mode ?? existingSettings.developer_mode
+        ),
+        show_debug_panels: booleanToSqliteInteger(
+          input.show_debug_panels ?? existingSettings.show_debug_panels
+        ),
+        updated_at: updatedAt,
+      });
+
+    const updatedSettings = this.getLocalNodeSettingsRow();
+
+    if (!updatedSettings) {
+      throw new Error("Failed to update local node settings");
+    }
+
+    return toLocalNodeSettings(updatedSettings);
+  }
+
   private getLocalNodeIdentityRow(): LocalNodeIdentityRow | undefined {
     return this.db
       .prepare(
@@ -358,6 +540,25 @@ export class SQLiteStore {
       `
       )
       .get() as LocalNodeIdentityRow | undefined;
+  }
+
+  private getLocalNodeSettingsRow(): LocalNodeSettingsRow | undefined {
+    return this.db
+      .prepare(
+        `
+        SELECT
+          id,
+          default_language_hint,
+          default_safety_label,
+          sync_mode,
+          developer_mode,
+          show_debug_panels,
+          updated_at
+        FROM local_node_settings
+        WHERE id = 1
+      `
+      )
+      .get() as LocalNodeSettingsRow | undefined;
   }
 
   savePacket(packet: LmpPacket, packetSize: PacketSizeEstimate): void {

@@ -3,6 +3,7 @@ import {
   type BestMeaningExplanationResponse,
   type BestMeaningResponse,
   type LocalNodeIdentity,
+  type LocalNodeSettings,
   type NodeStatusResponse,
   type ObservePhraseResponse,
   type PhraseRecord,
@@ -33,6 +34,7 @@ type AppState = {
   proposeResult?: FormResult;
   nodeStatus?: NodeStatusResponse;
   nodeIdentity?: LocalNodeIdentity;
+  nodeSettings?: LocalNodeSettings;
   syncStatus?: SyncStatusResponse;
   searchQuery: string;
   observeForm: ObserveFormState;
@@ -246,6 +248,29 @@ function renderSyncStatus(): string {
                 .join("")
             : `<p class="muted">No peer cursors stored.</p>`
         }
+      </div>
+    </section>
+  `;
+}
+
+function renderLocalSettings(): string {
+  const settings = state.nodeSettings;
+  const statusSettings = state.nodeStatus?.settings;
+
+  return `
+    <section class="panel">
+      <div class="panel-heading">
+        <h2>Local Settings</h2>
+        <span class="status ${settings ? "ok" : "warn"}">
+          ${settings ? "loaded" : state.loading ? "loading" : "unavailable"}
+        </span>
+      </div>
+      <div class="field-grid">
+        ${field("default_language_hint", settings?.default_language_hint)}
+        ${field("default_safety_label", settings?.default_safety_label)}
+        ${field("sync_mode", settings?.sync_mode ?? statusSettings?.sync_mode)}
+        ${field("developer_mode", statusText(settings?.developer_mode ?? statusSettings?.developer_mode))}
+        ${field("show_debug_panels", statusText(settings?.show_debug_panels ?? statusSettings?.show_debug_panels))}
       </div>
     </section>
   `;
@@ -552,6 +577,7 @@ function render(): void {
     <main class="layout">
       <div class="status-column">
         ${renderNodeStatus()}
+        ${renderLocalSettings()}
         ${renderSyncStatus()}
         ${renderGovernance()}
       </div>
@@ -646,9 +672,10 @@ async function loadStatus(): Promise<void> {
   setState({ loading: true, error: undefined });
 
   try {
-    const [nodeStatus, nodeIdentity, syncStatus] = await Promise.all([
+    const [nodeStatus, nodeIdentity, nodeSettings, syncStatus] = await Promise.all([
       client.getNodeStatus(),
       client.getNodeIdentity(),
+      client.getNodeSettings(),
       client.getSyncStatus(),
     ]);
 
@@ -656,6 +683,7 @@ async function loadStatus(): Promise<void> {
       loading: false,
       nodeStatus,
       nodeIdentity: nodeIdentity.identity,
+      nodeSettings: nodeSettings.settings,
       syncStatus,
     });
   } catch (error) {
