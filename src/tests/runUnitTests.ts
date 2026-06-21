@@ -1296,30 +1296,38 @@ test("correction tombstone duplicate voter protection counts latest vote only", 
         reason: "spam",
       },
     }),
-    createPacket({
-      packet_type: "meaning_correction_tombstone_vote",
-      zone: TEST_ZONE,
-      author: TEST_AUTHOR,
-      payload: {
-        phrase_id: phraseId,
-        correction_id: correctionId,
-        tombstone_id: tombstoneId,
-        vote: "confirm",
-        voter: "same_tombstone_voter",
-      },
-    }),
-    createPacket({
-      packet_type: "meaning_correction_tombstone_vote",
-      zone: TEST_ZONE,
-      author: TEST_AUTHOR,
-      payload: {
-        phrase_id: phraseId,
-        correction_id: correctionId,
-        tombstone_id: tombstoneId,
-        vote: "reject",
-        voter: "same_tombstone_voter",
-      },
-    }),
+    {
+      ...createPacket({
+        packet_type: "meaning_correction_tombstone_vote",
+        zone: TEST_ZONE,
+        author: TEST_AUTHOR,
+        payload: {
+          phrase_id: phraseId,
+          correction_id: correctionId,
+          tombstone_id: tombstoneId,
+          vote: "confirm",
+          voter: "same_tombstone_voter",
+        },
+      }),
+      created_at: 1000,
+      packet_id: "unit_tombstone_vote_confirm_001",
+    },
+    {
+      ...createPacket({
+        packet_type: "meaning_correction_tombstone_vote",
+        zone: TEST_ZONE,
+        author: TEST_AUTHOR,
+        payload: {
+          phrase_id: phraseId,
+          correction_id: correctionId,
+          tombstone_id: tombstoneId,
+          vote: "reject",
+          voter: "same_tombstone_voter",
+        },
+      }),
+      created_at: 2000,
+      packet_id: "unit_tombstone_vote_reject_002",
+    },
   ];
 
   const tombstones = summarizeTombstonePacketsForPhrase(phraseId, packets);
