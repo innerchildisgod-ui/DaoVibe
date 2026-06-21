@@ -2,6 +2,10 @@ import type { LanguageEngine, ReceivePacketResult } from "../engine";
 import type { NativeKernelBoundary } from "../kernel/NativeKernelBoundary";
 import { TypeScriptKernel } from "../kernel/TypeScriptKernel";
 import type { LmpPacket } from "../protocol/packet";
+import {
+  assertSyncBatchWithinLimits,
+  clampSyncBatchLimit,
+} from "../protocol/packetSize";
 import { requestJson } from "../server/http/requestJson";
 import {
   DetailedSyncImportResult,
@@ -92,7 +96,7 @@ export class SyncController {
   ) {}
 
   pullBatch(cursor = "0:", limit = 100) {
-    return this.engine.pullSyncBatch(cursor, limit);
+    return this.engine.pullSyncBatch(cursor, clampSyncBatchLimit(limit));
   }
 
   getPeerSyncCursor(peerAuthor: string) {
@@ -128,6 +132,21 @@ export class SyncController {
           `Packet type: not available.`,
           `Cursor was not advanced.`,
           `Reason: Sync cursor mismatch. Expected ${currentCursor.cursor}, received ${params.cursorBefore}`,
+        ].join(" ")
+      );
+    }
+
+    try {
+      assertSyncBatchWithinLimits(params.packets);
+    } catch (error) {
+      throw new Error(
+        [
+          `Sync import failed for ${params.peerAuthor}.`,
+          `Packet index: none.`,
+          `Packet ID: not available.`,
+          `Packet type: not available.`,
+          `Cursor was not advanced.`,
+          `Reason: ${getErrorMessage(error)}`,
         ].join(" ")
       );
     }
@@ -213,10 +232,11 @@ export class SyncController {
   }): Promise<SyncRunResult> {
     const savedCursor = this.engine.getPeerSyncCursor(params.peerAuthor);
     const normalizedRemoteBaseUrl = normalizeRemoteBaseUrl(params.remoteBaseUrl);
+    const limit = clampSyncBatchLimit(params.limit);
     const pullUrl = buildSyncPullUrl(
       normalizedRemoteBaseUrl,
       savedCursor.cursor,
-      params.limit
+      limit
     );
     const pulledBatch = await requestJson<RemoteSyncPullResponse>(
       "GET",
