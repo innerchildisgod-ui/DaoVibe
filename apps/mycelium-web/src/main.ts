@@ -16,6 +16,9 @@ import {
   type TombstoneSummary,
 } from "@mycelium/client";
 import "./styles.css";
+import { field, renderFormResult } from "./formRendering";
+import type { FormResult } from "./formRendering";
+
 import {
   createMeaningId,
   createPhraseId,
@@ -67,11 +70,6 @@ type AppState = {
   packetTrace?: PhrasePacketTraceResponse;
   corrections?: CorrectionSummary[];
   tombstones?: TombstoneSummary[];
-};
-
-type FormResult = {
-  kind: "success" | "error";
-  message: string;
 };
 
 type ObserveFormState = {
@@ -137,23 +135,6 @@ function bestMeaningSourceLabel(
 
 function currentProposePhraseId(): string {
   return state.proposeForm.phraseId || state.selectedPhrase?.phrase_id || "";
-}
-
-function field(label: string, value: unknown): string {
-  return `
-    <div class="field">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-    </div>
-  `;
-}
-
-function renderFormResult(result: FormResult | undefined): string {
-  if (!result) {
-    return "";
-  }
-
-  return `<p class="form-message ${result.kind}">${escapeHtml(result.message)}</p>`;
 }
 
 function renderHeader(): string {
