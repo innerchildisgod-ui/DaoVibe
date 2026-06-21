@@ -16,6 +16,16 @@ import {
   type TombstoneSummary,
 } from "@mycelium/client";
 import "./styles.css";
+import {
+  createMeaningId,
+  createPhraseId,
+  escapeAttribute,
+  escapeHtml,
+  optionalTrimmed,
+  statusText,
+  text,
+} from "./uiFormatting";
+
 
 const DEFAULT_API_BASE_URL = "http://localhost:3000";
 const configuredApiBaseUrl = import.meta.env.VITE_MYCELIUM_API_BASE_URL;
@@ -111,31 +121,6 @@ function setState(nextState: Partial<AppState>): void {
   render();
 }
 
-function text(value: unknown, fallback = "Not available"): string {
-  if (value === undefined || value === null || value === "") {
-    return fallback;
-  }
-
-  return String(value);
-}
-
-function escapeHtml(value: unknown): string {
-  return text(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function escapeAttribute(value: unknown): string {
-  return escapeHtml(value).replace(/`/g, "&#96;");
-}
-
-function statusText(value: boolean | undefined): string {
-  return value === true ? "true" : value === false ? "false" : "unknown";
-}
-
 function bestMeaningSourceLabel(
   source: "base_meaning" | "correction" | undefined
 ): string {
@@ -148,34 +133,6 @@ function bestMeaningSourceLabel(
   }
 
   return "unknown";
-}
-
-function optionalTrimmed(value: string): string | undefined {
-  const trimmedValue = value.trim();
-
-  return trimmedValue ? trimmedValue : undefined;
-}
-
-function slugFromText(value: string, fallback: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 48);
-
-  return slug || fallback;
-}
-
-function createPhraseId(surfaceText: string): string {
-  return `phrase_${slugFromText(surfaceText, "observed")}_${Date.now().toString(36)}`;
-}
-
-function createMeaningId(phraseId: string, referenceMeaning: string): string {
-  const baseText = `${phraseId}_${referenceMeaning}`;
-
-  return `meaning_${slugFromText(baseText, "proposal")}_${Date.now().toString(36)}`;
 }
 
 function currentProposePhraseId(): string {
