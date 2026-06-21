@@ -501,6 +501,51 @@ Missing phrases return the same HTTP 404 shape as `GET /phrases/:phraseId`.
 
 `tombstone_execution_enabled` is always `false` in this build. Confirmed tombstones may appear as evidence, but they remain preview-only and do not suppress correction-based best meanings.
 
+### `GET /phrases/:phraseId/packetTrace`
+
+App-facing, read-only route that returns phrase-scoped packet evidence in deterministic local ledger order. It makes distributed packet state inspectable without creating packets, running sync, executing tombstones, deleting data, pruning ledger data, or changing packet protocol.
+
+```ts
+{
+  ok: true;
+  phrase_id: string;
+  trace: {
+    packet_count: number;
+    packet_types: Record<string, number>;
+    packets: Array<{
+      packet_id: string;
+      packet_type: string;
+      author?: string;
+      parent?: string;
+      phrase_id?: string;
+      meaning_id?: string;
+      correction_id?: string;
+      tombstone_id?: string;
+      created_at?: number | string;
+      received_at?: number;
+      role:
+        | "phrase_observation"
+        | "meaning_proposal"
+        | "meaning_vote"
+        | "safety_label"
+        | "correction_proposal"
+        | "correction_vote"
+        | "tombstone_proposal"
+        | "tombstone_vote"
+        | "unknown";
+      summary: string;
+    }>;
+  };
+  safety: {
+    tombstone_execution: false;
+    deletion_enabled: false;
+    ledger_pruning_enabled: false;
+  };
+}
+```
+
+The trace is local inspection data, not governance ranking. It uses phrase-scoped ledger lookup helpers and returns packet summaries rather than large raw payload dumps.
+
 ### `POST /app/lookupPhrase`
 
 Body:

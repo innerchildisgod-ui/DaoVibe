@@ -316,6 +316,66 @@ button {
   overflow-wrap: anywhere;
 }
 
+.packet-type-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.packet-type-counts span {
+  border: 1px solid #d8e0db;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #fbfdfb;
+  color: #34443f;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.packet-trace-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.packet-trace-row {
+  min-width: 0;
+  border: 1px solid #d8e0db;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fbfdfb;
+}
+
+.packet-trace-heading,
+.packet-trace-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.packet-trace-heading {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.packet-trace-heading strong,
+.packet-trace-row p,
+.packet-trace-meta span {
+  overflow-wrap: anywhere;
+}
+
+.packet-trace-heading span,
+.packet-trace-meta span {
+  color: #5c6862;
+  font-size: 13px;
+}
+
+.packet-trace-row p {
+  margin: 8px 0;
+  color: #23312d;
+}
+
 .metric-row {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }

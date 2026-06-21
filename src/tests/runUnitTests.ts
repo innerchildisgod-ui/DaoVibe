@@ -1432,6 +1432,130 @@ test("meaning explanation is read-only and leaves bestMeaning unchanged", () => 
   assert.strictEqual(bestMeaningAfter.best_meaning?.source, "correction");
 });
 
+test("packet trace for unknown phrase returns empty read-only trace", () => {
+  const engine = unitEngine("unit_packet_trace_unknown");
+  const controller = new MyceliumController(engine);
+  const packetCountBefore = controller.packetCount();
+  const trace = controller.getPhrasePacketTrace("missing_phrase_trace");
+
+  assert.strictEqual(trace.phrase_id, "missing_phrase_trace");
+  assert.strictEqual(trace.trace.packet_count, 0);
+  assert.deepStrictEqual(trace.trace.packet_types, {});
+  assert.deepStrictEqual(trace.trace.packets, []);
+  assert.strictEqual(trace.safety.tombstone_execution, false);
+  assert.strictEqual(trace.safety.deletion_enabled, false);
+  assert.strictEqual(trace.safety.ledger_pruning_enabled, false);
+  assert.strictEqual(controller.packetCount(), packetCountBefore);
+});
+
+test("packet trace includes phrase, meaning, correction, and tombstone packets", () => {
+  const phraseId = "unit_phrase_packet_trace";
+  const meaningId = "unit_meaning_packet_trace";
+  const correctionId = "unit_correction_packet_trace";
+  const tombstoneId = "unit_tombstone_packet_trace";
+  const engine = unitEngine("unit_packet_trace_full");
+  const controller = new MyceliumController(engine);
+
+  controller.observePhrase({
+    phrase_id: phraseId,
+    surface_text: "packet trace phrase",
+    language_hint: "en",
+    input_type: "text",
+  });
+  controller.proposeMeaning({
+    phrase_id: phraseId,
+    meaning_id: meaningId,
+    reference_meaning: "Traceable meaning.",
+    confidence: 0.7,
+  });
+  controller.voteMeaning({
+    phrase_id: phraseId,
+    meaning_id: meaningId,
+    vote: "confirm",
+    confidence: 0.8,
+  });
+  controller.applySafetyLabel({
+    phrase_id: phraseId,
+    label: "mild_slang",
+  });
+  controller.proposeMeaningCorrection({
+    phrase_id: phraseId,
+    original_meaning_id: meaningId,
+    correction_id: correctionId,
+    corrected_reference_meaning: "Traceable correction.",
+  });
+  controller.voteMeaningCorrection({
+    phrase_id: phraseId,
+    correction_id: correctionId,
+    vote: "confirm",
+    voter: "packet_trace_correction_voter",
+  });
+  controller.proposeMeaningCorrectionTombstone({
+    phrase_id: phraseId,
+    correction_id: correctionId,
+    tombstone_id: tombstoneId,
+    reason: "spam",
+  });
+  controller.voteMeaningCorrectionTombstone({
+    phrase_id: phraseId,
+    correction_id: correctionId,
+    tombstone_id: tombstoneId,
+    vote: "reject",
+    voter: "packet_trace_tombstone_voter",
+  });
+
+  const packetCountBefore = controller.packetCount();
+  const bestMeaningBefore = controller.getBestMeaning(phraseId);
+  const trace = controller.getPhrasePacketTrace(phraseId);
+  const bestMeaningAfter = controller.getBestMeaning(phraseId);
+
+  assert.strictEqual(controller.packetCount(), packetCountBefore);
+  assert.deepStrictEqual(bestMeaningAfter, bestMeaningBefore);
+  assert.strictEqual(trace.trace.packet_count, 8);
+  assert.strictEqual(trace.trace.packet_types.phrase_observed, 1);
+  assert.strictEqual(trace.trace.packet_types.meaning_proposal, 1);
+  assert.strictEqual(trace.trace.packet_types.meaning_vote, 1);
+  assert.strictEqual(trace.trace.packet_types.safety_label, 1);
+  assert.strictEqual(trace.trace.packet_types.meaning_correction_proposed, 1);
+  assert.strictEqual(trace.trace.packet_types.meaning_correction_vote, 1);
+  assert.strictEqual(
+    trace.trace.packet_types.meaning_correction_tombstone_proposed,
+    1
+  );
+  assert.strictEqual(
+    trace.trace.packet_types.meaning_correction_tombstone_vote,
+    1
+  );
+  assert.deepStrictEqual(
+    [...trace.trace.packets.map((packet) => packet.role)].sort(),
+    [
+      "correction_proposal",
+      "correction_vote",
+      "meaning_proposal",
+      "meaning_vote",
+      "phrase_observation",
+      "safety_label",
+      "tombstone_proposal",
+      "tombstone_vote",
+    ].sort()
+  );
+  assert(
+    trace.trace.packets.some(
+      (packet) =>
+        packet.correction_id === correctionId &&
+        packet.summary.includes("correction")
+    )
+  );
+  assert(
+    trace.trace.packets.some(
+      (packet) =>
+        packet.tombstone_id === tombstoneId &&
+        packet.summary.includes("tombstone")
+    )
+  );
+  assert.strictEqual(trace.safety.tombstone_execution, false);
+});
+
 test("correction voter duplicate protection counts first identified voter vote only", () => {
   const phraseId = "unit_phrase_duplicate_votes";
   const correctionId = "unit_correction_duplicate_votes";

@@ -7,6 +7,7 @@ import {
   type NodeDiagnosticsResponse,
   type NodeStatusResponse,
   type ObservePhraseResponse,
+  type PhrasePacketTraceResponse,
   type PhraseRecord,
   type PhraseSearchResponse,
   type ProposeMeaningResponse,
@@ -26,12 +27,14 @@ type AppState = {
   loading: boolean;
   loadingPhrase: boolean;
   loadingExplanation: boolean;
+  loadingPacketTrace: boolean;
   loadingDiagnostics: boolean;
   observingPhrase: boolean;
   proposingMeaning: boolean;
   error?: string;
   searchError?: string;
   explanationError?: string;
+  packetTraceError?: string;
   diagnosticsError?: string;
   observeResult?: FormResult;
   proposeResult?: FormResult;
@@ -47,6 +50,7 @@ type AppState = {
   selectedPhrase?: PhraseRecord;
   bestMeaning?: BestMeaningResponse;
   meaningExplanation?: BestMeaningExplanationResponse;
+  packetTrace?: PhrasePacketTraceResponse;
 };
 
 type FormResult = {
@@ -71,6 +75,7 @@ const state: AppState = {
   loading: true,
   loadingPhrase: false,
   loadingExplanation: false,
+  loadingPacketTrace: false,
   loadingDiagnostics: false,
   observingPhrase: false,
   proposingMeaning: false,
@@ -484,6 +489,113 @@ function renderMeaningExplanation(): string {
   `;
 }
 
+function renderPacketTypeCounts(trace: PhrasePacketTraceResponse): string {
+  const entries = Object.entries(trace.trace.packet_types);
+
+  if (entries.length === 0) {
+    return `<p class="muted">No packet types recorded.</p>`;
+  }
+
+  return `
+    <div class="packet-type-counts">
+      ${entries
+        .map(
+          ([packetType, count]) => `
+            <span>${escapeHtml(packetType)} ${escapeHtml(count)}</span>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPacketTraceRows(trace: PhrasePacketTraceResponse): string {
+  if (trace.trace.packets.length === 0) {
+    return `<p class="muted">No packets found for this phrase.</p>`;
+  }
+
+  return `
+    <div class="packet-trace-list">
+      ${trace.trace.packets
+        .map(
+          (packet) => `
+            <article class="packet-trace-row">
+              <div class="packet-trace-heading">
+                <strong>${escapeHtml(packet.packet_type)}</strong>
+                <span>${escapeHtml(packet.role)}</span>
+              </div>
+              <p>${escapeHtml(packet.summary)}</p>
+              <div class="packet-trace-meta">
+                <span>packet_id ${escapeHtml(packet.packet_id)}</span>
+                ${
+                  packet.author
+                    ? `<span>author ${escapeHtml(packet.author)}</span>`
+                    : ""
+                }
+                ${
+                  packet.created_at !== undefined
+                    ? `<span>created_at ${escapeHtml(packet.created_at)}</span>`
+                    : ""
+                }
+                ${
+                  packet.received_at !== undefined
+                    ? `<span>received_at ${escapeHtml(packet.received_at)}</span>`
+                    : ""
+                }
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPacketTrace(): string {
+  const trace = state.packetTrace;
+
+  return `
+    <section class="panel packet-trace-panel">
+      <div class="panel-heading">
+        <h2>Packet Trace</h2>
+        <div class="panel-actions">
+          <span class="status ${trace ? "ok" : "warn"}">
+            ${state.loadingPacketTrace ? "loading" : trace ? "loaded" : "unavailable"}
+          </span>
+          <button
+            id="refresh-packet-trace"
+            type="button"
+            ${state.loadingPacketTrace || !state.selectedPhrase ? "disabled" : ""}
+          >
+            ${state.loadingPacketTrace ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </div>
+      ${
+        state.packetTraceError
+          ? `<p class="form-message error">${escapeHtml(state.packetTraceError)}</p>`
+          : ""
+      }
+      ${
+        !state.selectedPhrase
+          ? `<p class="muted">Select a phrase to inspect packet evidence.</p>`
+          : trace
+            ? `
+              <div class="field-grid">
+                ${field("packet_count", trace.trace.packet_count)}
+                ${field("tombstone_execution", statusText(trace.safety.tombstone_execution))}
+                ${field("deletion_enabled", statusText(trace.safety.deletion_enabled))}
+                ${field("ledger_pruning_enabled", statusText(trace.safety.ledger_pruning_enabled))}
+              </div>
+              ${renderPacketTypeCounts(trace)}
+              ${renderPacketTraceRows(trace)}
+            `
+            : `<p class="muted">No packet trace loaded.</p>`
+      }
+    </section>
+  `;
+}
+
 function renderPhraseDetail(): string {
   const phrase = state.selectedPhrase;
 
@@ -637,6 +749,7 @@ function render(): void {
         ${renderObservePhrase()}
         ${renderPhraseDetail()}
         ${renderMeaningExplanation()}
+        ${renderPacketTrace()}
         ${renderProposeMeaning()}
       </div>
     </main>
@@ -656,6 +769,9 @@ function bindEvents(): void {
   );
   const refreshDiagnosticsButton = document.querySelector<HTMLButtonElement>(
     "#refresh-diagnostics"
+  );
+  const refreshPacketTraceButton = document.querySelector<HTMLButtonElement>(
+    "#refresh-packet-trace"
   );
 
   form?.addEventListener("submit", (event) => {
@@ -709,6 +825,12 @@ function bindEvents(): void {
 
   refreshDiagnosticsButton?.addEventListener("click", () => {
     void loadDiagnostics();
+  });
+
+  refreshPacketTraceButton?.addEventListener("click", () => {
+    if (state.selectedPhrase) {
+      void loadPacketTrace(state.selectedPhrase.phrase_id);
+    }
   });
 }
 
@@ -833,6 +955,7 @@ async function selectPhrase(phraseId: string): Promise<void> {
   setState({
     loadingPhrase: true,
     loadingExplanation: true,
+    loadingPacketTrace: true,
     proposeForm: {
       ...state.proposeForm,
       phraseId,
@@ -840,14 +963,18 @@ async function selectPhrase(phraseId: string): Promise<void> {
     selectedPhrase: undefined,
     bestMeaning: undefined,
     meaningExplanation: undefined,
+    packetTrace: undefined,
     explanationError: undefined,
+    packetTraceError: undefined,
   });
 
   try {
-    const [phrase, bestMeaning, explanation] = await Promise.allSettled([
+    const [phrase, bestMeaning, explanation, packetTrace] =
+      await Promise.allSettled([
       client.getPhrase(phraseId),
       client.getBestMeaning(phraseId),
       client.getBestMeaningExplanation(phraseId),
+      client.getPhrasePacketTrace(phraseId),
     ]);
 
     if (phrase.status === "rejected") {
@@ -861,25 +988,59 @@ async function selectPhrase(phraseId: string): Promise<void> {
     setState({
       loadingPhrase: false,
       loadingExplanation: false,
+      loadingPacketTrace: false,
       selectedPhrase: phrase.value.phrase,
       bestMeaning: bestMeaning.value,
       meaningExplanation:
         explanation.status === "fulfilled" ? explanation.value : undefined,
+      packetTrace:
+        packetTrace.status === "fulfilled" ? packetTrace.value : undefined,
       explanationError:
         explanation.status === "rejected"
           ? explanation.reason instanceof Error
             ? explanation.reason.message
             : "Meaning explanation failed."
           : undefined,
+      packetTraceError:
+        packetTrace.status === "rejected"
+          ? packetTrace.reason instanceof Error
+            ? packetTrace.reason.message
+            : "Packet trace failed."
+          : undefined,
     });
   } catch (error) {
     setState({
       loadingPhrase: false,
       loadingExplanation: false,
+      loadingPacketTrace: false,
       meaningExplanation: undefined,
+      packetTrace: undefined,
       explanationError: undefined,
+      packetTraceError: undefined,
       searchError:
         error instanceof Error ? error.message : "Phrase detail failed.",
+    });
+  }
+}
+
+async function loadPacketTrace(phraseId: string): Promise<void> {
+  setState({
+    loadingPacketTrace: true,
+    packetTraceError: undefined,
+  });
+
+  try {
+    const trace = await client.getPhrasePacketTrace(phraseId);
+
+    setState({
+      loadingPacketTrace: false,
+      packetTrace: trace,
+    });
+  } catch (error) {
+    setState({
+      loadingPacketTrace: false,
+      packetTraceError:
+        error instanceof Error ? error.message : "Packet trace failed.",
     });
   }
 }

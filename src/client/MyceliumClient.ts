@@ -222,6 +222,45 @@ export interface BestMeaningExplanationResponse {
   };
 }
 
+export type PhrasePacketTraceRole =
+  | "phrase_observation"
+  | "meaning_proposal"
+  | "meaning_vote"
+  | "safety_label"
+  | "correction_proposal"
+  | "correction_vote"
+  | "tombstone_proposal"
+  | "tombstone_vote"
+  | "unknown";
+
+export interface PhrasePacketTraceResponse {
+  ok: true;
+  phrase_id: string;
+  trace: {
+    packet_count: number;
+    packet_types: Record<string, number>;
+    packets: Array<{
+      packet_id: string;
+      packet_type: string;
+      author?: string;
+      parent?: string;
+      phrase_id?: string;
+      meaning_id?: string;
+      correction_id?: string;
+      tombstone_id?: string;
+      created_at?: number | string;
+      received_at?: number;
+      role: PhrasePacketTraceRole;
+      summary: string;
+    }>;
+  };
+  safety: {
+    tombstone_execution: false;
+    deletion_enabled: false;
+    ledger_pruning_enabled: false;
+  };
+}
+
 export type InputType = "speech" | "text" | "symbol" | "drawing";
 export type MeaningVoteValue = "confirm" | "reject" | "unsure";
 export type GovernanceVoteValue = "confirm" | "reject";
@@ -562,6 +601,12 @@ export class MyceliumClient {
   ): Promise<BestMeaningExplanationResponse> {
     return this.getJson(
       `/phrases/${encodeURIComponent(phraseId)}/explainBestMeaning`
+    );
+  }
+
+  getPhrasePacketTrace(phraseId: string): Promise<PhrasePacketTraceResponse> {
+    return this.getJson(
+      `/phrases/${encodeURIComponent(phraseId)}/packetTrace`
     );
   }
 

@@ -31,6 +31,7 @@ import {
   buildBestMeaningExplanation,
   type BestMeaningExplanationResult,
 } from "./MeaningExplanation";
+import { getPacketTraceForPhrase } from "./PacketTrace";
 import {
   MYCELIUM_API_VERSION,
   MYCELIUM_APP_CONTRACT_VERSION,
@@ -379,6 +380,10 @@ export class MyceliumController {
 
   getTombstoneExecutionPreviewForPhrase(phraseId: string) {
     return listTombstoneExecutionPreviewForPhrase(this.engine, phraseId);
+  }
+
+  getPhrasePacketTrace(phraseId: string) {
+    return getPacketTraceForPhrase(this.engine, phraseId);
   }
 
   getBestMeaning(phraseId: string) {

@@ -169,6 +169,17 @@ export function registerLanguageRoutes(
     });
   });
 
+  app.get("/phrases/:phraseId/packetTrace", (req, res) => {
+    try {
+      res.json({
+        ok: true,
+        ...myceliumController.getPhrasePacketTrace(req.params.phraseId),
+      });
+    } catch (error) {
+      sendApiError(res, 400, "INTERNAL_ERROR", errorMessage(error));
+    }
+  });
+
   app.get("/phrases/:phraseId", (req, res) => {
     const result = myceliumController.getPhraseById(req.params.phraseId);
 
