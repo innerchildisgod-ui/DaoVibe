@@ -4,6 +4,7 @@ import { ServerConfig } from "../config/env";
 import { LanguageEngine } from "../engine";
 import { MyceliumController } from "../mycelium/MyceliumController";
 import { SyncController } from "../sync/SyncController";
+import { registerLedgerRoutes } from "./routes/ledgerRoutes";
 import { registerLanguageRoutes } from "./routes/languageRoutes";
 import { registerSyncRoutes } from "./routes/syncRoutes";
 
@@ -86,6 +87,9 @@ export function createServer(params: CreateServerParams): Express {
   });
   registerLanguageRoutes(app, {
     myceliumController,
+  });
+  registerLedgerRoutes(app, {
+    engine: params.engine,
   });
   registerSyncRoutes(app, {
     syncController,

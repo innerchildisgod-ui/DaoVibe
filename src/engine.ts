@@ -52,6 +52,14 @@ export interface ReceivePacketResult {
   applyStatus: ReceivePacketApplyStatus;
 }
 
+export interface LedgerImportResult {
+  accepted_new_count: number;
+  already_stored_count: number;
+  rejected_invalid_count: number;
+  rejected_expired_count: number;
+  failed_count: number;
+}
+
 export class LanguageEngine {
   private store = new PhraseStore();
   private packetIndex = new PacketIndex();
@@ -306,6 +314,10 @@ export class LanguageEngine {
     return this.sqliteStore.countPackets();
   }
 
+  exportLedgerPackets(): LmpPacket[] {
+    return this.sqliteStore.listAllLedgerPackets();
+  }
+
   listPacketSummaries(limit = 100) {
     return this.sqliteStore.listPacketSummaries(limit);
   }
@@ -316,6 +328,35 @@ export class LanguageEngine {
 
   getPacketsByIds(packetIds: string[]) {
     return this.sqliteStore.getPacketsByIds(packetIds);
+  }
+
+  importLedgerPackets(packets: unknown[]): LedgerImportResult {
+    const result: LedgerImportResult = {
+      accepted_new_count: 0,
+      already_stored_count: 0,
+      rejected_invalid_count: 0,
+      rejected_expired_count: 0,
+      failed_count: 0,
+    };
+
+    for (const packet of packets) {
+      try {
+        const receiveResult = this.receivePacket(packet as LmpPacket);
+
+        if (
+          receiveResult.applyStatus === "already_stored" ||
+          receiveResult.packetRoute.decision === "reject_duplicate"
+        ) {
+          result.already_stored_count += 1;
+        } else {
+          result.accepted_new_count += 1;
+        }
+      } catch (error) {
+        result[this.classifyLedgerImportFailure(error, packet)] += 1;
+      }
+    }
+
+    return result;
   }
 
   listPacketsByPhraseAndTypes(phraseId: string, packetTypes: PacketType[]) {
@@ -469,6 +510,35 @@ export class LanguageEngine {
         `Packet was not accepted: ${route.decision}. ${route.errors.join(", ")}`
       );
     }
+  }
+
+  private classifyLedgerImportFailure(
+    error: unknown,
+    packet: unknown
+  ): keyof LedgerImportResult {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const lowerMessage = message.toLowerCase();
+
+    if (
+      message.includes("reject_expired") ||
+      lowerMessage.includes("expired")
+    ) {
+      return "rejected_expired_count";
+    }
+
+    if (
+      packet === null ||
+      typeof packet !== "object" ||
+      Array.isArray(packet) ||
+      message.includes("reject_invalid") ||
+      lowerMessage.includes("invalid") ||
+      lowerMessage.includes("unsupported") ||
+      lowerMessage.includes("missing")
+    ) {
+      return "rejected_invalid_count";
+    }
+
+    return "failed_count";
   }
 
   private storeEventOnlyPacket<TPayload>(

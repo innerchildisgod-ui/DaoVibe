@@ -876,7 +876,7 @@ export class SQLiteStore {
       };
     });
   }
-    listPacketSummaries(limit = 100): PacketSummary[] {
+  listPacketSummaries(limit = 100): PacketSummary[] {
     const rows = this.db
       .prepare(
         `
@@ -1095,6 +1095,20 @@ export class SQLiteStore {
       `
       )
       .all(...packetIds) as PacketRow[];
+
+    return rows.map((row) => JSON.parse(row.packet_json) as LmpPacket);
+  }
+
+  listAllLedgerPackets(): LmpPacket[] {
+    const rows = this.db
+      .prepare(
+        `
+        SELECT packet_json
+        FROM packets
+        ORDER BY received_at ASC, packet_id ASC
+      `
+      )
+      .all() as PacketRow[];
 
     return rows.map((row) => JSON.parse(row.packet_json) as LmpPacket);
   }

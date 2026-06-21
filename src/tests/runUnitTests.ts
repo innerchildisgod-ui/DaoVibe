@@ -1,5 +1,6 @@
 import assert from "assert";
 import Database from "better-sqlite3";
+import type { Server as HttpServer } from "http";
 import { join } from "path";
 import { createPacket } from "../protocol/packet";
 import type { LmpPacket } from "../protocol/packet";
@@ -30,6 +31,7 @@ import {
 } from "../mycelium/MyceliumVersions";
 import { createCorrectionGovernanceRateLimiter } from "../server/routes/correctionRateLimiter";
 import { apiError } from "../server/routes/apiResponses";
+import { createServer as createMyceliumServer } from "../server/createServer";
 import { test, runTests } from "./testHarness";
 import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
 import { SQLiteStore, type KnowledgePhraseRecord } from "../storage/sqliteStore";
@@ -40,6 +42,7 @@ import {
 } from "../storage/sqliteMigrations";
 import { buildClientUrl } from "../client/clientUrl";
 import { MyceliumClient, MyceliumClientError } from "../client/MyceliumClient";
+import type { ServerConfig } from "../config/env";
 import { createTypeScriptNativeCoreStub } from "../kernel/TypeScriptNativeCoreStub";
 
 const TEST_ZONE = "unit_test_zone";
@@ -59,6 +62,67 @@ function unitEngine(name: string): LanguageEngine {
     author: TEST_AUTHOR,
     nodeAgeGroup: "adult",
     dbPath: unitDbPath(name),
+  });
+}
+
+function unitServerConfig(name: string): ServerConfig {
+  const dbPath = unitDbPath(name);
+
+  return {
+    port: 0,
+    author: TEST_AUTHOR,
+    nodeId: `unit_node_${name}`,
+    nodeAgeGroup: "adult",
+    dbPath,
+    zone: TEST_ZONE,
+    defaultDbPath: dbPath,
+  };
+}
+
+async function withUnitHttpServer(
+  engine: LanguageEngine,
+  name: string,
+  run: (baseUrl: string) => Promise<void>
+): Promise<void> {
+  const app = createMyceliumServer({
+    config: unitServerConfig(name),
+    engine,
+  });
+  const server = app.listen(0);
+
+  await new Promise<void>((resolve) => {
+    if (server.listening) {
+      resolve();
+      return;
+    }
+
+    server.once("listening", resolve);
+  });
+
+  const address = server.address();
+
+  if (!address || typeof address === "string") {
+    await closeHttpServer(server);
+    throw new Error("Expected unit HTTP server to listen on a TCP port");
+  }
+
+  try {
+    await run(`http://127.0.0.1:${address.port}`);
+  } finally {
+    await closeHttpServer(server);
+  }
+}
+
+function closeHttpServer(server: HttpServer): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
   });
 }
 
@@ -349,6 +413,59 @@ test("client handles baseUrl trailing slash", async () => {
   });
 
   assert.strictEqual(capturedUrl, "http://localhost:3000/node/status");
+});
+
+test("client exposes ledger export and import methods", async () => {
+  const calls: Array<{
+    url: string;
+    method?: string;
+    body?: string;
+  }> = [];
+  const mockFetch: typeof fetch = async (input, init) => {
+    calls.push({
+      url: String(input),
+      method: init?.method,
+      body: typeof init?.body === "string" ? init.body : undefined,
+    });
+
+    if (String(input).endsWith("/ledger/export")) {
+      return jsonResponse({
+        ok: true,
+        export_type: "mycelium-ledger-export",
+        api_version: MYCELIUM_API_VERSION,
+        protocol_version: MYCELIUM_PROTOCOL_VERSION,
+        exported_at: 1,
+        packet_count: 0,
+        packets: [],
+      });
+    }
+
+    return jsonResponse({
+      ok: true,
+      import_result: {
+        accepted_new_count: 0,
+        already_stored_count: 0,
+        rejected_invalid_count: 0,
+        rejected_expired_count: 0,
+        failed_count: 0,
+      },
+    });
+  };
+
+  await withMockFetch(mockFetch, async () => {
+    const client = new MyceliumClient({
+      baseUrl: "http://localhost:3000",
+    });
+
+    await client.exportLedger();
+    await client.importLedger({ packets: [{ packet_id: "unit_packet" }] });
+  });
+
+  assert.strictEqual(calls[0].url, "http://localhost:3000/ledger/export");
+  assert.strictEqual(calls[0].method, "GET");
+  assert.strictEqual(calls[1].url, "http://localhost:3000/ledger/import");
+  assert.strictEqual(calls[1].method, "POST");
+  assert.strictEqual(calls[1].body, '{"packets":[{"packet_id":"unit_packet"}]}');
 });
 
 test("apiError returns stable object shape", () => {
@@ -826,6 +943,157 @@ test("node diagnostics does not create packets", () => {
   controller.getNodeDiagnostics();
 
   assert.strictEqual(engine.packetCount(), packetCountBefore);
+});
+
+test("ledger export returns durable packets without mutating count", () => {
+  const engine = unitEngine("unit_ledger_export_read_only");
+  const packet = engine.observePhrase({
+    phrase_id: "unit_phrase_ledger_export",
+    surface_text: "ledger export",
+    language_hint: "en",
+    input_type: "text",
+  }).packet;
+  const packetCountBefore = engine.packetCount();
+  const packets = engine.exportLedgerPackets();
+
+  assert.strictEqual(packets.length, packetCountBefore);
+  assert.strictEqual(packets[0].packet_id, packet.packet_id);
+  assert.strictEqual(engine.packetCount(), packetCountBefore);
+});
+
+test("ledger import counts new and duplicate packets", () => {
+  const sourceEngine = unitEngine("unit_ledger_import_source");
+  sourceEngine.observePhrase({
+    phrase_id: "unit_phrase_ledger_import_duplicate",
+    surface_text: "ledger import duplicate",
+    language_hint: "en",
+    input_type: "text",
+  });
+
+  const targetEngine = unitEngine("unit_ledger_import_target");
+  const packets = sourceEngine.exportLedgerPackets();
+  const firstImport = targetEngine.importLedgerPackets(packets);
+  const secondImport = targetEngine.importLedgerPackets(packets);
+
+  assert.deepStrictEqual(firstImport, {
+    accepted_new_count: 1,
+    already_stored_count: 0,
+    rejected_invalid_count: 0,
+    rejected_expired_count: 0,
+    failed_count: 0,
+  });
+  assert.deepStrictEqual(secondImport, {
+    accepted_new_count: 0,
+    already_stored_count: 1,
+    rejected_invalid_count: 0,
+    rejected_expired_count: 0,
+    failed_count: 0,
+  });
+  assert.strictEqual(targetEngine.packetCount(), 1);
+});
+
+test("ledger import rejects invalid and expired packets through receive path", () => {
+  const engine = unitEngine("unit_ledger_import_rejections");
+  const expiredPacket = createPacket({
+    packet_type: "phrase_observed",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    expires_at: Math.floor(Date.now() / 1000) - 10,
+    payload: {
+      phrase_id: "unit_phrase_ledger_import_expired",
+      surface_text: "expired",
+      language_hint: "en",
+      input_type: "text",
+    },
+  });
+  const invalidPacket = {
+    version: "lmp/0.1",
+    packet_id: "not_a_valid_packet_id",
+    packet_type: "phrase_observed",
+    created_at: Math.floor(Date.now() / 1000),
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload_hash: "not_a_valid_payload_hash",
+    payload: {
+      phrase_id: "unit_phrase_ledger_import_invalid",
+      input_type: "text",
+    },
+    signature: "not_a_valid_signature",
+  };
+  const result = engine.importLedgerPackets([invalidPacket, expiredPacket]);
+
+  assert.deepStrictEqual(result, {
+    accepted_new_count: 0,
+    already_stored_count: 0,
+    rejected_invalid_count: 1,
+    rejected_expired_count: 1,
+    failed_count: 0,
+  });
+  assert.strictEqual(engine.packetCount(), 0);
+});
+
+test("ledger HTTP export returns packet count and packet array", async () => {
+  const engine = unitEngine("unit_ledger_http_export");
+  engine.observePhrase({
+    phrase_id: "unit_phrase_ledger_http_export",
+    surface_text: "ledger HTTP export",
+    language_hint: "en",
+    input_type: "text",
+  });
+  const packetCountBefore = engine.packetCount();
+
+  await withUnitHttpServer(engine, "unit_ledger_http_export", async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/ledger/export`);
+    const body = (await response.json()) as {
+      ok: true;
+      packet_count: number;
+      packets: unknown[];
+    };
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(body.ok, true);
+    assert.strictEqual(body.packet_count, packetCountBefore);
+    assert(Array.isArray(body.packets));
+    assert.strictEqual(body.packets.length, packetCountBefore);
+  });
+
+  assert.strictEqual(engine.packetCount(), packetCountBefore);
+});
+
+test("ledger HTTP import rejects non-array packets with stable error", async () => {
+  const engine = unitEngine("unit_ledger_http_import_validation");
+
+  await withUnitHttpServer(
+    engine,
+    "unit_ledger_http_import_validation",
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/ledger/import`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          packets: "not an array",
+        }),
+      });
+      const body = (await response.json()) as {
+        ok: false;
+        error: {
+          code: string;
+          message: string;
+        };
+      };
+
+      assert.strictEqual(response.status, 400);
+      assert.deepStrictEqual(body, {
+        ok: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "packets must be an array",
+        },
+      });
+    }
+  );
 });
 
 test("sync status returns local peer cursor array", () => {

@@ -133,6 +133,31 @@ export interface SyncStatusResponse {
   };
 }
 
+export interface LedgerExportResponse {
+  ok: true;
+  export_type: "mycelium-ledger-export";
+  api_version: string;
+  protocol_version: string;
+  exported_at: number;
+  packet_count: number;
+  packets: unknown[];
+}
+
+export interface LedgerImportInput {
+  packets: unknown[];
+}
+
+export interface LedgerImportResponse {
+  ok: true;
+  import_result: {
+    accepted_new_count: number;
+    already_stored_count: number;
+    rejected_invalid_count: number;
+    rejected_expired_count: number;
+    failed_count: number;
+  };
+}
+
 export interface PhraseSearchResponse {
   ok: true;
   query: string;
@@ -577,6 +602,14 @@ export class MyceliumClient {
 
   getSyncStatus(): Promise<SyncStatusResponse> {
     return this.getJson("/sync/status");
+  }
+
+  exportLedger(): Promise<LedgerExportResponse> {
+    return this.getJson("/ledger/export");
+  }
+
+  importLedger(input: LedgerImportInput): Promise<LedgerImportResponse> {
+    return this.postJson("/ledger/import", input);
   }
 
   searchPhrases(

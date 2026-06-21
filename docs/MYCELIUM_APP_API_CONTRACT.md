@@ -18,6 +18,7 @@ Mycelium is the active language layer of the DAOVibe ecosystem. The routes below
 - `bestMeaning` selection is unchanged by the tombstone preview layer.
 - Writable correction governance routes are in-process rate-limited.
 - Sync routes exchange packets and cursors only; they do not introduce tombstone execution.
+- Ledger export/import routes are local portability boundaries only; they are not sync discovery or encrypted backup.
 
 ## Standard Error Responses
 
@@ -1133,6 +1134,53 @@ These local routes expose node state and packet state for inspection:
 - `POST /receivePacket`
 
 They are preserved for local Mycelium operation. `POST /receivePacket` stores valid incoming correction and tombstone packets as event-only packets and does not execute tombstones.
+
+## Ledger Export/Import Routes
+
+These routes provide a local-first Mycelium ledger portability boundary for manual backup, seeding, debugging, and future multi-node setup. They are not live sync, peer discovery, encrypted backup, identity export, settings export, or private-key export. They do not include private secrets, change packet protocol behavior, delete data, prune data, or execute tombstones.
+
+### `GET /ledger/export`
+
+Read-only ledger export. It returns durable packet objects only and does not mutate the ledger, run sync, contact peers, export local settings, export node identity, or expose private secrets.
+
+```ts
+{
+  ok: true;
+  export_type: "mycelium-ledger-export";
+  api_version: string;
+  protocol_version: string;
+  exported_at: number;
+  packet_count: number;
+  packets: unknown[];
+}
+```
+
+### `POST /ledger/import`
+
+Imports packet objects through the existing packet validation/import path. It does not directly insert raw packets into SQLite and does not bypass packet validation. Duplicate packets are reported as already stored, invalid or expired packets are rejected, and tombstone execution remains disabled.
+
+Body:
+
+```ts
+{
+  packets: unknown[];
+}
+```
+
+Response:
+
+```ts
+{
+  ok: true;
+  import_result: {
+    accepted_new_count: number;
+    already_stored_count: number;
+    rejected_invalid_count: number;
+    rejected_expired_count: number;
+    failed_count: number;
+  };
+}
+```
 
 ## Sync Routes
 
