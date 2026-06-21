@@ -149,6 +149,10 @@ async function runSimulation(): Promise<void> {
       "Expected unknown phrase detail request to fail"
     );
 
+    const packetCountBeforeInvalidWrites = (
+      await client.getNodeStatus()
+    ).ledger.packet_count;
+
     const invalidObservePhraseId = "app_api_smoke_invalid_observe_phrase";
 
     await assertRejects(
@@ -160,6 +164,15 @@ async function runSimulation(): Promise<void> {
           input_type: "text",
         }),
       "Expected blank surface_text observe request to fail"
+    );
+
+    const packetCountAfterInvalidWrites = (
+      await client.getNodeStatus()
+    ).ledger.packet_count;
+
+    assertSimulation(
+      packetCountAfterInvalidWrites === packetCountBeforeInvalidWrites,
+      `Expected invalid writes to leave packet_count at ${packetCountBeforeInvalidWrites}, got ${packetCountAfterInvalidWrites}`
     );
 
     const phraseId = "app_api_smoke_phrase_001";
@@ -306,6 +319,7 @@ async function runSimulation(): Promise<void> {
     console.log("app API unknown phrase negative flow passed");
     console.log("app API invalid observe negative flow passed");
     console.log("app API invalid propose negative flow passed");
+    console.log("app API invalid write no-mutation flow passed");
     console.log("App API smoke simulation succeeded.");
   } finally {
     await close(server);
