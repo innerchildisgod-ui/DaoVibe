@@ -51,6 +51,14 @@ export function registerNodeRoutes(
     }
   });
 
+  app.get("/node/diagnostics", (_req, res) => {
+    try {
+      res.json(myceliumController.getNodeDiagnostics());
+    } catch (error) {
+      sendApiError(res, 400, "INTERNAL_ERROR", errorMessage(error));
+    }
+  });
+
   app.get("/node/identity", (_req, res) => {
     try {
       res.json({

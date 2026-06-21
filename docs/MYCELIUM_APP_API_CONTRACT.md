@@ -156,6 +156,52 @@ Returns local Mycelium node readiness, durable identity, packet ledger count, st
 }
 ```
 
+### `GET /node/diagnostics`
+
+Read-only app-facing diagnostics for local node health and debugging. This route does not create packets, run sync, contact peers, execute tombstones, delete data, prune the ledger, or expose secrets. Failures use the standard stable error response shape.
+
+```ts
+{
+  ok: true;
+  diagnostics: {
+    server_reachable: true;
+    server_time: number;
+    uptime_seconds: number;
+    versions: {
+      api_version: string;
+      protocol_version: string;
+      app_contract_version: string;
+    };
+    node: {
+      node_id: string;
+      display_name: string;
+      default_author: string;
+    };
+    settings: {
+      sync_mode: "manual";
+      developer_mode: boolean;
+      show_debug_panels: boolean;
+      default_language_hint: string;
+      default_safety_label: string;
+    };
+    ledger: {
+      packet_count: number;
+      migration_count?: number;
+    };
+    sync: {
+      enabled: true;
+      mode: "manual";
+      known_peer_count: number;
+    };
+    safety: {
+      tombstone_execution: false;
+      deletion_enabled: false;
+      ledger_pruning_enabled: false;
+    };
+  };
+}
+```
+
 ## Local Node Identity Routes
 
 Local node identity is a single durable identity record for the current Mycelium node. It gives the app stable local defaults before packet creation. It does not change packet protocol, packet signing, correction governance, or sync behavior.

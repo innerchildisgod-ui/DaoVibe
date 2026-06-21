@@ -4,6 +4,7 @@ import {
   type BestMeaningResponse,
   type LocalNodeIdentity,
   type LocalNodeSettings,
+  type NodeDiagnosticsResponse,
   type NodeStatusResponse,
   type ObservePhraseResponse,
   type PhraseRecord,
@@ -25,14 +26,17 @@ type AppState = {
   loading: boolean;
   loadingPhrase: boolean;
   loadingExplanation: boolean;
+  loadingDiagnostics: boolean;
   observingPhrase: boolean;
   proposingMeaning: boolean;
   error?: string;
   searchError?: string;
   explanationError?: string;
+  diagnosticsError?: string;
   observeResult?: FormResult;
   proposeResult?: FormResult;
   nodeStatus?: NodeStatusResponse;
+  nodeDiagnostics?: NodeDiagnosticsResponse["diagnostics"];
   nodeIdentity?: LocalNodeIdentity;
   nodeSettings?: LocalNodeSettings;
   syncStatus?: SyncStatusResponse;
@@ -67,6 +71,7 @@ const state: AppState = {
   loading: true,
   loadingPhrase: false,
   loadingExplanation: false,
+  loadingDiagnostics: false,
   observingPhrase: false,
   proposingMeaning: false,
   searchQuery: "",
@@ -213,6 +218,51 @@ function renderNodeStatus(): string {
         ${field("default_author", status?.node.default_author ?? identity?.default_author)}
         ${field("packet_count", status?.ledger.packet_count)}
         ${field("tombstone_execution", statusText(status?.capabilities.tombstone_execution))}
+      </div>
+    </section>
+  `;
+}
+
+function renderNodeDiagnostics(): string {
+  const diagnostics = state.nodeDiagnostics;
+  const isReachable =
+    state.diagnosticsError === undefined && diagnostics?.server_reachable === true;
+
+  return `
+    <section class="panel">
+      <div class="panel-heading">
+        <h2>Node Diagnostics</h2>
+        <div class="panel-actions">
+          <span class="status ${isReachable ? "ok" : "warn"}">
+            ${isReachable ? "reachable" : state.loadingDiagnostics ? "loading" : "unavailable"}
+          </span>
+          <button id="refresh-diagnostics" type="button" ${state.loadingDiagnostics ? "disabled" : ""}>
+            ${state.loadingDiagnostics ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </div>
+      ${
+        state.diagnosticsError
+          ? `<p class="form-message error">${escapeHtml(state.diagnosticsError)}</p>`
+          : ""
+      }
+      <div class="field-grid">
+        ${field("server_reachable", statusText(state.diagnosticsError ? false : diagnostics?.server_reachable))}
+        ${field("server_time", diagnostics?.server_time)}
+        ${field("uptime_seconds", diagnostics?.uptime_seconds)}
+        ${field("api_version", diagnostics?.versions.api_version)}
+        ${field("protocol_version", diagnostics?.versions.protocol_version)}
+        ${field("app_contract_version", diagnostics?.versions.app_contract_version)}
+        ${field("node_id", diagnostics?.node.node_id)}
+        ${field("display_name", diagnostics?.node.display_name)}
+        ${field("packet_count", diagnostics?.ledger.packet_count)}
+        ${field("known_peer_count", diagnostics?.sync.known_peer_count)}
+        ${field("sync_mode", diagnostics?.settings.sync_mode)}
+        ${field("developer_mode", statusText(diagnostics?.settings.developer_mode))}
+        ${field("show_debug_panels", statusText(diagnostics?.settings.show_debug_panels))}
+        ${field("tombstone_execution", statusText(diagnostics?.safety.tombstone_execution))}
+        ${field("deletion_enabled", statusText(diagnostics?.safety.deletion_enabled))}
+        ${field("ledger_pruning_enabled", statusText(diagnostics?.safety.ledger_pruning_enabled))}
       </div>
     </section>
   `;
@@ -577,6 +627,7 @@ function render(): void {
     <main class="layout">
       <div class="status-column">
         ${renderNodeStatus()}
+        ${renderNodeDiagnostics()}
         ${renderLocalSettings()}
         ${renderSyncStatus()}
         ${renderGovernance()}
@@ -602,6 +653,9 @@ function bindEvents(): void {
   );
   const proposeForm = document.querySelector<HTMLFormElement>(
     "#propose-meaning-form"
+  );
+  const refreshDiagnosticsButton = document.querySelector<HTMLButtonElement>(
+    "#refresh-diagnostics"
   );
 
   form?.addEventListener("submit", (event) => {
@@ -652,6 +706,10 @@ function bindEvents(): void {
     event.preventDefault();
     void proposeMeaning(new FormData(proposeForm));
   });
+
+  refreshDiagnosticsButton?.addEventListener("click", () => {
+    void loadDiagnostics();
+  });
 }
 
 function bindFormInput(
@@ -669,30 +727,72 @@ function bindFormInput(
 }
 
 async function loadStatus(): Promise<void> {
-  setState({ loading: true, error: undefined });
+  setState({
+    loading: true,
+    loadingDiagnostics: true,
+    error: undefined,
+    diagnosticsError: undefined,
+  });
 
   try {
-    const [nodeStatus, nodeIdentity, nodeSettings, syncStatus] = await Promise.all([
-      client.getNodeStatus(),
-      client.getNodeIdentity(),
-      client.getNodeSettings(),
-      client.getSyncStatus(),
-    ]);
+    const [
+      nodeStatus,
+      nodeIdentity,
+      nodeSettings,
+      syncStatus,
+      nodeDiagnostics,
+    ] = await Promise.all([
+        client.getNodeStatus(),
+        client.getNodeIdentity(),
+        client.getNodeSettings(),
+        client.getSyncStatus(),
+        client.getNodeDiagnostics(),
+      ]);
 
     setState({
       loading: false,
+      loadingDiagnostics: false,
       nodeStatus,
       nodeIdentity: nodeIdentity.identity,
       nodeSettings: nodeSettings.settings,
       syncStatus,
+      nodeDiagnostics: nodeDiagnostics.diagnostics,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? `Mycelium server is not reachable. ${error.message}`
+        : "Mycelium server is not reachable.";
+
+    setState({
+      loading: false,
+      loadingDiagnostics: false,
+      error: message,
+      diagnosticsError: message,
+    });
+  }
+}
+
+async function loadDiagnostics(): Promise<void> {
+  setState({
+    loadingDiagnostics: true,
+    diagnosticsError: undefined,
+  });
+
+  try {
+    const diagnostics = await client.getNodeDiagnostics();
+
+    setState({
+      loadingDiagnostics: false,
+      nodeDiagnostics: diagnostics.diagnostics,
     });
   } catch (error) {
     setState({
-      loading: false,
-      error:
+      loadingDiagnostics: false,
+      diagnosticsError:
         error instanceof Error
-          ? `Mycelium server is not reachable. ${error.message}`
-          : "Mycelium server is not reachable.",
+          ? `Diagnostics unavailable. ${error.message}`
+          : "Diagnostics unavailable.",
     });
   }
 }

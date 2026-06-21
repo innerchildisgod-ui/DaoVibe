@@ -64,6 +64,26 @@ Local settings and config stay in the TypeScript/server layer.
 Do not move settings to Rust/WASM.
 Rust/WASM work should remain focused on packet validation, hashing, signing, canonicalization, ledger verification, ranking, sync conflict resolution, and cryptography.
 
+## Diagnostics Boundary
+Diagnostics route, local settings, app panels, API version display, and server health reporting stay TypeScript/server/app-layer.
+They should not move to Rust/WASM unless a future native node runtime replaces the server shell.
+
+Rust/WASM should remain reserved for protocol-critical work:
+- packet validation
+- canonical serialization
+- payload hashing
+- packet hashing
+- packet signing
+- signature verification
+- ledger verification
+- duplicate detection
+- deterministic correction/tombstone ranking
+- sync conflict resolution
+- encryption/decryption
+- private packet handling
+
+TypeScript may store and display diagnostics. Future Rust/WASM may produce low-level verification results, and the app can display those results later, but the app should not own protocol truth.
+
 ## Future phases
 1. Freeze TypeScript interfaces.
 2. Build Rust/WASM proof for packet hashing and validation.

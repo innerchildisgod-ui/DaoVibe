@@ -51,6 +51,7 @@ type LocalNodeStore = Pick<
   | "getOrCreateLocalNodeSettings"
   | "updateLocalNodeSettings"
   | "getPacketCount"
+  | "listAppliedSchemaMigrations"
   | "listPeerSyncCursors"
 >;
 
@@ -113,6 +114,38 @@ export interface MyceliumSyncStatus {
     mode: "manual";
     known_peer_count: number;
     peers: PeerSyncCursor[];
+  };
+}
+
+export interface MyceliumNodeDiagnostics {
+  ok: true;
+  diagnostics: {
+    server_reachable: true;
+    server_time: number;
+    uptime_seconds: number;
+    versions: MyceliumNodeStatus["versions"];
+    node: MyceliumNodeStatus["node"];
+    settings: {
+      sync_mode: "manual";
+      developer_mode: boolean;
+      show_debug_panels: boolean;
+      default_language_hint: string;
+      default_safety_label: string;
+    };
+    ledger: {
+      packet_count: number;
+      migration_count: number;
+    };
+    sync: {
+      enabled: true;
+      mode: "manual";
+      known_peer_count: number;
+    };
+    safety: {
+      tombstone_execution: false;
+      deletion_enabled: false;
+      ledger_pruning_enabled: false;
+    };
   };
 }
 
@@ -202,6 +235,45 @@ export class MyceliumController {
         mode: "manual",
         known_peer_count: peers.length,
         peers,
+      },
+    };
+  }
+
+  getNodeDiagnostics(): MyceliumNodeDiagnostics {
+    const status = this.getNodeStatus();
+    const settings = this.getLocalNodeSettings();
+    const syncStatus = this.getSyncStatus();
+
+    return {
+      ok: true,
+      diagnostics: {
+        server_reachable: true,
+        server_time: status.service.server_time,
+        uptime_seconds: status.service.uptime_seconds,
+        versions: status.versions,
+        node: status.node,
+        settings: {
+          sync_mode: settings.sync_mode,
+          developer_mode: settings.developer_mode,
+          show_debug_panels: settings.show_debug_panels,
+          default_language_hint: settings.default_language_hint,
+          default_safety_label: settings.default_safety_label,
+        },
+        ledger: {
+          packet_count: status.ledger.packet_count,
+          migration_count: this.localNodeStore().listAppliedSchemaMigrations()
+            .length,
+        },
+        sync: {
+          enabled: syncStatus.sync.enabled,
+          mode: syncStatus.sync.mode,
+          known_peer_count: syncStatus.sync.known_peer_count,
+        },
+        safety: {
+          tombstone_execution: false,
+          deletion_enabled: false,
+          ledger_pruning_enabled: false,
+        },
       },
     };
   }

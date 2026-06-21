@@ -87,6 +87,38 @@ export interface NodeStatusResponse {
   };
 }
 
+export interface NodeDiagnosticsResponse {
+  ok: true;
+  diagnostics: {
+    server_reachable: true;
+    server_time: number;
+    uptime_seconds: number;
+    versions: NodeStatusResponse["versions"];
+    node: NodeStatusResponse["node"];
+    settings: {
+      sync_mode: "manual";
+      developer_mode: boolean;
+      show_debug_panels: boolean;
+      default_language_hint: string;
+      default_safety_label: string;
+    };
+    ledger: {
+      packet_count: number;
+      migration_count?: number;
+    };
+    sync: {
+      enabled: true;
+      mode: "manual";
+      known_peer_count: number;
+    };
+    safety: {
+      tombstone_execution: false;
+      deletion_enabled: false;
+      ledger_pruning_enabled: false;
+    };
+  };
+}
+
 export interface SyncStatusResponse {
   ok: true;
   sync: {
@@ -498,6 +530,10 @@ export class MyceliumClient {
 
   getNodeStatus(): Promise<NodeStatusResponse> {
     return this.getJson("/node/status");
+  }
+
+  getNodeDiagnostics(): Promise<NodeDiagnosticsResponse> {
+    return this.getJson("/node/diagnostics");
   }
 
   getSyncStatus(): Promise<SyncStatusResponse> {

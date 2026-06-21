@@ -781,6 +781,39 @@ test("node status includes stable Mycelium version fields", () => {
   });
 });
 
+test("node diagnostics reports versions, counts, and disabled destructive behavior", () => {
+  const engine = unitEngine("unit_node_diagnostics");
+  const controller = new MyceliumController(engine);
+
+  engine.setPeerSyncCursor("diagnostic_peer", "0:");
+
+  const diagnostics = controller.getNodeDiagnostics().diagnostics;
+
+  assert.strictEqual(diagnostics.server_reachable, true);
+  assert.deepStrictEqual(diagnostics.versions, {
+    api_version: MYCELIUM_API_VERSION,
+    protocol_version: MYCELIUM_PROTOCOL_VERSION,
+    app_contract_version: MYCELIUM_APP_CONTRACT_VERSION,
+  });
+  assert.strictEqual(typeof diagnostics.ledger.packet_count, "number");
+  assert.strictEqual(typeof diagnostics.ledger.migration_count, "number");
+  assert.strictEqual(typeof diagnostics.sync.known_peer_count, "number");
+  assert.strictEqual(diagnostics.sync.known_peer_count, 1);
+  assert.strictEqual(diagnostics.safety.tombstone_execution, false);
+  assert.strictEqual(diagnostics.safety.deletion_enabled, false);
+  assert.strictEqual(diagnostics.safety.ledger_pruning_enabled, false);
+});
+
+test("node diagnostics does not create packets", () => {
+  const engine = unitEngine("unit_node_diagnostics_read_only");
+  const controller = new MyceliumController(engine);
+  const packetCountBefore = engine.packetCount();
+
+  controller.getNodeDiagnostics();
+
+  assert.strictEqual(engine.packetCount(), packetCountBefore);
+});
+
 test("sync status returns local peer cursor array", () => {
   const engine = unitEngine("unit_sync_status_peer_list");
   const controller = new MyceliumController(engine);
