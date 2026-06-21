@@ -2242,5 +2242,145 @@ test("language confidence penalizes rejected meanings", () => {
   assert(score.score < 0.5);
 });
 
+
+function unitCursorDelay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+test("sync cursor storage rejects direct backward cursor updates", () => {
+  const engine = unitEngine("unit_sync_cursor_direct_backwards");
+  const peerAuthor = "unit_sync_cursor_direct_peer";
+
+  engine.setPeerSyncCursor(peerAuthor, "10:packet_a");
+  engine.setPeerSyncCursor(peerAuthor, "10:packet_a");
+
+  assert.strictEqual(
+    engine.getPeerSyncCursor(peerAuthor).cursor,
+    "10:packet_a"
+  );
+
+  assert.throws(
+    () => engine.setPeerSyncCursor(peerAuthor, "9:packet_z"),
+    /Refusing to move sync cursor backwards/
+  );
+
+  assert.strictEqual(
+    engine.getPeerSyncCursor(peerAuthor).cursor,
+    "10:packet_a"
+  );
+
+  engine.setPeerSyncCursor(peerAuthor, "11:packet_b");
+
+  assert.strictEqual(
+    engine.getPeerSyncCursor(peerAuthor).cursor,
+    "11:packet_b"
+  );
+});
+
+test("sync import rejects stale cursor batch without storing new packets", async () => {
+  const nodeAAuthor = "unit_sync_cursor_import_node_a";
+  const nodeBAuthor = "unit_sync_cursor_import_node_b";
+  const nodeA = new LanguageEngine({
+    zone: TEST_ZONE,
+    author: nodeAAuthor,
+    nodeAgeGroup: "adult",
+    dbPath: unitDbPath("unit_sync_cursor_import_node_a"),
+  });
+  const nodeB = new LanguageEngine({
+    zone: TEST_ZONE,
+    author: nodeBAuthor,
+    nodeAgeGroup: "adult",
+    dbPath: unitDbPath("unit_sync_cursor_import_node_b"),
+  });
+
+  const firstPhrase = {
+    phrase_id: "unit_sync_cursor_first_phrase",
+    surface_text: "first cursor phrase",
+    language_hint: "en",
+    input_type: "text" as const,
+  };
+  const secondPhrase = {
+    phrase_id: "unit_sync_cursor_second_phrase",
+    surface_text: "second cursor phrase",
+    language_hint: "en",
+    input_type: "text" as const,
+  };
+  const thirdPhrase = {
+    phrase_id: "unit_sync_cursor_third_phrase",
+    surface_text: "third cursor phrase",
+    language_hint: "en",
+    input_type: "text" as const,
+  };
+
+  nodeA.observePhrase(firstPhrase);
+  const firstBatch = nodeA.pullSyncBatch();
+  const firstImport = nodeB.importSyncBatch({
+    peerAuthor: nodeAAuthor,
+    cursorBefore: firstBatch.cursor_before,
+    cursorAfter: firstBatch.cursor_after,
+    packets: firstBatch.packets,
+  });
+  const firstCursor = nodeB.getPeerSyncCursor(nodeAAuthor).cursor;
+
+  assert.strictEqual(firstImport.summary.accepted_new, 1);
+  assert.strictEqual(firstCursor, firstBatch.cursor_after);
+
+  await unitCursorDelay(1100);
+
+  nodeA.observePhrase(secondPhrase);
+  const secondBatch = nodeA.pullSyncBatch(firstCursor);
+  const secondImport = nodeB.importSyncBatch({
+    peerAuthor: nodeAAuthor,
+    cursorBefore: secondBatch.cursor_before,
+    cursorAfter: secondBatch.cursor_after,
+    packets: secondBatch.packets,
+  });
+  const latestCursor = nodeB.getPeerSyncCursor(nodeAAuthor).cursor;
+
+  assert.strictEqual(secondImport.summary.accepted_new, 1);
+  assert.strictEqual(latestCursor, secondBatch.cursor_after);
+
+  await unitCursorDelay(1100);
+
+  const thirdResult = nodeA.observePhrase(thirdPhrase);
+  const staleBatch = nodeA.pullSyncBatch(firstCursor);
+
+  assert(
+    staleBatch.packets.some(
+      (packet) => packet.packet_id === thirdResult.packet.packet_id
+    )
+  );
+
+  let staleImportRejected = false;
+
+  try {
+    nodeB.importSyncBatch({
+      peerAuthor: nodeAAuthor,
+      cursorBefore: staleBatch.cursor_before,
+      cursorAfter: staleBatch.cursor_after,
+      packets: staleBatch.packets,
+    });
+  } catch {
+    staleImportRejected = true;
+  }
+
+  assert.strictEqual(staleImportRejected, true);
+  assert.strictEqual(
+    nodeB.getPeerSyncCursor(nodeAAuthor).cursor,
+    latestCursor
+  );
+  assert.strictEqual(
+    nodeB.getPacketsByIds([thirdResult.packet.packet_id]).length,
+    0
+  );
+  assert.strictEqual(
+    nodeB
+      .listKnowledge()
+      .some((phrase) => phrase.phrase_id === thirdPhrase.phrase_id),
+    false
+  );
+});
 void runTests();
 
