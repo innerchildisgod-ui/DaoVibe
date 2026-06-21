@@ -1948,28 +1948,36 @@ test("correction voter duplicate protection counts latest identified voter vote 
         corrected_reference_meaning: "Corrected meaning.",
       },
     }),
-    createPacket({
-      packet_type: "meaning_correction_vote",
-      zone: TEST_ZONE,
-      author: TEST_AUTHOR,
-      payload: {
-        phrase_id: phraseId,
-        correction_id: correctionId,
-        vote: "confirm",
-        voter: "same_voter",
-      },
-    }),
-    createPacket({
-      packet_type: "meaning_correction_vote",
-      zone: TEST_ZONE,
-      author: TEST_AUTHOR,
-      payload: {
-        phrase_id: phraseId,
-        correction_id: correctionId,
-        vote: "reject",
-        voter: "same_voter",
-      },
-    }),
+    {
+      ...createPacket({
+        packet_type: "meaning_correction_vote",
+        zone: TEST_ZONE,
+        author: TEST_AUTHOR,
+        payload: {
+          phrase_id: phraseId,
+          correction_id: correctionId,
+          vote: "confirm",
+          voter: "same_voter",
+        },
+      }),
+      created_at: 1000,
+      packet_id: "unit_correction_vote_confirm_001",
+    },
+    {
+      ...createPacket({
+        packet_type: "meaning_correction_vote",
+        zone: TEST_ZONE,
+        author: TEST_AUTHOR,
+        payload: {
+          phrase_id: phraseId,
+          correction_id: correctionId,
+          vote: "reject",
+          voter: "same_voter",
+        },
+      }),
+      created_at: 2000,
+      packet_id: "unit_correction_vote_reject_002",
+    },
   ];
 
   const corrections = summarizeCorrectionPacketsForPhrase(phraseId, packets);
