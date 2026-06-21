@@ -40,6 +40,7 @@ import {
 } from "../storage/sqliteMigrations";
 import { buildClientUrl } from "../client/clientUrl";
 import { MyceliumClient, MyceliumClientError } from "../client/MyceliumClient";
+import { createTypeScriptNativeCoreStub } from "../kernel/TypeScriptNativeCoreStub";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
@@ -379,6 +380,19 @@ test("apiError returns stable object shape", () => {
       message: "Too many requests.",
     },
   });
+});
+
+test("TypeScript native core stub reports unimplemented validation", () => {
+  const nativeCore = createTypeScriptNativeCoreStub();
+  const result = nativeCore.validatePacket({});
+
+  assert.strictEqual(result.ok, false);
+
+  if (result.ok) {
+    assert.fail("Expected native core stub validation to be unimplemented.");
+  }
+
+  assert.strictEqual(result.error.code, "NATIVE_CORE_NOT_IMPLEMENTED");
 });
 
 test("client HTTP errors extract stable error code and message", async () => {

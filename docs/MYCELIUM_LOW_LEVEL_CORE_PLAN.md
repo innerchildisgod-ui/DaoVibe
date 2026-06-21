@@ -48,6 +48,39 @@ TypeScript remains for app UI, route wiring, and fast product iteration.
 - use Rust compiled as native Node addon later only if WASM is too slow
 - prefer WASM first for portability
 
+## Native Core Boundary
+The first native-core boundary is defined in:
+
+`src/kernel/NativeCoreBoundary.ts`
+
+This is a TypeScript interface only. It does not add Rust/WASM implementation yet.
+
+Future Rust/WASM candidates:
+- packet canonicalization
+- payload hashing
+- packet hashing
+- packet validation
+- signature verification
+- ledger slice verification
+- deterministic correction/tombstone ranking if needed
+- sync conflict resolution
+- encryption/decryption later
+
+Keep in TypeScript:
+- app UI
+- Express routes
+- local settings
+- diagnostics
+- API client wrapper
+- app panels
+- docs/dev tooling
+- orchestration glue until behavior stabilizes
+
+Preferred future path:
+Rust -> WASM first for portability.
+Native Node addon only if WASM is too slow.
+C/C++ only for specific native libraries, speech/audio engines, or hardware integrations.
+
 ## Avoid for now
 - rewriting the UI in Rust
 - rewriting Express/server routes in Rust
