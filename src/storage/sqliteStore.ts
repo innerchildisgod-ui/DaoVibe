@@ -984,6 +984,10 @@ export class SQLiteStore {
     return this.countPackets();
   }
 
+  runInTransaction<T>(operation: () => T): T {
+    return this.db.transaction(operation)();
+  }
+
   hasPacket(packetId: string): boolean {
     const row = this.db
       .prepare(

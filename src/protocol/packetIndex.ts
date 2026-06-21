@@ -52,6 +52,18 @@ export class PacketIndex {
   private packetIdsByMeaning = new Map<string, Set<string>>();
   private packetIdsBySymbol = new Map<string, Set<string>>();
 
+  snapshot(): LmpPacket[] {
+    return [...this.packetsById.values()].map((indexed) => indexed.packet);
+  }
+
+  restore(packets: LmpPacket[]): void {
+    this.clear();
+
+    for (const packet of packets) {
+      this.add(packet);
+    }
+  }
+
   has(packet_id: string): boolean {
     return this.packetsById.has(packet_id);
   }
@@ -120,5 +132,16 @@ export class PacketIndex {
 
   count(): number {
     return this.packetsById.size;
+  }
+
+  private clear(): void {
+    this.packetsById.clear();
+    this.packetIdsByType.clear();
+    this.packetIdsByZone.clear();
+    this.packetIdsByAuthor.clear();
+    this.packetIdsByParent.clear();
+    this.packetIdsByPhrase.clear();
+    this.packetIdsByMeaning.clear();
+    this.packetIdsBySymbol.clear();
   }
 }

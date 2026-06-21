@@ -60,6 +60,8 @@ export interface LedgerImportResult {
   failed_count: number;
 }
 
+type AtomicSyncImportOperation<T> = () => T;
+
 export class LanguageEngine {
   private store = new PhraseStore();
   private packetIndex = new PacketIndex();
@@ -377,6 +379,19 @@ export class LanguageEngine {
 
   setPeerSyncCursor(peerAuthor: string, cursor: string) {
     return this.sqliteStore.setPeerSyncCursor(peerAuthor, cursor);
+  }
+
+  withAtomicSyncImport<T>(operation: AtomicSyncImportOperation<T>): T {
+    const packetIndexSnapshot = this.packetIndex.snapshot();
+
+    try {
+      return this.sqliteStore.runInTransaction(operation);
+    } catch (error) {
+      this.packetIndex.restore(packetIndexSnapshot);
+      this.store = new PhraseStore();
+      this.refreshResidentStateFromSQLite();
+      throw error;
+    }
   }
 
   importSyncBatch(params: {

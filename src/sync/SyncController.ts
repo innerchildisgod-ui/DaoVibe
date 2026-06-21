@@ -39,6 +39,7 @@ interface SyncControllerEngine {
   pullSyncBatch: LanguageEngine["pullSyncBatch"];
   getPacketsByIds: LanguageEngine["getPacketsByIds"];
   findMissingPacketIds: LanguageEngine["findMissingPacketIds"];
+  withAtomicSyncImport?: LanguageEngine["withAtomicSyncImport"];
 }
 
 function getErrorMessage(error: unknown): string {
@@ -152,6 +153,19 @@ export class SyncController {
   }
 
   importBatch(params: {
+    peerAuthor: string;
+    cursorBefore: string;
+    cursorAfter: string;
+    packets: LmpPacket[];
+  }): DetailedSyncImportResult {
+    const importOperation = () => this.importBatchUnsafe(params);
+
+    return this.engine.withAtomicSyncImport
+      ? this.engine.withAtomicSyncImport(importOperation)
+      : importOperation();
+  }
+
+  private importBatchUnsafe(params: {
     peerAuthor: string;
     cursorBefore: string;
     cursorAfter: string;
