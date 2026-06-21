@@ -21,6 +21,7 @@ export type AppActions = {
   refreshAfterWrite: (phraseId: string, searchQuery?: string) => Promise<void>;
   observePhrase: (formData: FormData) => Promise<void>;
   proposeMeaning: (formData: FormData) => Promise<void>;
+  voteMeaningCorrection: (formData: FormData) => Promise<void>;
 };
 
 export function createAppActions({
@@ -326,6 +327,89 @@ export function createAppActions({
     }
   }
 
+  async function voteMeaningCorrection(formData: FormData): Promise<void> {
+    const phraseId = String(formData.get("phrase_id") ?? "").trim();
+    const correctionId = String(formData.get("correction_id") ?? "").trim();
+    const voteText = String(formData.get("vote") ?? "").trim();
+    const voter = String(formData.get("voter") ?? "").trim();
+    const vote =
+      voteText === "confirm" || voteText === "reject" ? voteText : undefined;
+
+    state.correctionVoteForm = {
+      phraseId,
+      correctionId,
+      vote: vote ?? "confirm",
+      voter,
+    };
+
+    if (!phraseId) {
+      setState({
+        correctionVoteResult: {
+          kind: "error",
+          message: "phrase_id is required.",
+        },
+      });
+      return;
+    }
+
+    if (!correctionId) {
+      setState({
+        correctionVoteResult: {
+          kind: "error",
+          message: "correction_id is required.",
+        },
+      });
+      return;
+    }
+
+    if (!vote) {
+      setState({
+        correctionVoteResult: {
+          kind: "error",
+          message: "vote must be confirm or reject.",
+        },
+      });
+      return;
+    }
+
+    setState({
+      votingCorrection: true,
+      correctionVoteResult: undefined,
+    });
+
+    try {
+      const result = await client.voteMeaningCorrection({
+        phrase_id: phraseId,
+        correction_id: correctionId,
+        vote,
+        voter: optionalTrimmed(voter),
+      });
+
+      state.correctionVoteForm.voter = "";
+
+      setState({
+        votingCorrection: false,
+        correctionVoteResult: {
+          kind: "success",
+          message: `Voted ${vote} on ${correctionId} with packet ${result.result.packet_id}.`,
+        },
+      });
+
+      await refreshAfterWrite(phraseId, state.searchQuery || undefined);
+    } catch (error) {
+      setState({
+        votingCorrection: false,
+        correctionVoteResult: {
+          kind: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Meaning correction vote failed.",
+        },
+      });
+    }
+  }
+
   async function proposeMeaning(formData: FormData): Promise<void> {
     const phraseId = String(formData.get("phrase_id") ?? "").trim();
     const referenceMeaning = String(
@@ -419,5 +503,6 @@ export function createAppActions({
     refreshAfterWrite,
     observePhrase,
     proposeMeaning,
+    voteMeaningCorrection,
   };
 }

@@ -24,6 +24,7 @@ import type { AppState } from "./appState";
 import {
   renderObservePhrase,
   renderProposeMeaning,
+  renderVoteMeaningCorrection,
 } from "./contributionRendering";
 import type {
   ObserveFormState,
@@ -98,6 +99,7 @@ const {
   refreshAfterWrite,
   observePhrase,
   proposeMeaning,
+  voteMeaningCorrection,
 } = createAppActions({
   client,
   state,
@@ -123,6 +125,7 @@ function render(): void {
         ${renderMeaningExplanation(state)}
         ${renderPacketTrace(state)}
         ${renderProposeMeaning(state)}
+        ${renderVoteMeaningCorrection(state)}
       </div>
     </main>
   `;
@@ -138,6 +141,9 @@ function bindEvents(): void {
   );
   const proposeForm = document.querySelector<HTMLFormElement>(
     "#propose-meaning-form"
+  );
+  const correctionVoteForm = document.querySelector<HTMLFormElement>(
+    "#vote-correction-form"
   );
   const refreshDiagnosticsButton = document.querySelector<HTMLButtonElement>(
     "#refresh-diagnostics"
@@ -185,6 +191,27 @@ function bindEvents(): void {
     state.proposeForm.confidence = value;
   });
 
+  bindFormInput("vote-correction-form", "phrase_id", (value) => {
+    state.correctionVoteForm.phraseId = value;
+  });
+
+  bindFormInput("vote-correction-form", "correction_id", (value) => {
+    state.correctionVoteForm.correctionId = value;
+  });
+
+  bindFormInput("vote-correction-form", "voter", (value) => {
+    state.correctionVoteForm.voter = value;
+  });
+
+  const correctionVoteSelect = document.querySelector<HTMLSelectElement>(
+    '#vote-correction-form [name="vote"]'
+  );
+
+  correctionVoteSelect?.addEventListener("change", () => {
+    state.correctionVoteForm.vote =
+      correctionVoteSelect.value === "reject" ? "reject" : "confirm";
+  });
+
   observeForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     void observePhrase(new FormData(observeForm));
@@ -193,6 +220,11 @@ function bindEvents(): void {
   proposeForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     void proposeMeaning(new FormData(proposeForm));
+  });
+
+  correctionVoteForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void voteMeaningCorrection(new FormData(correctionVoteForm));
   });
 
   refreshDiagnosticsButton?.addEventListener("click", () => {

@@ -19,19 +19,33 @@ export type ProposeFormState = {
   confidence: string;
 };
 
+export type CorrectionVoteFormState = {
+  phraseId: string;
+  correctionId: string;
+  vote: "confirm" | "reject";
+  voter: string;
+};
+
 export type ContributionRenderingState = {
   observingPhrase: boolean;
   proposingMeaning: boolean;
+  votingCorrection: boolean;
   observeForm: ObserveFormState;
   proposeForm: ProposeFormState;
+  correctionVoteForm: CorrectionVoteFormState;
   observeResult?: FormResult;
   proposeResult?: FormResult;
+  correctionVoteResult?: FormResult;
   selectedPhrase?: PhraseRecord;
   nodeIdentity?: LocalNodeIdentity;
 };
 
 function currentProposePhraseId(state: ContributionRenderingState): string {
   return state.proposeForm.phraseId || state.selectedPhrase?.phrase_id || "";
+}
+
+function currentCorrectionVotePhraseId(state: ContributionRenderingState): string {
+  return state.correctionVoteForm.phraseId || state.selectedPhrase?.phrase_id || "";
 }
 
 export function renderObservePhrase(state: ContributionRenderingState): string {
@@ -130,6 +144,64 @@ export function renderProposeMeaning(state: ContributionRenderingState): string 
       </form>
       <p class="muted form-note">Default author: ${escapeHtml(defaultAuthor ?? "local identity not loaded")}</p>
       ${renderFormResult(state.proposeResult)}
+    </section>
+  `;
+}
+
+
+export function renderVoteMeaningCorrection(
+  state: ContributionRenderingState
+): string {
+  return `
+    <section class="panel contribution-panel">
+      <div class="panel-heading">
+        <h2>Vote Meaning Correction</h2>
+      </div>
+      <form id="vote-correction-form" class="contribution-form">
+        <label>
+          <span>phrase_id</span>
+          <input
+            name="phrase_id"
+            value="${escapeAttribute(currentCorrectionVotePhraseId(state))}"
+            autocomplete="off"
+            ${state.votingCorrection ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>correction_id</span>
+          <input
+            name="correction_id"
+            value="${escapeAttribute(state.correctionVoteForm.correctionId)}"
+            autocomplete="off"
+            ${state.votingCorrection ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>vote</span>
+          <select name="vote" ${state.votingCorrection ? "disabled" : ""}>
+            <option value="confirm" ${state.correctionVoteForm.vote === "confirm" ? "selected" : ""}>
+              confirm
+            </option>
+            <option value="reject" ${state.correctionVoteForm.vote === "reject" ? "selected" : ""}>
+              reject
+            </option>
+          </select>
+        </label>
+        <label>
+          <span>voter</span>
+          <input
+            name="voter"
+            value="${escapeAttribute(state.correctionVoteForm.voter)}"
+            autocomplete="off"
+            ${state.votingCorrection ? "disabled" : ""}
+          />
+        </label>
+        <button type="submit" ${state.votingCorrection ? "disabled" : ""}>
+          ${state.votingCorrection ? "Saving..." : "Vote Correction"}
+        </button>
+      </form>
+      <p class="muted form-note">Correction votes are stored as governance events. Tombstone voting is not enabled here.</p>
+      ${renderFormResult(state.correctionVoteResult)}
     </section>
   `;
 }
