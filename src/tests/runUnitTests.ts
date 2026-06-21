@@ -44,6 +44,7 @@ import { buildClientUrl } from "../client/clientUrl";
 import { MyceliumClient, MyceliumClientError } from "../client/MyceliumClient";
 import type { ServerConfig } from "../config/env";
 import { createTypeScriptNativeCoreStub } from "../kernel/TypeScriptNativeCoreStub";
+import { TypeScriptDoriBoundaryStub } from "../kernel/orchestrators/DoriBoundary";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
@@ -510,6 +511,60 @@ test("TypeScript native core stub reports unimplemented validation", () => {
   }
 
   assert.strictEqual(result.error.code, "NATIVE_CORE_NOT_IMPLEMENTED");
+});
+
+test("Dori boundary stub describes advisory native-core role", () => {
+  const dori = new TypeScriptDoriBoundaryStub();
+
+  assert.match(dori.describeRole(), /Dori/);
+});
+
+test("Dori boundary stub stores phrase observations as advisory native-required events", () => {
+  const dori = new TypeScriptDoriBoundaryStub();
+  const decision = dori.reviewMemoryEvent({
+    event_type: "phrase_observation",
+    source: "local",
+  });
+
+  assert.strictEqual(decision.action, "store");
+  assert.strictEqual(decision.allowed, true);
+  assert.strictEqual(decision.native_required, true);
+});
+
+test("Dori boundary stub shows packet traces without native requirement", () => {
+  const dori = new TypeScriptDoriBoundaryStub();
+  const decision = dori.reviewMemoryEvent({
+    event_type: "packet_trace",
+    source: "app",
+  });
+
+  assert.strictEqual(decision.action, "show");
+  assert.strictEqual(decision.allowed, true);
+  assert.strictEqual(decision.native_required, false);
+});
+
+test("Dori boundary stub marks ledger imports for future native review", () => {
+  const dori = new TypeScriptDoriBoundaryStub();
+  const decision = dori.reviewMemoryEvent({
+    event_type: "ledger_import",
+    source: "import",
+  });
+
+  assert.strictEqual(decision.action, "review");
+  assert.strictEqual(decision.allowed, true);
+  assert.strictEqual(decision.native_required, true);
+});
+
+test("Dori boundary stub rejects unknown events for review", () => {
+  const dori = new TypeScriptDoriBoundaryStub();
+  const decision = dori.reviewMemoryEvent({
+    event_type: "unknown",
+    source: "unknown",
+  });
+
+  assert.strictEqual(decision.action, "review");
+  assert.strictEqual(decision.allowed, false);
+  assert.strictEqual(decision.native_required, true);
 });
 
 test("client HTTP errors extract stable error code and message", async () => {

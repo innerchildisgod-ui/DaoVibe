@@ -81,6 +81,26 @@ Rust -> WASM first for portability.
 Native Node addon only if WASM is too slow.
 C/C++ only for specific native libraries, speech/audio engines, or hardware integrations.
 
+## Orchestrators and Native Core
+
+Protocol-critical orchestrator enforcement should eventually live in Rust/WASM where deterministic behavior, memory safety, and tamper resistance matter.
+
+Future low-level candidates:
+- Dori for memory/store/seed/lifecycle enforcement
+- Maxwell's Demon for packet admission and signal/noise filtering
+- Alan Turing for protocol verification
+- (π)enz for scoring, maturity, ratios, and thresholds
+- Mangoose for malicious packet/threat response
+- Death for lifecycle ending and tombstone execution review
+
+TypeScript may keep:
+- symbolic naming
+- app display
+- docs
+- route orchestration
+- advisory stubs
+- non-critical UX/reporting behavior
+
 ## Avoid for now
 - rewriting the UI in Rust
 - rewriting Express/server routes in Rust
