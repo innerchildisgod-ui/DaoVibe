@@ -45,6 +45,7 @@ import { MyceliumClient, MyceliumClientError } from "../client/MyceliumClient";
 import type { ServerConfig } from "../config/env";
 import { createTypeScriptNativeCoreStub } from "../kernel/TypeScriptNativeCoreStub";
 import { TypeScriptDoriBoundaryStub } from "../kernel/orchestrators/DoriBoundary";
+import { createDefaultMultiDeviceSyncPlan } from "../kernel/sync";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
@@ -565,6 +566,37 @@ test("Dori boundary stub rejects unknown events for review", () => {
   assert.strictEqual(decision.action, "review");
   assert.strictEqual(decision.allowed, false);
   assert.strictEqual(decision.native_required, true);
+});
+
+test("multi-device sync plan defines phone and laptop boundaries", () => {
+  const plan = createDefaultMultiDeviceSyncPlan();
+
+  assert.match(plan.principle, /same valid packets/);
+
+  const phoneRole = plan.device_roles.find(
+    (role) => role.device_class === "phone"
+  );
+  const laptopRole = plan.device_roles.find(
+    (role) => role.device_class === "laptop"
+  );
+  const packetSynchronizer = plan.synchronizers.find(
+    (synchronizer) => synchronizer.name === "packet"
+  );
+  const ledgerPortabilitySynchronizer = plan.synchronizers.find(
+    (synchronizer) => synchronizer.name === "ledger_portability"
+  );
+
+  assert(phoneRole);
+  assert.strictEqual(phoneRole.should_avoid_background_heavy_work, true);
+  assert(laptopRole);
+  assert.strictEqual(laptopRole.can_run_heavy_reconciliation, true);
+  assert(packetSynchronizer);
+  assert.strictEqual(packetSynchronizer.changes_only, true);
+  assert(ledgerPortabilitySynchronizer);
+  assert.strictEqual(
+    ledgerPortabilitySynchronizer.laptop_preferred_for_heavy_work,
+    true
+  );
 });
 
 test("client HTTP errors extract stable error code and message", async () => {

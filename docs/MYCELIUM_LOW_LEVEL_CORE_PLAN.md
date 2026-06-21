@@ -137,6 +137,22 @@ Rust/WASM should remain reserved for protocol-critical work:
 
 TypeScript may store and display diagnostics. Future Rust/WASM may produce low-level verification results, and the app can display those results later, but the app should not own protocol truth.
 
+## Multi-Device Native Core Direction
+
+Mycelium must run across phones, laptops, desktops, tablets, and future local nodes.
+
+Rust/WASM should eventually provide shared deterministic protocol behavior across device shells.
+
+Phones should run bounded, battery-aware protocol work.
+
+Laptops/desktops should be preferred for heavier validation, indexing, diagnostics, ledger portability, and reconciliation work.
+
+The target is:
+
+One protocol core.  
+Multiple device shells.  
+Same valid packets -> same derived state.
+
 ## Future phases
 1. Freeze TypeScript interfaces.
 2. Build Rust/WASM proof for packet hashing and validation.
