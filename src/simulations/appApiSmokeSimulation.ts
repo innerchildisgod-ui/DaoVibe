@@ -285,11 +285,66 @@ async function runSimulation(): Promise<void> {
       `Expected explanation meaning_count >= 1, got ${explanation.evidence.meaning_count}`
     );
 
+    const correctionId = "app_api_smoke_correction_001";
+
+    const correctionProposal = await client.proposeMeaningCorrection({
+      phrase_id: phraseId,
+      original_meaning_id: meaningId,
+      correction_id: correctionId,
+      corrected_reference_meaning:
+        "A corrected test phrase proving the app API correction path.",
+      correction_context: "app-api-smoke-correction",
+      source: "app-api-smoke",
+    });
+
+    assertSimulation(
+      correctionProposal.accepted === true,
+      "Expected correction proposal to be accepted"
+    );
+    assertSimulation(
+      correctionProposal.result.correction_id === correctionId,
+      `Expected correction proposal ${correctionId}, got ${correctionProposal.result.correction_id}`
+    );
+
+    const correctionVote = await client.voteMeaningCorrection({
+      phrase_id: phraseId,
+      correction_id: correctionId,
+      vote: "confirm",
+      voter: "app_api_smoke_voter",
+    });
+
+    assertSimulation(
+      correctionVote.accepted === true,
+      "Expected correction vote to be accepted"
+    );
+    assertSimulation(
+      correctionVote.result.correction_id === correctionId,
+      `Expected correction vote for ${correctionId}, got ${correctionVote.result.correction_id}`
+    );
+    assertSimulation(
+      correctionVote.result.vote === "confirm",
+      `Expected confirm correction vote, got ${correctionVote.result.vote}`
+    );
+
+    const corrections = await client.getCorrections(phraseId);
+    const votedCorrection = corrections.corrections.find(
+      (correction) => correction.correction_id === correctionId
+    );
+
+    assertSimulation(
+      votedCorrection !== undefined,
+      `Expected corrections list to include ${correctionId}`
+    );
+    assertSimulation(
+      (votedCorrection?.confirm_votes ?? 0) >= 1,
+      `Expected correction confirm_votes >= 1, got ${votedCorrection?.confirm_votes}`
+    );
+
     const trace = await client.getPhrasePacketTrace(phraseId);
 
     assertSimulation(
-      trace.trace.packet_count >= 2,
-      `Expected packet trace to include at least 2 packets, got ${trace.trace.packet_count}`
+      trace.trace.packet_count >= 4,
+      `Expected packet trace to include at least 4 packets, got ${trace.trace.packet_count}`
     );
     assertSimulation(
       trace.trace.packet_types.phrase_observed === 1,
@@ -314,6 +369,7 @@ async function runSimulation(): Promise<void> {
     console.log("app API observe/search/detail flow passed");
     console.log("app API propose/best-meaning/explanation flow passed");
     console.log("app API packet trace flow passed");
+    console.log("app API correction vote flow passed");
     console.log("app API no-meaning negative flow passed");
     console.log("app API unreachable server negative flow passed");
     console.log("app API unknown phrase negative flow passed");
