@@ -24,6 +24,8 @@ import {
   listCorrectionHistoryForPhrase,
   listCorrectionsForPhrase,
   listCorrectionPacketsForPhrase,
+  listKnowledgeWithEffectiveMeaningVotes,
+  listMeaningConfidencePacketsForPhrase,
   searchPhrases,
   selectBestMeaning,
 } from "./PhraseLookup";
@@ -324,7 +326,7 @@ export class MyceliumController {
   }
 
   listKnowledge() {
-    return this.engine.listKnowledge();
+    return listKnowledgeWithEffectiveMeaningVotes(this.engine);
   }
 
   lookupPhrase(query: string) {
@@ -392,11 +394,16 @@ export class MyceliumController {
       this.engine,
       phraseResult.phrase_id
     );
+    const meaningConfidencePackets = listMeaningConfidencePacketsForPhrase(
+      this.engine,
+      phraseResult.phrase_id
+    );
 
     return selectBestMeaning(
       phraseResult.phrase,
       phraseResult.phrase_id,
-      correctionPackets
+      correctionPackets,
+      meaningConfidencePackets
     );
   }
 

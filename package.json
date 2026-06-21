@@ -13,7 +13,8 @@
     "simulate:two-node": "ts-node src/simulations/twoNodeSyncSimulation.ts",
     "simulate:http-two-node": "ts-node src/simulations/httpTwoNodeSyncSimulation.ts",
     "simulate:three-node": "ts-node src/simulations/threeNodeSyncSimulation.ts",
-    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node"
+    "simulate:unique-voters": "ts-node src/simulations/uniqueVoterConfidenceSimulation.ts",
+    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node && npm run simulate:unique-voters"
   },
   "keywords": [],
   "author": "",

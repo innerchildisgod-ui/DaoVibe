@@ -10,6 +10,10 @@ import {
   determineTombstoneStatus,
   type TombstoneStatus,
 } from "./TombstoneStatus";
+import {
+  countUniqueVoterVotes,
+  type UniqueVoterVoteInput,
+} from "./LanguageConfidence";
 
 export interface CorrectionTombstoneSummary {
   phrase_id: string;
@@ -85,11 +89,7 @@ export function summarizeTombstonePacketsForPhrase(
   tombstonePackets: LmpPacket[]
 ): CorrectionTombstoneSummary[] {
   const proposals = new Map<string, TombstoneProposalCandidate>();
-  const voteCounts = new Map<
-    string,
-    { confirm_votes: number; reject_votes: number }
-  >();
-  const countedVoterVotes = new Set<string>();
+  const votes: UniqueVoterVoteInput[] = [];
 
   for (const packet of tombstonePackets) {
     if (packet.packet_type === "meaning_correction_tombstone_proposed") {
@@ -121,33 +121,18 @@ export function summarizeTombstonePacketsForPhrase(
           continue;
         }
 
-        const voterKey = tombstoneVoteVoterKey(payload);
-
-        if (voterKey) {
-          if (countedVoterVotes.has(voterKey)) {
-            continue;
-          }
-
-          countedVoterVotes.add(voterKey);
-        }
-
-        const counts = voteCounts.get(groupKey) ?? {
-          confirm_votes: 0,
-          reject_votes: 0,
-        };
-
-        if (payload.vote === "confirm") {
-          counts.confirm_votes += 1;
-        }
-
-        if (payload.vote === "reject") {
-          counts.reject_votes += 1;
-        }
-
-        voteCounts.set(groupKey, counts);
+        votes.push({
+          target_key: groupKey,
+          voter_id: tombstoneVoteVoterId(payload, packet),
+          vote: payload.vote,
+          created_at: packet.created_at,
+          packet_id: packet.packet_id,
+        });
       }
     }
   }
+
+  const voteCounts = countUniqueVoterVotes(votes);
 
   return [...proposals.entries()]
     .map(([groupKey, proposal]) => {
@@ -208,19 +193,15 @@ function tombstoneGroupKey(
   ]);
 }
 
-function tombstoneVoteVoterKey(
-  payload: MeaningCorrectionTombstoneVotePayload
+function tombstoneVoteVoterId(
+  payload: MeaningCorrectionTombstoneVotePayload,
+  packet: LmpPacket
 ): string | undefined {
-  if (!isNonEmptyString(payload.voter)) {
-    return undefined;
+  if (isNonEmptyString(payload.voter)) {
+    return payload.voter.trim();
   }
 
-  return JSON.stringify([
-    payload.phrase_id,
-    payload.correction_id,
-    payload.tombstone_id,
-    payload.voter.trim(),
-  ]);
+  return isNonEmptyString(packet.author) ? packet.author.trim() : undefined;
 }
 
 function isNonEmptyString(value: unknown): value is string {

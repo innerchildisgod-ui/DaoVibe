@@ -27,6 +27,10 @@ import type {
 } from "./CorrectionHistory";
 import { determineCorrectionStatus } from "./CorrectionStatus";
 import type { CorrectionStatus } from "./CorrectionStatus";
+import {
+  countUniqueVoterVotes,
+  type UniqueVoterVoteInput,
+} from "./LanguageConfidence";
 
 export type { CorrectionStatus } from "./CorrectionStatus";
 export type { CorrectionCleanupReason } from "./CorrectionCleanup";
@@ -184,11 +188,7 @@ export function summarizeCorrectionPacketsForPhrase(
   correctionPackets: LmpPacket[]
 ): CorrectionSummary[] {
   const proposals = new Map<string, CorrectionProposalCandidate>();
-  const voteCounts = new Map<
-    string,
-    { confirm_votes: number; reject_votes: number }
-  >();
-  const countedVoterVotes = new Set<string>();
+  const votes: UniqueVoterVoteInput[] = [];
 
   for (const packet of correctionPackets) {
     if (packet.packet_type === "meaning_correction_proposed") {
@@ -209,34 +209,18 @@ export function summarizeCorrectionPacketsForPhrase(
       const payload = packet.payload as MeaningCorrectionVotePayload;
 
       if (isCorrectionVoteForPhrase(payload, phraseId)) {
-        const voterKey = correctionVoteVoterKey(payload);
-
-        if (voterKey) {
-          if (countedVoterVotes.has(voterKey)) {
-            continue;
-          }
-
-          countedVoterVotes.add(voterKey);
-        }
-
-        const counts = voteCounts.get(payload.correction_id) ?? {
-          confirm_votes: 0,
-          reject_votes: 0,
-        };
-
-        if (payload.vote === "confirm") {
-          counts.confirm_votes += 1;
-        }
-
-        if (payload.vote === "reject") {
-          counts.reject_votes += 1;
-        }
-
-        voteCounts.set(payload.correction_id, counts);
+        votes.push({
+          target_key: payload.correction_id,
+          voter_id: correctionVoteVoterId(payload, packet),
+          vote: payload.vote,
+          created_at: packet.created_at,
+          packet_id: packet.packet_id,
+        });
       }
     }
   }
 
+  const voteCounts = countUniqueVoterVotes(votes);
   const corrections = [...proposals.values()]
     .map((proposal) => {
       const counts = voteCounts.get(proposal.payload.correction_id) ?? {
@@ -294,18 +278,15 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function correctionVoteVoterKey(
-  payload: MeaningCorrectionVotePayload
+function correctionVoteVoterId(
+  payload: MeaningCorrectionVotePayload,
+  packet: LmpPacket
 ): string | undefined {
-  if (!isNonEmptyString(payload.voter)) {
-    return undefined;
+  if (isNonEmptyString(payload.voter)) {
+    return payload.voter.trim();
   }
 
-  return JSON.stringify([
-    payload.phrase_id,
-    payload.correction_id,
-    payload.voter.trim(),
-  ]);
+  return isNonEmptyString(packet.author) ? packet.author.trim() : undefined;
 }
 
 function toCorrectionSummary(

@@ -12,6 +12,29 @@ export interface MeaningScoreResult {
   total_votes: number;
 }
 
+export type CountedVoteValue = "confirm" | "reject";
+
+export interface UniqueVoterVoteInput {
+  target_key: string;
+  voter_id?: string;
+  vote: CountedVoteValue;
+  created_at?: number;
+  packet_id?: string;
+}
+
+export interface UniqueVoterVoteCounts {
+  confirm_votes: number;
+  reject_votes: number;
+}
+
+interface EffectiveUniqueVoterVote {
+  target_key: string;
+  voter_id: string;
+  vote: CountedVoteValue;
+  created_at: number;
+  packet_id: string;
+}
+
 const DEFAULT_CONFIDENCE = 0;
 const MIN_CONFIDENCE = 0;
 const MAX_CONFIDENCE = 1;
@@ -42,6 +65,51 @@ export function calculateMeaningScore(
   };
 }
 
+export function countUniqueVoterVotes(
+  votes: UniqueVoterVoteInput[]
+): Map<string, UniqueVoterVoteCounts> {
+  const countsByTarget = new Map<string, UniqueVoterVoteCounts>();
+  const latestVoteByTargetVoter = new Map<string, EffectiveUniqueVoterVote>();
+
+  for (const vote of votes) {
+    const targetKey = normalizeNonEmptyString(vote.target_key);
+
+    if (!targetKey) {
+      continue;
+    }
+
+    const voterId = normalizeNonEmptyString(vote.voter_id);
+
+    if (!voterId) {
+      addVoteCount(countsByTarget, targetKey, vote.vote);
+      continue;
+    }
+
+    const effectiveVote: EffectiveUniqueVoterVote = {
+      target_key: targetKey,
+      voter_id: voterId,
+      vote: vote.vote,
+      created_at: normalizePacketCreatedAt(vote.created_at),
+      packet_id: normalizePacketId(vote.packet_id),
+    };
+    const voteKey = JSON.stringify([targetKey, voterId]);
+    const existingVote = latestVoteByTargetVoter.get(voteKey);
+
+    if (
+      !existingVote ||
+      compareEffectiveVotes(effectiveVote, existingVote) > 0
+    ) {
+      latestVoteByTargetVoter.set(voteKey, effectiveVote);
+    }
+  }
+
+  for (const vote of latestVoteByTargetVoter.values()) {
+    addVoteCount(countsByTarget, vote.target_key, vote.vote);
+  }
+
+  return countsByTarget;
+}
+
 function clampConfidence(value: unknown): number {
   const numericValue = Number(value ?? DEFAULT_CONFIDENCE);
 
@@ -64,4 +132,60 @@ function normalizeVoteCount(value: unknown): number {
 
 function clampScore(value: number): number {
   return Math.max(-1, Math.min(value, 1));
+}
+
+function addVoteCount(
+  countsByTarget: Map<string, UniqueVoterVoteCounts>,
+  targetKey: string,
+  vote: CountedVoteValue
+): void {
+  const counts = countsByTarget.get(targetKey) ?? {
+    confirm_votes: 0,
+    reject_votes: 0,
+  };
+
+  if (vote === "confirm") {
+    counts.confirm_votes += 1;
+  }
+
+  if (vote === "reject") {
+    counts.reject_votes += 1;
+  }
+
+  countsByTarget.set(targetKey, counts);
+}
+
+function compareEffectiveVotes(
+  left: EffectiveUniqueVoterVote,
+  right: EffectiveUniqueVoterVote
+): number {
+  if (left.created_at !== right.created_at) {
+    return left.created_at - right.created_at;
+  }
+
+  return left.packet_id.localeCompare(right.packet_id);
+}
+
+function normalizePacketCreatedAt(value: unknown): number {
+  const numericValue = Number(value ?? 0);
+
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+
+  return Math.floor(numericValue);
+}
+
+function normalizePacketId(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function normalizeNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmedValue = value.trim();
+
+  return trimmedValue.length > 0 ? trimmedValue : undefined;
 }
