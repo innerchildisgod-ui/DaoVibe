@@ -31,6 +31,7 @@ import {
 } from "./governanceRendering";
 
 import {
+  renderPacketTrace,
   renderPacketTraceRows,
   renderPacketTypeCounts,
 } from "./packetTraceRendering";
@@ -140,72 +141,6 @@ function setState(nextState: Partial<AppState>): void {
   render();
 }
 
-function renderPacketTrace(): string {
-  const trace = state.packetTrace;
-
-  return `
-    <section class="panel packet-trace-panel">
-      <div class="panel-heading">
-        <h2>Packet Trace</h2>
-        <div class="panel-actions">
-          <span class="status ${trace ? "ok" : "warn"}">
-            ${state.loadingPacketTrace ? "loading" : trace ? "loaded" : "unavailable"}
-          </span>
-          <button
-            id="refresh-packet-trace"
-            type="button"
-            ${state.loadingPacketTrace || !state.selectedPhrase ? "disabled" : ""}
-          >
-            ${state.loadingPacketTrace ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </div>
-      ${
-        state.packetTraceError
-          ? `<p class="form-message error">${escapeHtml(state.packetTraceError)}</p>`
-          : ""
-      }
-      ${
-        !state.selectedPhrase
-          ? `<p class="muted">Select a phrase to inspect packet evidence.</p>`
-          : trace
-            ? `
-              <div class="field-grid">
-                ${field("packet_count", trace.trace.packet_count)}
-                ${field("tombstone_execution", statusText(trace.safety.tombstone_execution))}
-                ${field("deletion_enabled", statusText(trace.safety.deletion_enabled))}
-                ${field("ledger_pruning_enabled", statusText(trace.safety.ledger_pruning_enabled))}
-              </div>
-              ${renderPacketTypeCounts(trace)}
-              ${renderPacketTraceRows(trace)}
-            `
-            : `<p class="muted">No packet trace loaded.</p>`
-      }
-    </section>
-  `;
-}
-
-
-function renderPhraseDetail(): string {
-  const phrase = state.selectedPhrase;
-
-  return `
-    <section class="panel detail-panel">
-      <div class="panel-heading">
-        <h2>Phrase Detail</h2>
-      </div>
-      <div class="field-grid">
-        ${field("phrase_id", phrase?.phrase_id)}
-        ${field("surface_text", phrase?.surface_text)}
-        ${field("language_hint", phrase?.language_hint)}
-        ${field("safety_label", phrase?.safety_label)}
-      </div>
-      <h3>Best Meaning</h3>
-      ${renderBestMeaning(state)}
-    </section>
-  `;
-}
-
 function render(): void {
   app.innerHTML = `
     ${renderHeader(visibleApiBaseUrl)}
@@ -221,9 +156,9 @@ function render(): void {
       <div class="work-column">
         ${renderSearch(state)}
         ${renderObservePhrase(state)}
-        ${renderPhraseDetail()}
+        ${renderPhraseDetail(state)}
         ${renderMeaningExplanation(state)}
-        ${renderPacketTrace()}
+        ${renderPacketTrace(state)}
         ${renderProposeMeaning(state)}
       </div>
     </main>

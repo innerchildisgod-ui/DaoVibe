@@ -1,4 +1,16 @@
-import type { PhrasePacketTraceResponse } from "@mycelium/client";
+import type {
+  PhrasePacketTraceResponse,
+  PhraseRecord,
+} from "@mycelium/client";
+
+export type PacketTraceRenderingState = {
+  loading: boolean;
+  loadingPhrase: boolean;
+  loadingPacketTrace: boolean;
+  packetTraceError?: string;
+  selectedPhrase?: PhraseRecord;
+  packetTrace?: PhrasePacketTraceResponse;
+};
 import { escapeHtml } from "./uiFormatting";
 
 export function renderPacketTypeCounts(trace: PhrasePacketTraceResponse): string {
@@ -60,5 +72,50 @@ export function renderPacketTraceRows(trace: PhrasePacketTraceResponse): string 
         )
         .join("")}
     </div>
+  `;
+}
+
+export function renderPacketTrace(state: PacketTraceRenderingState): string {
+  const trace = state.packetTrace;
+
+  return `
+    <section class="panel packet-trace-panel">
+      <div class="panel-heading">
+        <h2>Packet Trace</h2>
+        <div class="panel-actions">
+          <span class="status ${trace ? "ok" : "warn"}">
+            ${state.loadingPacketTrace ? "loading" : trace ? "loaded" : "unavailable"}
+          </span>
+          <button
+            id="refresh-packet-trace"
+            type="button"
+            ${state.loadingPacketTrace || !state.selectedPhrase ? "disabled" : ""}
+          >
+            ${state.loadingPacketTrace ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </div>
+      ${
+        state.packetTraceError
+          ? `<p class="form-message error">${escapeHtml(state.packetTraceError)}</p>`
+          : ""
+      }
+      ${
+        !state.selectedPhrase
+          ? `<p class="muted">Select a phrase to inspect packet evidence.</p>`
+          : trace
+            ? `
+              <div class="field-grid">
+                ${field("packet_count", trace.trace.packet_count)}
+                ${field("tombstone_execution", statusText(trace.safety.tombstone_execution))}
+                ${field("deletion_enabled", statusText(trace.safety.deletion_enabled))}
+                ${field("ledger_pruning_enabled", statusText(trace.safety.ledger_pruning_enabled))}
+              </div>
+              ${renderPacketTypeCounts(trace)}
+              ${renderPacketTraceRows(trace)}
+            `
+            : `<p class="muted">No packet trace loaded.</p>`
+      }
+    </section>
   `;
 }

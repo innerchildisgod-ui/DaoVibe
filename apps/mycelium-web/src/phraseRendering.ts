@@ -191,3 +191,23 @@ export function renderMeaningExplanation(state: PhraseRenderingState): string {
     </section>
   `;
 }
+
+export function renderPhraseDetail(state: PhraseRenderingState): string {
+  const phrase = state.selectedPhrase;
+
+  return `
+    <section class="panel detail-panel">
+      <div class="panel-heading">
+        <h2>Phrase Detail</h2>
+      </div>
+      <div class="field-grid">
+        ${field("phrase_id", phrase?.phrase_id)}
+        ${field("surface_text", phrase?.surface_text)}
+        ${field("language_hint", phrase?.language_hint)}
+        ${field("safety_label", phrase?.safety_label)}
+      </div>
+      <h3>Best Meaning</h3>
+      ${renderBestMeaning(state)}
+    </section>
+  `;
+}
