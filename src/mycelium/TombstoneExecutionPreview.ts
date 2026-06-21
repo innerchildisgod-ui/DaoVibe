@@ -28,16 +28,21 @@ export interface TombstoneActiveCorrectionPreview {
 
 export interface TombstoneExecutionPreviewResult {
   phrase_id: string;
-  execution_enabled: false;
+  execution_enabled: boolean;
   suppressed_count: number;
   active_count: number;
   suppressed_corrections: TombstoneSuppressedCorrectionPreview[];
   active_corrections: TombstoneActiveCorrectionPreview[];
 }
 
+export interface TombstoneExecutionOptions {
+  tombstoneExecutionEnabled?: boolean;
+}
+
 export function listTombstoneExecutionPreviewForPhrase(
   source: PhraseLookupSource,
-  phraseId: string
+  phraseId: string,
+  options: TombstoneExecutionOptions = {}
 ): TombstoneExecutionPreviewResult {
   const correctionsResult = listCorrectionsForPhrase(source, phraseId);
   const tombstonesResult = listCorrectionTombstonesForPhrase(
@@ -48,29 +53,19 @@ export function listTombstoneExecutionPreviewForPhrase(
   return buildTombstoneExecutionPreview(
     correctionsResult.phrase_id,
     correctionsResult.corrections,
-    tombstonesResult.tombstones
+    tombstonesResult.tombstones,
+    options
   );
 }
 
 export function buildTombstoneExecutionPreview(
   phraseId: string,
   corrections: CorrectionSummary[],
-  tombstones: CorrectionTombstoneSummary[]
+  tombstones: CorrectionTombstoneSummary[],
+  options: TombstoneExecutionOptions = {}
 ): TombstoneExecutionPreviewResult {
-  const confirmedTombstonesByCorrection = new Map<
-    string,
-    CorrectionTombstoneSummary
-  >();
-
-  for (const tombstone of tombstones) {
-    if (
-      tombstone.phrase_id === phraseId &&
-      isConfirmedSuppressionTombstone(tombstone) &&
-      !confirmedTombstonesByCorrection.has(tombstone.correction_id)
-    ) {
-      confirmedTombstonesByCorrection.set(tombstone.correction_id, tombstone);
-    }
-  }
+  const confirmedTombstonesByCorrection =
+    confirmedTombstonesByCorrectionForPhrase(phraseId, tombstones);
 
   const suppressedCorrections: TombstoneSuppressedCorrectionPreview[] = [];
   const activeCorrections: TombstoneActiveCorrectionPreview[] = [];
@@ -91,7 +86,7 @@ export function buildTombstoneExecutionPreview(
 
   return {
     phrase_id: phraseId,
-    execution_enabled: false,
+    execution_enabled: options.tombstoneExecutionEnabled === true,
     suppressed_count: suppressedCorrections.length,
     active_count: activeCorrections.length,
     suppressed_corrections: suppressedCorrections,
@@ -99,10 +94,46 @@ export function buildTombstoneExecutionPreview(
   };
 }
 
-function isConfirmedSuppressionTombstone(
+export function selectActiveCorrectionsForTombstoneExecution(
+  phraseId: string,
+  corrections: CorrectionSummary[],
+  tombstones: CorrectionTombstoneSummary[]
+): CorrectionSummary[] {
+  const confirmedTombstonesByCorrection =
+    confirmedTombstonesByCorrectionForPhrase(phraseId, tombstones);
+
+  return corrections.filter(
+    (correction) =>
+      !confirmedTombstonesByCorrection.has(correction.correction_id)
+  );
+}
+
+export function isConfirmedSuppressionTombstone(
   tombstone: CorrectionTombstoneSummary
 ): boolean {
   return tombstone.status === "confirmed" && tombstone.tombstone_score >= 3;
+}
+
+function confirmedTombstonesByCorrectionForPhrase(
+  phraseId: string,
+  tombstones: CorrectionTombstoneSummary[]
+): Map<string, CorrectionTombstoneSummary> {
+  const confirmedTombstonesByCorrection = new Map<
+    string,
+    CorrectionTombstoneSummary
+  >();
+
+  for (const tombstone of tombstones) {
+    if (
+      tombstone.phrase_id === phraseId &&
+      isConfirmedSuppressionTombstone(tombstone) &&
+      !confirmedTombstonesByCorrection.has(tombstone.correction_id)
+    ) {
+      confirmedTombstonesByCorrection.set(tombstone.correction_id, tombstone);
+    }
+  }
+
+  return confirmedTombstonesByCorrection;
 }
 
 function toSuppressedCorrectionPreview(

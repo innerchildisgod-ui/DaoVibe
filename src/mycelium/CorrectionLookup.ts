@@ -232,8 +232,17 @@ export function summarizeCorrectionPacketsForPhrase(
     })
     .sort(compareRankedCorrections);
 
-  return applyConflictMetadata(corrections);
+  return rankCorrectionSummaries(corrections);
 }
+
+export function rankCorrectionSummaries(
+  corrections: CorrectionSummary[]
+): CorrectionSummary[] {
+  return applyConflictMetadata(
+    corrections.map((correction) => ({ ...correction }))
+  );
+}
+
 export function selectBestCorrectionMeaning(
   phrase: KnowledgePhraseRecord,
   currentBestScore: number,

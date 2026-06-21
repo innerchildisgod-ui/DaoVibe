@@ -14,9 +14,12 @@ import {
   type UniqueVoterVoteInput,
 } from "./LanguageConfidence";
 import {
+  rankCorrectionSummaries,
   selectBestCorrectionMeaning,
   summarizeCorrectionPacketsForPhrase,
 } from "./CorrectionLookup";
+import { selectActiveCorrectionsForTombstoneExecution } from "./TombstoneExecutionPreview";
+import { summarizeTombstonePacketsForPhrase } from "./TombstoneLookup";
 export type {
   CorrectionCleanupCandidate,
   CorrectionCleanupReason,
@@ -100,6 +103,10 @@ export interface BestMeaningDetails {
   confirm_votes?: number;
   reject_votes?: number;
   correction_score?: number;
+}
+
+export interface BestMeaningSelectionOptions {
+  tombstoneExecutionEnabled?: boolean;
 }
 
 interface MeaningVoteEvidence {
@@ -209,7 +216,9 @@ export function selectBestMeaning(
   phrase: KnowledgePhraseRecord | undefined,
   phraseId: string,
   correctionPackets: LmpPacket[] = [],
-  meaningConfidencePackets: LmpPacket[] = []
+  meaningConfidencePackets: LmpPacket[] = [],
+  tombstonePackets: LmpPacket[] = [],
+  options: BestMeaningSelectionOptions = {}
 ): BestMeaningResult {
   const normalizedPhraseId = phraseId.trim();
 
@@ -244,10 +253,17 @@ export function selectBestMeaning(
     phrase.phrase_id,
     correctionPackets
   );
+  const selectableCorrections = options.tombstoneExecutionEnabled
+    ? selectActiveCorrectionsForBestMeaning(
+        phrase.phrase_id,
+        corrections,
+        tombstonePackets
+      )
+    : corrections;
   const bestCorrection = selectBestCorrectionMeaning(
     phrase,
     bestMeaning.score,
-    corrections
+    selectableCorrections
   );
 
   return {
@@ -255,6 +271,24 @@ export function selectBestMeaning(
     has_best_meaning: true,
     best_meaning: bestCorrection ?? bestMeaning,
   };
+}
+
+function selectActiveCorrectionsForBestMeaning(
+  phraseId: string,
+  corrections: ReturnType<typeof summarizeCorrectionPacketsForPhrase>,
+  tombstonePackets: LmpPacket[]
+) {
+  const tombstones = summarizeTombstonePacketsForPhrase(
+    phraseId,
+    tombstonePackets
+  );
+  const activeCorrections = selectActiveCorrectionsForTombstoneExecution(
+    phraseId,
+    corrections,
+    tombstones
+  );
+
+  return rankCorrectionSummaries(activeCorrections);
 }
 
 

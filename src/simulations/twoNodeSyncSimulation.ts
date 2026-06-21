@@ -564,6 +564,47 @@ async function runSimulation(): Promise<void> {
     `Expected live bestMeaning correction ${correctionId} after tombstone preview, got ${nodeBBestMeaningAfterTombstone.best_meaning?.correction_id}`
   );
 
+  const storedTombstonePacketIds = [
+    tombstoneProposalResult.packet.packet_id,
+    ...tombstoneVoteResults.map((result) => result.packet.packet_id),
+  ];
+  const storedTombstonePackets = nodeB.getPacketsByIds(
+    storedTombstonePacketIds
+  );
+
+  assertSimulation(
+    storedTombstonePackets.length === storedTombstonePacketIds.length,
+    `Expected confirmed tombstone packets to remain stored, got ${storedTombstonePackets.length}`
+  );
+
+  const nodeBExecutingTombstones = new MyceliumController(nodeB, {
+    tombstoneExecutionEnabled: true,
+  });
+  const enabledPreview =
+    nodeBExecutingTombstones.getTombstoneExecutionPreviewForPhrase(
+      phrasePayload.phrase_id
+    );
+  const enabledBestMeaning = nodeBExecutingTombstones.getBestMeaning(
+    phrasePayload.phrase_id
+  );
+
+  assertSimulation(
+    enabledPreview.execution_enabled === true,
+    "Expected opt-in tombstone execution preview to report enabled"
+  );
+  assertSimulation(
+    enabledPreview.suppressed_count === 1,
+    `Expected enabled preview suppressed_count 1, got ${enabledPreview.suppressed_count}`
+  );
+  assertSimulation(
+    enabledBestMeaning.best_meaning?.source !== "correction",
+    `Expected tombstone execution to suppress correction bestMeaning, got ${enabledBestMeaning.best_meaning?.source ?? "base meaning"}`
+  );
+  assertSimulation(
+    enabledBestMeaning.best_meaning?.meaning_id === correctionOriginalMeaningId,
+    `Expected tombstone execution to fall back to base meaning ${correctionOriginalMeaningId}, got ${enabledBestMeaning.best_meaning?.meaning_id}`
+  );
+
   const duplicateTombstoneCursor = nodeB.getPeerSyncCursor(
     NODE_A_AUTHOR
   ).cursor;
@@ -608,6 +649,7 @@ async function runSimulation(): Promise<void> {
   console.log("correction tombstone packet sync passed");
   console.log("correction tombstone duplicate protection passed");
   console.log("correction tombstone inspection preview sync passed");
+  console.log("correction tombstone best meaning execution passed");
 
   const corruptCursorBefore = nodeB.getPeerSyncCursor(NODE_A_AUTHOR).cursor;
   const corruptPhrasePayload: PhraseObservedPayload = {

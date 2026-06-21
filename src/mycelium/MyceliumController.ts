@@ -40,7 +40,10 @@ import {
   MYCELIUM_PROTOCOL_VERSION,
 } from "./MyceliumVersions";
 import { listTombstoneExecutionPreviewForPhrase } from "./TombstoneExecutionPreview";
-import { listCorrectionTombstonesForPhrase } from "./TombstoneLookup";
+import {
+  listCorrectionTombstonesForPhrase,
+  listTombstonePacketsForPhrase,
+} from "./TombstoneLookup";
 
 type LocalNodeIdentityUpdate = {
   display_name?: string;
@@ -66,6 +69,10 @@ type BestMeaningExplanationControllerResult =
   | ({
       found: true;
     } & BestMeaningExplanationResult);
+
+export interface MyceliumRuntimeOptions {
+  tombstoneExecutionEnabled?: boolean;
+}
 
 export interface MyceliumNodeStatus {
   ok: true;
@@ -155,7 +162,10 @@ export interface MyceliumNodeDiagnostics {
 export class MyceliumController {
   private readonly startedAtMs = Date.now();
 
-  constructor(private readonly engine: LanguageEngine) {}
+  constructor(
+    private readonly engine: LanguageEngine,
+    private readonly runtimeOptions: MyceliumRuntimeOptions = {}
+  ) {}
 
   getLocalNodeIdentity(): LocalNodeIdentity {
     return this.localNodeIdentityStore().getOrCreateLocalNodeIdentity();
@@ -381,7 +391,9 @@ export class MyceliumController {
   }
 
   getTombstoneExecutionPreviewForPhrase(phraseId: string) {
-    return listTombstoneExecutionPreviewForPhrase(this.engine, phraseId);
+    return listTombstoneExecutionPreviewForPhrase(this.engine, phraseId, {
+      tombstoneExecutionEnabled: this.tombstoneExecutionEnabled(),
+    });
   }
 
   getPhrasePacketTrace(phraseId: string) {
@@ -398,12 +410,20 @@ export class MyceliumController {
       this.engine,
       phraseResult.phrase_id
     );
+    const tombstoneExecutionEnabled = this.tombstoneExecutionEnabled();
+    const tombstonePackets = tombstoneExecutionEnabled
+      ? listTombstonePacketsForPhrase(this.engine, phraseResult.phrase_id)
+      : [];
 
     return selectBestMeaning(
       phraseResult.phrase,
       phraseResult.phrase_id,
       correctionPackets,
-      meaningConfidencePackets
+      meaningConfidencePackets,
+      tombstonePackets,
+      {
+        tombstoneExecutionEnabled,
+      }
     );
   }
 
@@ -464,5 +484,9 @@ export class MyceliumController {
   private localNodeStore(): LocalNodeStore {
     return (this.engine as unknown as { sqliteStore: LocalNodeStore })
       .sqliteStore;
+  }
+
+  private tombstoneExecutionEnabled(): boolean {
+    return this.runtimeOptions.tombstoneExecutionEnabled === true;
   }
 }
