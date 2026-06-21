@@ -46,6 +46,8 @@ import type { ServerConfig } from "../config/env";
 import { createTypeScriptNativeCoreStub } from "../kernel/TypeScriptNativeCoreStub";
 import { TypeScriptDoriBoundaryStub } from "../kernel/orchestrators/DoriBoundary";
 import { createDefaultMultiDeviceSyncPlan } from "../kernel/sync";
+import { createAppActions } from "../../apps/mycelium-web/src/appActions";
+import type { AppState } from "../../apps/mycelium-web/src/appState";
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
@@ -2405,5 +2407,140 @@ test("sync import rejects stale cursor batch without storing new packets", async
     false
   );
 });
+
+function createUnitAppState(): AppState {
+  return {
+    loading: false,
+    loadingPhrase: false,
+    loadingExplanation: false,
+    loadingPacketTrace: false,
+    loadingDiagnostics: false,
+    loadingGovernance: false,
+    observingPhrase: false,
+    proposingMeaning: false,
+    searchQuery: "",
+    observeForm: {
+      surfaceText: "",
+      languageHint: "",
+      phoneticHint: "",
+    },
+    proposeForm: {
+      phraseId: "",
+      referenceMeaning: "",
+      context: "",
+      confidence: "0.5",
+    },
+  };
+}
+
+function applyUnitAppStateUpdate(
+  state: AppState,
+  nextState: Partial<AppState>
+): void {
+  Object.assign(state, nextState);
+}
+
+function unitFormData(values: Record<string, string>): FormData {
+  const formData = new FormData();
+
+  for (const [key, value] of Object.entries(values)) {
+    formData.set(key, value);
+  }
+
+  return formData;
+}
+
+test("app observe action rejects blank surface_text before client call", async () => {
+  const state = createUnitAppState();
+  let observeCallCount = 0;
+
+  const actions = createAppActions({
+    client: {
+      observePhrase: async () => {
+        observeCallCount += 1;
+        throw new Error("observePhrase client should not be called");
+      },
+    } as never,
+    state,
+    setState: (nextState) => applyUnitAppStateUpdate(state, nextState),
+  });
+
+  await actions.observePhrase(
+    unitFormData({
+      surface_text: "   ",
+      language_hint: "English",
+      phonetic_hint: "",
+    })
+  );
+
+  assert.strictEqual(observeCallCount, 0);
+  assert.strictEqual(state.observeResult?.kind, "error");
+  assert.strictEqual(state.observeResult?.message, "surface_text is required.");
+  assert.strictEqual(state.observingPhrase, false);
+});
+
+test("app propose action rejects blank reference_meaning before client call", async () => {
+  const state = createUnitAppState();
+  let proposeCallCount = 0;
+
+  const actions = createAppActions({
+    client: {
+      proposeMeaning: async () => {
+        proposeCallCount += 1;
+        throw new Error("proposeMeaning client should not be called");
+      },
+    } as never,
+    state,
+    setState: (nextState) => applyUnitAppStateUpdate(state, nextState),
+  });
+
+  await actions.proposeMeaning(
+    unitFormData({
+      phrase_id: "unit_app_action_phrase",
+      reference_meaning: "   ",
+      context: "unit-test",
+      confidence: "0.5",
+    })
+  );
+
+  assert.strictEqual(proposeCallCount, 0);
+  assert.strictEqual(state.proposeResult?.kind, "error");
+  assert.strictEqual(
+    state.proposeResult?.message,
+    "reference_meaning is required."
+  );
+  assert.strictEqual(state.proposingMeaning, false);
+});
+
+test("app propose action rejects invalid confidence before client call", async () => {
+  const state = createUnitAppState();
+  let proposeCallCount = 0;
+
+  const actions = createAppActions({
+    client: {
+      proposeMeaning: async () => {
+        proposeCallCount += 1;
+        throw new Error("proposeMeaning client should not be called");
+      },
+    } as never,
+    state,
+    setState: (nextState) => applyUnitAppStateUpdate(state, nextState),
+  });
+
+  await actions.proposeMeaning(
+    unitFormData({
+      phrase_id: "unit_app_action_phrase",
+      reference_meaning: "A valid reference meaning.",
+      context: "unit-test",
+      confidence: "not-a-number",
+    })
+  );
+
+  assert.strictEqual(proposeCallCount, 0);
+  assert.strictEqual(state.proposeResult?.kind, "error");
+  assert.strictEqual(state.proposeResult?.message, "confidence must be a number.");
+  assert.strictEqual(state.proposingMeaning, false);
+});
+
 void runTests();
 
