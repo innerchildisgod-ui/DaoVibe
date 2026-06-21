@@ -717,16 +717,55 @@ function renderProposeMeaning(): string {
 }
 
 function renderGovernance(): string {
+  const statusSafety = state.nodeStatus?.capabilities;
+  const diagnosticsSafety = state.nodeDiagnostics?.safety;
+  const explanationSafety = state.meaningExplanation?.explanation;
+  const packetTraceSafety = state.packetTrace?.safety;
+
+  const tombstoneExecution =
+    diagnosticsSafety?.tombstone_execution ??
+    statusSafety?.tombstone_execution ??
+    explanationSafety?.tombstone_execution_enabled ??
+    packetTraceSafety?.tombstone_execution;
+
+  const deletionEnabled =
+    diagnosticsSafety?.deletion_enabled ?? packetTraceSafety?.deletion_enabled;
+
+  const ledgerPruningEnabled =
+    diagnosticsSafety?.ledger_pruning_enabled ??
+    packetTraceSafety?.ledger_pruning_enabled;
+
+  const hasRuntimeSafetyState =
+    tombstoneExecution !== undefined ||
+    deletionEnabled !== undefined ||
+    ledgerPruningEnabled !== undefined;
+
   return `
     <section class="panel governance-panel">
       <div class="panel-heading">
         <h2>Governance Safety</h2>
-        <span class="status warn">execution disabled</span>
+        <span class="status ${tombstoneExecution ? "ok" : "warn"}">
+          ${
+            tombstoneExecution === true
+              ? "execution enabled"
+              : tombstoneExecution === false
+                ? "execution disabled"
+                : state.loading
+                  ? "loading"
+                  : "unknown"
+          }
+        </span>
       </div>
       <div class="field-grid">
         ${field("corrections", "available through backend")}
         ${field("tombstone_preview", "available through backend")}
-        ${field("tombstone_execution", "false")}
+        ${field("tombstone_execution", statusText(tombstoneExecution))}
+        ${field("deletion_enabled", statusText(deletionEnabled))}
+        ${field("ledger_pruning_enabled", statusText(ledgerPruningEnabled))}
+        ${field(
+          "runtime_source",
+          hasRuntimeSafetyState ? "local node API" : "not loaded"
+        )}
       </div>
     </section>
   `;
