@@ -2,6 +2,7 @@ import {
   MyceliumClient,
   type BestMeaningExplanationResponse,
   type BestMeaningResponse,
+  type CorrectionSummary,
   type LocalNodeIdentity,
   type LocalNodeSettings,
   type NodeDiagnosticsResponse,
@@ -12,6 +13,7 @@ import {
   type PhraseSearchResponse,
   type ProposeMeaningResponse,
   type SyncStatusResponse,
+  type TombstoneSummary,
 } from "@mycelium/client";
 import "./styles.css";
 
@@ -29,6 +31,7 @@ type AppState = {
   loadingExplanation: boolean;
   loadingPacketTrace: boolean;
   loadingDiagnostics: boolean;
+  loadingGovernance: boolean;
   observingPhrase: boolean;
   proposingMeaning: boolean;
   error?: string;
@@ -36,6 +39,7 @@ type AppState = {
   explanationError?: string;
   packetTraceError?: string;
   diagnosticsError?: string;
+  governanceError?: string;
   observeResult?: FormResult;
   proposeResult?: FormResult;
   nodeStatus?: NodeStatusResponse;
@@ -51,6 +55,8 @@ type AppState = {
   bestMeaning?: BestMeaningResponse;
   meaningExplanation?: BestMeaningExplanationResponse;
   packetTrace?: PhrasePacketTraceResponse;
+  corrections?: CorrectionSummary[];
+  tombstones?: TombstoneSummary[];
 };
 
 type FormResult = {
@@ -77,6 +83,7 @@ const state: AppState = {
   loadingExplanation: false,
   loadingPacketTrace: false,
   loadingDiagnostics: false,
+  loadingGovernance: false,
   observingPhrase: false,
   proposingMeaning: false,
   searchQuery: "",
@@ -596,6 +603,129 @@ function renderPacketTrace(): string {
   `;
 }
 
+
+function renderCorrectionRows(corrections: CorrectionSummary[]): string {
+  if (corrections.length === 0) {
+    return `<p class="muted">No corrections found for this phrase.</p>`;
+  }
+
+  return `
+    <div class="packet-trace-list">
+      ${corrections
+        .map(
+          (correction) => `
+            <article class="packet-trace-row">
+              <div class="packet-trace-heading">
+                <strong>${escapeHtml(correction.correction_id)}</strong>
+                <span>${escapeHtml(correction.status)}</span>
+              </div>
+              <p>${escapeHtml(correction.corrected_reference_meaning)}</p>
+              <div class="packet-trace-meta">
+                <span>score ${escapeHtml(correction.correction_score)}</span>
+                <span>confirms ${escapeHtml(correction.confirm_votes)}</span>
+                <span>rejects ${escapeHtml(correction.reject_votes)}</span>
+                <span>rank ${escapeHtml(correction.conflict_rank)}</span>
+                <span>conflict ${statusText(correction.is_conflicting)}</span>
+                <span>original ${escapeHtml(correction.original_meaning_id)}</span>
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderTombstoneRows(tombstones: TombstoneSummary[]): string {
+  if (tombstones.length === 0) {
+    return `<p class="muted">No correction tombstones found for this phrase.</p>`;
+  }
+
+  return `
+    <div class="packet-trace-list">
+      ${tombstones
+        .map(
+          (tombstone) => `
+            <article class="packet-trace-row">
+              <div class="packet-trace-heading">
+                <strong>${escapeHtml(tombstone.tombstone_id)}</strong>
+                <span>${escapeHtml(tombstone.status)}</span>
+              </div>
+              <p>${escapeHtml(tombstone.details ?? tombstone.reason)}</p>
+              <div class="packet-trace-meta">
+                <span>correction ${escapeHtml(tombstone.correction_id)}</span>
+                <span>reason ${escapeHtml(tombstone.reason)}</span>
+                <span>score ${escapeHtml(tombstone.tombstone_score)}</span>
+                <span>confirms ${escapeHtml(tombstone.confirm_votes)}</span>
+                <span>rejects ${escapeHtml(tombstone.reject_votes)}</span>
+                <span>packet ${escapeHtml(tombstone.proposal_packet_id)}</span>
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderGovernanceEvidence(): string {
+  const corrections = state.corrections ?? [];
+  const tombstones = state.tombstones ?? [];
+
+  if (state.loadingPhrase || state.loadingGovernance) {
+    return `
+      <section class="panel governance-evidence-panel">
+        <div class="panel-heading">
+          <h2>Correction & Tombstone Evidence</h2>
+          <span class="status warn">loading</span>
+        </div>
+        <p class="muted">Loading governance evidence.</p>
+      </section>
+    `;
+  }
+
+  if (!state.selectedPhrase) {
+    return `
+      <section class="panel governance-evidence-panel">
+        <div class="panel-heading">
+          <h2>Correction & Tombstone Evidence</h2>
+        </div>
+        <p class="muted">Select a phrase to inspect correction and tombstone evidence.</p>
+      </section>
+    `;
+  }
+
+  if (state.governanceError) {
+    return `
+      <section class="panel governance-evidence-panel">
+        <div class="panel-heading">
+          <h2>Correction & Tombstone Evidence</h2>
+          <span class="status warn">unavailable</span>
+        </div>
+        <p class="form-message error">${escapeHtml(state.governanceError)}</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="panel governance-evidence-panel">
+      <div class="panel-heading">
+        <h2>Correction & Tombstone Evidence</h2>
+        <span class="status ${corrections.length || tombstones.length ? "ok" : "warn"}">
+          ${corrections.length || tombstones.length ? "loaded" : "empty"}
+        </span>
+      </div>
+      <div class="field-grid evidence-grid">
+        ${field("correction_count", corrections.length)}
+        ${field("tombstone_count", tombstones.length)}
+      </div>
+      <h3>Corrections</h3>
+      ${renderCorrectionRows(corrections)}
+      <h3>Tombstones</h3>
+      ${renderTombstoneRows(tombstones)}
+    </section>
+  `;
+}
 function renderPhraseDetail(): string {
   const phrase = state.selectedPhrase;
 
@@ -913,6 +1043,7 @@ async function loadStatus(): Promise<void> {
     setState({
       loading: false,
       loadingDiagnostics: false,
+  loadingGovernance: false,
       nodeStatus,
       nodeIdentity: nodeIdentity.identity,
       nodeSettings: nodeSettings.settings,
@@ -928,6 +1059,7 @@ async function loadStatus(): Promise<void> {
     setState({
       loading: false,
       loadingDiagnostics: false,
+  loadingGovernance: false,
       error: message,
       diagnosticsError: message,
     });
@@ -945,11 +1077,13 @@ async function loadDiagnostics(): Promise<void> {
 
     setState({
       loadingDiagnostics: false,
+  loadingGovernance: false,
       nodeDiagnostics: diagnostics.diagnostics,
     });
   } catch (error) {
     setState({
       loadingDiagnostics: false,
+  loadingGovernance: false,
       diagnosticsError:
         error instanceof Error
           ? `Diagnostics unavailable. ${error.message}`
@@ -995,45 +1129,49 @@ async function selectPhrase(phraseId: string): Promise<void> {
     loadingPhrase: true,
     loadingExplanation: true,
     loadingPacketTrace: true,
-    proposeForm: {
-      ...state.proposeForm,
-      phraseId,
-    },
+    loadingGovernance: true,
     selectedPhrase: undefined,
     bestMeaning: undefined,
     meaningExplanation: undefined,
     packetTrace: undefined,
+    corrections: undefined,
+    tombstones: undefined,
     explanationError: undefined,
     packetTraceError: undefined,
+    governanceError: undefined,
   });
 
   try {
-    const [phrase, bestMeaning, explanation, packetTrace] =
+    const [phrase, bestMeaning, explanation, packetTrace, corrections, tombstones] =
       await Promise.allSettled([
-      client.getPhrase(phraseId),
-      client.getBestMeaning(phraseId),
-      client.getBestMeaningExplanation(phraseId),
-      client.getPhrasePacketTrace(phraseId),
-    ]);
+        client.getPhrase(phraseId),
+        client.getBestMeaning(phraseId),
+        client.getBestMeaningExplanation(phraseId),
+        client.getPhrasePacketTrace(phraseId),
+        client.getCorrections(phraseId),
+        client.getTombstones(phraseId),
+      ]);
 
     if (phrase.status === "rejected") {
       throw phrase.reason;
-    }
-
-    if (bestMeaning.status === "rejected") {
-      throw bestMeaning.reason;
     }
 
     setState({
       loadingPhrase: false,
       loadingExplanation: false,
       loadingPacketTrace: false,
+      loadingGovernance: false,
       selectedPhrase: phrase.value.phrase,
-      bestMeaning: bestMeaning.value,
+      bestMeaning:
+        bestMeaning.status === "fulfilled" ? bestMeaning.value : undefined,
       meaningExplanation:
         explanation.status === "fulfilled" ? explanation.value : undefined,
       packetTrace:
         packetTrace.status === "fulfilled" ? packetTrace.value : undefined,
+      corrections:
+        corrections.status === "fulfilled" ? corrections.value.corrections : undefined,
+      tombstones:
+        tombstones.status === "fulfilled" ? tombstones.value.tombstones : undefined,
       explanationError:
         explanation.status === "rejected"
           ? explanation.reason instanceof Error
@@ -1046,16 +1184,32 @@ async function selectPhrase(phraseId: string): Promise<void> {
             ? packetTrace.reason.message
             : "Packet trace failed."
           : undefined,
+      governanceError:
+        corrections.status === "rejected"
+          ? corrections.reason instanceof Error
+            ? corrections.reason.message
+            : "Correction lookup failed."
+          : tombstones.status === "rejected"
+            ? tombstones.reason instanceof Error
+              ? tombstones.reason.message
+              : "Tombstone lookup failed."
+            : undefined,
     });
   } catch (error) {
     setState({
       loadingPhrase: false,
       loadingExplanation: false,
       loadingPacketTrace: false,
+      loadingGovernance: false,
+      selectedPhrase: undefined,
+      bestMeaning: undefined,
       meaningExplanation: undefined,
       packetTrace: undefined,
+      corrections: undefined,
+      tombstones: undefined,
       explanationError: undefined,
       packetTraceError: undefined,
+      governanceError: undefined,
       searchError:
         error instanceof Error ? error.message : "Phrase detail failed.",
     });
