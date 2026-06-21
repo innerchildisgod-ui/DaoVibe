@@ -1925,7 +1925,7 @@ test("packet trace includes phrase, meaning, correction, and tombstone packets",
   assert.strictEqual(trace.safety.tombstone_execution, false);
 });
 
-test("correction voter duplicate protection counts first identified voter vote only", () => {
+test("correction voter duplicate protection counts latest identified voter vote only", () => {
   const phraseId = "unit_phrase_duplicate_votes";
   const correctionId = "unit_correction_duplicate_votes";
 
@@ -1968,9 +1968,9 @@ test("correction voter duplicate protection counts first identified voter vote o
   const corrections = summarizeCorrectionPacketsForPhrase(phraseId, packets);
 
   assert.strictEqual(corrections.length, 1);
-  assert.strictEqual(corrections[0].confirm_votes, 1);
-  assert.strictEqual(corrections[0].reject_votes, 0);
-  assert.strictEqual(corrections[0].correction_score, 1);
+  assert.strictEqual(corrections[0].confirm_votes, 0);
+  assert.strictEqual(corrections[0].reject_votes, 1);
+  assert.strictEqual(corrections[0].correction_score, -1);
   assert.strictEqual(corrections[0].status, "maturing");
 });
 

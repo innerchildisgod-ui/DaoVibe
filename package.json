@@ -17,7 +17,8 @@
     "simulate:sync-batch-size": "ts-node src/simulations/syncBatchSizeGuardSimulation.ts",
     "simulate:sync-cursor-monotonicity": "ts-node src/simulations/syncCursorMonotonicitySimulation.ts",
     "simulate:sync-import-atomicity": "ts-node src/simulations/syncImportAtomicitySimulation.ts",
-    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node && npm run simulate:unique-voters && npm run simulate:sync-batch-size && npm run simulate:sync-cursor-monotonicity && npm run simulate:sync-import-atomicity"
+    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node && npm run simulate:unique-voters && npm run simulate:sync-batch-size && npm run simulate:sync-cursor-monotonicity && npm run simulate:sync-import-atomicity && npm run simulate:app-api-smoke",
+    "simulate:app-api-smoke": "ts-node src/simulations/appApiSmokeSimulation.ts"
   },
   "keywords": [],
   "author": "",
