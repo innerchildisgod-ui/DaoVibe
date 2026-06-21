@@ -271,8 +271,6 @@ async function runSimulation(): Promise<void> {
     console.log("app API packet trace flow passed");
     console.log("app API no-meaning negative flow passed");
     console.log("app API unreachable server negative flow passed");
-    console.log("app API no-meaning negative flow passed");
-    console.log("app API unreachable server negative flow passed");
     console.log("App API smoke simulation succeeded.");
   } finally {
     await close(server);
