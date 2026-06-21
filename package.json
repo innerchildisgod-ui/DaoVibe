@@ -12,7 +12,8 @@
     "server": "ts-node src/server.ts",
     "simulate:two-node": "ts-node src/simulations/twoNodeSyncSimulation.ts",
     "simulate:http-two-node": "ts-node src/simulations/httpTwoNodeSyncSimulation.ts",
-    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node"
+    "simulate:three-node": "ts-node src/simulations/threeNodeSyncSimulation.ts",
+    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node"
   },
   "keywords": [],
   "author": "",
