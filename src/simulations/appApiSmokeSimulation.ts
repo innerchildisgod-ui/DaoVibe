@@ -105,9 +105,16 @@ async function runSimulation(): Promise<void> {
       nodeStatus.node.node_id === resolvedNodeId,
       `Expected status node_id ${resolvedNodeId}, got ${nodeStatus.node.node_id}`
     );
+    const resolvedDefaultAuthor = nodeIdentity.identity.default_author;
+
     assertSimulation(
-      nodeIdentity.identity.default_author === AUTHOR,
-      `Expected identity default_author ${AUTHOR}, got ${nodeIdentity.identity.default_author}`
+      typeof resolvedDefaultAuthor === "string" &&
+        resolvedDefaultAuthor.length > 0,
+      "Expected local node identity to expose a generated default_author"
+    );
+    assertSimulation(
+      nodeStatus.node.default_author === resolvedDefaultAuthor,
+      `Expected status default_author ${resolvedDefaultAuthor}, got ${nodeStatus.node.default_author}`
     );
     assertSimulation(
       nodeSettings.settings.sync_mode === "manual",

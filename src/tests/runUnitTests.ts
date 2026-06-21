@@ -1279,15 +1279,22 @@ test("correction tombstone summaries use maturity statuses", () => {
   }
 });
 
-test("correction tombstone duplicate voter protection counts earliest vote", () => {
+test("correction tombstone duplicate voter protection counts latest vote only", () => {
   const phraseId = "unit_phrase_tombstone_duplicate_votes";
   const correctionId = "unit_correction_tombstone_duplicate_votes";
   const tombstoneId = "unit_tombstone_duplicate_votes";
-  const packets: LmpPacket[] = [
-    ...tombstonePacketsWithVotes({
-      phraseId,
-      correctionId,
-      tombstoneId,
+
+  const packets = [
+    createPacket({
+      packet_type: "meaning_correction_tombstone_proposed",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: phraseId,
+        correction_id: correctionId,
+        tombstone_id: tombstoneId,
+        reason: "spam",
+      },
     }),
     createPacket({
       packet_type: "meaning_correction_tombstone_vote",
@@ -1315,13 +1322,13 @@ test("correction tombstone duplicate voter protection counts earliest vote", () 
     }),
   ];
 
-  const summaries = summarizeTombstonePacketsForPhrase(phraseId, packets);
+  const tombstones = summarizeTombstonePacketsForPhrase(phraseId, packets);
 
-  assert.strictEqual(summaries.length, 1);
-  assert.strictEqual(summaries[0].confirm_votes, 1);
-  assert.strictEqual(summaries[0].reject_votes, 0);
-  assert.strictEqual(summaries[0].tombstone_score, 1);
-  assert.strictEqual(summaries[0].status, "maturing");
+  assert.strictEqual(tombstones.length, 1);
+  assert.strictEqual(tombstones[0].confirm_votes, 0);
+  assert.strictEqual(tombstones[0].reject_votes, 1);
+  assert.strictEqual(tombstones[0].tombstone_score, -1);
+  assert.strictEqual(tombstones[0].status, "maturing");
 });
 
 test("correction tombstone summaries sort deterministically", () => {
