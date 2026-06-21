@@ -1,9 +1,4 @@
-export type MyceliumDeviceClass = "phone" | "laptop" | "desktop";
-
-export type MyceliumPreferredDeviceClass =
-  | MyceliumDeviceClass
-  | "laptop_desktop"
-  | "any";
+export type MyceliumDeviceClass = "laptop_desktop" | "phone";
 
 export type MyceliumSynchronizerName =
   | "packet"
@@ -19,42 +14,43 @@ export type MyceliumSynchronizerName =
 export type MyceliumSynchronizerRuntimeStatus = "architecture_only";
 
 export interface MyceliumDeviceClassArchitecture {
-  readonly device_class: MyceliumDeviceClass;
+  readonly deviceClass: MyceliumDeviceClass;
   readonly purpose: string;
-  readonly characteristics: readonly string[];
-  readonly preferred_work: readonly string[];
+  readonly responsibilities: readonly string[];
   readonly constraints: readonly string[];
 }
 
-export interface MyceliumMultiDeviceCoreRule {
-  readonly packet_ledger_is_source_of_truth: true;
-  readonly sync_unit: "changes_deltas_events";
-  readonly no_repeated_unchanged_state_transmission: true;
-  readonly deterministic_derivation_rule: string;
-  readonly protocol_shape: "one_protocol_core_multiple_device_shells";
+export interface MyceliumMultiDeviceSynchronizerRules {
+  readonly packetLedgerRemainsSourceOfTruth: true;
+  readonly syncUnit: "changes_deltas_events";
+  readonly noRepeatedUnchangedStateTransmission: true;
+  readonly sameValidPacketsDeriveSameStateOnEveryDevice: true;
+  readonly oneProtocolCoreMultipleDeviceShells: true;
+  readonly phoneNodesAreRealBoundedPeers: true;
+  readonly laptopDesktopPreferredForHeavyReconciliation: true;
 }
 
 export interface MyceliumSynchronizerArchitecture {
   readonly name: MyceliumSynchronizerName;
   readonly purpose: string;
-  readonly source_of_truth: string;
-  readonly may_sync: readonly string[];
-  readonly must_not_sync: readonly string[];
-  readonly preferred_device_class: MyceliumPreferredDeviceClass;
-  readonly phone_constraints: readonly string[];
-  readonly laptop_desktop_responsibilities: readonly string[];
-  readonly future_native_rust_wasm_enforcement_boundary: string;
-  readonly runtime_status: MyceliumSynchronizerRuntimeStatus;
+  readonly sourceOfTruth: string;
+  readonly maySync: readonly string[];
+  readonly mustNotSync: readonly string[];
+  readonly preferredDeviceClass: MyceliumDeviceClass;
+  readonly phoneConstraints: readonly string[];
+  readonly laptopDesktopResponsibilities: readonly string[];
+  readonly futureNativeBoundary: string;
+  readonly runtimeStatus: MyceliumSynchronizerRuntimeStatus;
 }
 
 export interface MyceliumMultiDeviceSynchronizerArchitecture {
-  readonly product_layer: "DAOVibe Mycelium";
-  readonly runtime_status: MyceliumSynchronizerRuntimeStatus;
-  readonly runtime_effects: readonly string[];
-  readonly out_of_scope: readonly string[];
-  readonly orchestrator_boundary_note: string;
-  readonly device_classes: readonly MyceliumDeviceClassArchitecture[];
-  readonly core_rule: MyceliumMultiDeviceCoreRule;
+  readonly productLayer: "DAOVibe Mycelium";
+  readonly runtimeStatus: MyceliumSynchronizerRuntimeStatus;
+  readonly architectureOnly: true;
+  readonly runtimeEffects: readonly string[];
+  readonly orchestratorBoundary: string;
+  readonly deviceClasses: readonly MyceliumDeviceClassArchitecture[];
+  readonly coreRules: MyceliumMultiDeviceSynchronizerRules;
   readonly synchronizers: readonly MyceliumSynchronizerArchitecture[];
 }
 
@@ -70,378 +66,347 @@ export const MYCELIUM_SYNCHRONIZER_NAMES = [
   "ledger_portability",
 ] as const satisfies readonly MyceliumSynchronizerName[];
 
+export const MYCELIUM_MULTI_DEVICE_SYNCHRONIZER_RULES = {
+  packetLedgerRemainsSourceOfTruth: true,
+  syncUnit: "changes_deltas_events",
+  noRepeatedUnchangedStateTransmission: true,
+  sameValidPacketsDeriveSameStateOnEveryDevice: true,
+  oneProtocolCoreMultipleDeviceShells: true,
+  phoneNodesAreRealBoundedPeers: true,
+  laptopDesktopPreferredForHeavyReconciliation: true,
+} as const satisfies MyceliumMultiDeviceSynchronizerRules;
+
 export const MYCELIUM_MULTI_DEVICE_SYNCHRONIZER_ARCHITECTURE = {
-  product_layer: "DAOVibe Mycelium",
-  runtime_status: "architecture_only",
-  runtime_effects: [
-    "Exports inert TypeScript constants and types only.",
-    "Does not perform I/O, networking, storage writes, timers, cloud calls, peer discovery, background tasks, or runtime registration.",
-    "Does not change existing Mycelium sync behavior.",
+  productLayer: "DAOVibe Mycelium",
+  runtimeStatus: "architecture_only",
+  architectureOnly: true,
+  runtimeEffects: [
+    "Exports inert TypeScript types and constants only.",
+    "Performs no I/O, networking, storage writes, timers, background tasks, or runtime registration.",
+    "Does not change existing Mycelium sync behavior or simulations.",
   ],
-  out_of_scope: [
-    "EEE",
-    "SBP",
-    "marketplace",
-    "Student Nodes",
-    "cloud sync",
-    "peer discovery",
-    "mobile app implementation",
-    "desktop packaging",
-  ],
-  orchestrator_boundary_note:
-    "Synchronizers define TypeScript architecture boundaries and advisory app glue only; critical enforcement belongs in a future Rust, WASM, or native Mycelium core boundary.",
-  device_classes: [
+  orchestratorBoundary:
+    "Synchronizers define Mycelium architecture boundaries and app glue. Future orchestrators are low-level native boundaries; critical enforcement belongs behind Rust, WASM, or native code.",
+  deviceClasses: [
     {
-      device_class: "phone",
-      purpose: "Lightweight mobile peer node for local-first Mycelium participation.",
-      characteristics: [
-        "battery-aware",
-        "bounded storage",
-        "app-store-safe",
-        "offline-capable",
-        "able to participate as a peer",
-      ],
-      preferred_work: [
-        "local phrase observation",
-        "lightweight meaning and correction participation",
-        "identity and settings interaction",
-        "bounded packet delta exchange",
-      ],
-      constraints: [
-        "Avoid heavy reconciliation unless explicitly allowed.",
-        "Avoid large ledger scans and long background work.",
-        "Prefer sync-efficient changes, deltas, and events.",
-      ],
-    },
-    {
-      device_class: "laptop",
+      deviceClass: "laptop_desktop",
       purpose:
-        "Heavier compute, storage, validation, diagnostics, export/import, and reconciliation node.",
-      characteristics: [
-        "larger local storage",
-        "stronger sustained compute",
-        "better suited to diagnostics and indexing",
-        "candidate shell for later native-boundary enforcement",
-      ],
-      preferred_work: [
-        "indexing",
-        "diagnostics",
-        "ledger export/import",
-        "bulk validation",
-        "sync reconciliation",
-        "future native-boundary enforcement",
+        "Heavier local Mycelium node class for compute, storage, validation, diagnostics, indexing, export/import, and reconciliation.",
+      responsibilities: [
+        "Prefer indexing and diagnostics work.",
+        "Prefer ledger export/import preparation and validation.",
+        "Prefer bulk validation, sync reconciliation, and packet audits.",
+        "Act as the preferred shell for future native-boundary enforcement.",
       ],
       constraints: [
-        "Remain local-first.",
-        "Do not introduce cloud sync or peer discovery in this architecture.",
+        "Remain a device shell around the same Mycelium protocol core.",
+        "Treat the packet ledger as the source of truth.",
+        "Do not change existing sync behavior from this architecture surface.",
       ],
     },
     {
-      device_class: "desktop",
+      deviceClass: "phone",
       purpose:
-        "High-capacity local Mycelium node for heavier validation, storage, diagnostics, and reconciliation.",
-      characteristics: [
-        "largest expected local storage",
-        "stable compute availability",
-        "well suited to ledger portability and bulk checks",
-        "candidate shell for later native-boundary enforcement",
-      ],
-      preferred_work: [
-        "indexing",
-        "diagnostics",
-        "ledger export/import",
-        "bulk validation",
-        "sync reconciliation",
-        "future native-boundary enforcement",
+        "Lightweight mobile Mycelium peer node with bounded local state and offline participation.",
+      responsibilities: [
+        "Participate as a real bounded peer node.",
+        "Support battery-aware, bounded-storage, app-store-safe, offline-capable local operation.",
+        "Handle lightweight phrase, meaning, correction, identity, settings, and bounded packet-delta participation.",
       ],
       constraints: [
-        "Remain a device shell around the same protocol core.",
-        "Do not change packet truth or existing sync behavior.",
+        "Avoid heavy reconciliation unless explicitly allowed by future policy.",
+        "Avoid large ledger scans and sustained background work.",
+        "Prefer changes, deltas, and events over repeated state transmission.",
       ],
     },
   ],
-  core_rule: {
-    packet_ledger_is_source_of_truth: true,
-    sync_unit: "changes_deltas_events",
-    no_repeated_unchanged_state_transmission: true,
-    deterministic_derivation_rule:
-      "The same valid packet ledger must derive the same Mycelium state on every device.",
-    protocol_shape: "one_protocol_core_multiple_device_shells",
-  },
+  coreRules: MYCELIUM_MULTI_DEVICE_SYNCHRONIZER_RULES,
   synchronizers: [
     {
       name: "packet",
       purpose:
-        "Move valid packet ledger changes between device shells without transmitting unchanged derived state.",
-      source_of_truth: "Mycelium packet ledger",
-      may_sync: [
+        "Move valid packet-ledger changes between device shells without transmitting unchanged derived state.",
+      sourceOfTruth: "Mycelium packet ledger",
+      maySync: [
         "new valid packets",
         "packet cursors",
         "packet delta manifests",
         "packet integrity summaries",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "unchanged packet state repeatedly",
         "derived phrase or meaning snapshots as packet truth",
         "invalid packet blobs",
         "transport secrets or private keys",
       ],
-      preferred_device_class: "laptop_desktop",
-      phone_constraints: [
+      preferredDeviceClass: "laptop_desktop",
+      phoneConstraints: [
         "Use bounded packet windows.",
-        "Avoid full-ledger scans during normal mobile operation.",
-        "Defer heavy validation or reconciliation unless explicitly allowed.",
+        "Avoid full-ledger scans during ordinary mobile operation.",
+        "Defer heavy validation or reconciliation unless explicitly allowed by future policy.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Run larger validation windows.",
         "Maintain packet indexes.",
         "Prepare ledger export/import material.",
-        "Reconcile packet gaps with local peers when protocol support exists.",
+        "Audit packet deltas and packet gaps.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Packet validation, hash verification, replay protection, delta integrity checks, and ledger admission should move behind a Rust, WASM, or native core boundary.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Packet validation, hash verification, replay protection, delta integrity checks, and ledger admission should move behind a Rust, WASM, or native Mycelium boundary.",
+      runtimeStatus: "architecture_only",
     },
     {
       name: "phrase",
       purpose:
         "Keep phrase observations aligned as packet-derived changes rather than repeated phrase-state snapshots.",
-      source_of_truth: "phrase observation packets in the Mycelium packet ledger",
-      may_sync: [
+      sourceOfTruth: "phrase observation packets in the Mycelium packet ledger",
+      maySync: [
         "phrase observation packet deltas",
         "phrase index update events",
         "phrase cursor positions",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "unchanged phrase indexes repeatedly",
         "raw private audio or capture buffers",
         "phrase state not backed by valid packets",
       ],
-      preferred_device_class: "any",
-      phone_constraints: [
+      preferredDeviceClass: "phone",
+      phoneConstraints: [
         "Keep local phrase indexes bounded.",
         "Avoid background reindexing of large ledgers.",
+        "Prefer user-visible local phrase participation.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Build and repair larger phrase indexes.",
         "Run phrase diagnostics from packet-derived state.",
+        "Compare phrase derivation across packet windows.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Deterministic phrase-index derivation and large-index verification should move behind a Rust, WASM, or native boundary when enforcement is required.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Deterministic phrase-index derivation and large-index verification should move behind a Rust, WASM, or native Mycelium boundary when enforcement is required.",
+      runtimeStatus: "architecture_only",
     },
     {
       name: "meaning",
       purpose:
         "Synchronize meaning proposals and votes as packet-derived deltas that converge to the same meaning state.",
-      source_of_truth: "meaning proposal and vote packets in the Mycelium packet ledger",
-      may_sync: [
+      sourceOfTruth: "meaning proposal and vote packets in the Mycelium packet ledger",
+      maySync: [
         "meaning proposal packet deltas",
         "meaning vote packet deltas",
-        "meaning derivation checkpoints that are reproducible from packets",
+        "meaning derivation checkpoints reproducible from packets",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "unchanged meaning state repeatedly",
         "unverifiable meaning summaries as source of truth",
         "model weights or private inference artifacts",
       ],
-      preferred_device_class: "any",
-      phone_constraints: [
+      preferredDeviceClass: "phone",
+      phoneConstraints: [
         "Participate with bounded proposal and vote windows.",
-        "Avoid heavyweight meaning reconciliation unless explicitly allowed.",
+        "Avoid heavyweight meaning reconciliation unless explicitly allowed by future policy.",
+        "Keep derived meaning views reproducible from valid local packets.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Run bulk meaning validation.",
         "Compare derived meaning state across packet windows.",
+        "Audit meaning proposal and vote histories.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Meaning reduction, vote validation, and deterministic conflict handling should move behind a Rust, WASM, or native boundary when they become critical enforcement.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Meaning reduction, vote validation, and deterministic conflict handling should move behind a Rust, WASM, or native Mycelium boundary when they become critical enforcement.",
+      runtimeStatus: "architecture_only",
     },
     {
       name: "correction",
       purpose:
         "Synchronize correction proposals and votes without treating advisory controller state as truth.",
-      source_of_truth: "correction proposal and vote packets in the Mycelium packet ledger",
-      may_sync: [
+      sourceOfTruth: "correction proposal and vote packets in the Mycelium packet ledger",
+      maySync: [
         "correction proposal packet deltas",
         "correction vote packet deltas",
         "correction maturity events derived from valid packets",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "manual correction state not backed by packets",
         "cleanup commands",
         "private moderator notes",
         "unchanged correction views repeatedly",
       ],
-      preferred_device_class: "any",
-      phone_constraints: [
+      preferredDeviceClass: "phone",
+      phoneConstraints: [
         "Allow lightweight correction participation.",
-        "Avoid bulk correction-history reconciliation unless explicitly allowed.",
+        "Avoid bulk correction-history reconciliation unless explicitly allowed by future policy.",
+        "Keep correction views bounded to available packet windows.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Run correction-history diagnostics.",
         "Validate correction maturity across larger packet windows.",
+        "Audit correction conflicts from packet-derived state.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Correction admission, vote thresholds, maturity scoring, and conflict reconciliation should move behind a Rust, WASM, or native boundary when they enforce truth.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Correction admission, vote thresholds, maturity scoring, and conflict reconciliation should move behind a Rust, WASM, or native Mycelium boundary when they enforce truth.",
+      runtimeStatus: "architecture_only",
     },
     {
       name: "tombstone",
       purpose:
         "Synchronize tombstone proposals and votes while keeping destructive execution outside TypeScript sync controllers.",
-      source_of_truth: "tombstone proposal and vote packets in the Mycelium packet ledger",
-      may_sync: [
+      sourceOfTruth: "tombstone proposal and vote packets in the Mycelium packet ledger",
+      maySync: [
         "tombstone proposal packet deltas",
         "tombstone vote packet deltas",
         "non-destructive tombstone preview events",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "delete commands",
         "ledger pruning commands",
         "destructive tombstone execution",
         "unrelated packet payloads",
       ],
-      preferred_device_class: "laptop_desktop",
-      phone_constraints: [
+      preferredDeviceClass: "laptop_desktop",
+      phoneConstraints: [
         "Display and vote on bounded tombstone information.",
         "Do not run destructive execution.",
-        "Avoid full-ledger tombstone scans unless explicitly allowed.",
+        "Avoid full-ledger tombstone scans unless explicitly allowed by future policy.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Run tombstone diagnostics and maturity checks.",
-        "Prepare auditable previews before any future native enforcement.",
+        "Prepare auditable previews before future native enforcement.",
+        "Audit tombstone histories against packet-ledger rules.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Any irreversible tombstone execution, pruning guard, authorization check, or deletion-adjacent enforcement must live behind a Rust, WASM, or native boundary.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Any irreversible tombstone execution, pruning guard, authorization check, or deletion-adjacent enforcement must live behind a Rust, WASM, or native Mycelium boundary.",
+      runtimeStatus: "architecture_only",
     },
     {
       name: "identity",
       purpose:
         "Synchronize safe Mycelium identity metadata without leaking private device or key material.",
-      source_of_truth: "identity packets or explicitly ledger-bound identity metadata",
-      may_sync: [
+      sourceOfTruth: "identity packets or explicitly ledger-bound identity metadata",
+      maySync: [
         "public node identity metadata",
-        "identity rotation events when represented as valid packets",
+        "identity rotation events represented as valid packets",
         "safe capability declarations",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "private keys",
         "device secrets",
         "raw contact lists",
         "platform account tokens",
         "unbounded device fingerprints",
       ],
-      preferred_device_class: "phone",
-      phone_constraints: [
-        "Keep identity sync app-store-safe.",
+      preferredDeviceClass: "phone",
+      phoneConstraints: [
+        "Keep identity sync compatible with mobile platform rules.",
         "Keep private material local to the device or native secure storage.",
+        "Avoid unbounded device fingerprint sharing.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Validate public identity metadata against packet history.",
         "Assist identity diagnostics without taking ownership of private keys.",
+        "Audit identity rotation history when represented as packets.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Signature verification, identity rotation rules, secure key access, and private-material isolation should move behind a Rust, WASM, or native boundary.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Signature verification, identity rotation rules, secure key access, and private-material isolation should move behind a Rust, WASM, or native Mycelium boundary.",
+      runtimeStatus: "architecture_only",
     },
     {
       name: "settings",
       purpose:
         "Define how explicit Mycelium settings changes may synchronize while preserving local-only device preferences.",
-      source_of_truth:
-        "explicit settings events when packetized; otherwise local device settings remain local",
-      may_sync: [
+      sourceOfTruth:
+        "settings events in the Mycelium packet ledger when shared; otherwise local device settings remain local",
+      maySync: [
         "user-approved Mycelium preference changes",
         "settings cursors",
         "safe capability preferences",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "credentials",
         "platform privacy settings",
         "battery policy overrides",
         "local-only debug flags unless explicitly packetized",
       ],
-      preferred_device_class: "phone",
-      phone_constraints: [
+      preferredDeviceClass: "phone",
+      phoneConstraints: [
         "Respect mobile battery and privacy controls.",
         "Do not override local platform settings through sync.",
+        "Keep shared settings explicit and bounded.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Validate settings-event history when packetized.",
         "Help diagnose settings drift without forcing local changes.",
+        "Audit settings derivation from packet history.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Policy-gated settings admission, capability checks, and local secure-setting boundaries should move behind a Rust, WASM, or native boundary when enforcement is required.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Policy-gated settings admission, capability checks, and local secure-setting boundaries should move behind a Rust, WASM, or native Mycelium boundary when enforcement is required.",
+      runtimeStatus: "architecture_only",
     },
     {
       name: "diagnostics",
       purpose:
         "Synchronize bounded diagnostic events that explain sync health without changing packet truth.",
-      source_of_truth:
-        "local diagnostic observations plus reproducible packet-ledger summaries",
-      may_sync: [
+      sourceOfTruth:
+        "valid Mycelium packet ledger plus reproducible local diagnostic observations",
+      maySync: [
         "bounded health summaries",
         "packet gap reports",
         "reproducible ledger statistics",
         "version and capability summaries",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "private packet contents",
         "raw logs with secrets",
         "continuous telemetry streams",
-        "cloud diagnostics",
+        "diagnostic data that changes packet truth",
       ],
-      preferred_device_class: "laptop_desktop",
-      phone_constraints: [
+      preferredDeviceClass: "laptop_desktop",
+      phoneConstraints: [
         "Keep diagnostics bounded and user-visible where possible.",
         "Avoid continuous background telemetry.",
+        "Avoid large diagnostic exports during ordinary mobile operation.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Run deeper diagnostics.",
         "Compare packet windows and derived-state summaries.",
         "Prepare human-readable sync reports.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Sensitive diagnostic redaction, signed local attestations, and integrity proofs should move behind a Rust, WASM, or native boundary when diagnostics become enforceable.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Sensitive diagnostic redaction, signed local attestations, and integrity proofs should move behind a Rust, WASM, or native Mycelium boundary when diagnostics become enforceable.",
+      runtimeStatus: "architecture_only",
     },
     {
       name: "ledger_portability",
       purpose:
-        "Define portable import/export boundaries for packet ledgers without introducing cloud backup or desktop packaging.",
-      source_of_truth: "valid Mycelium packet ledger export/import material",
-      may_sync: [
+        "Define portable import/export boundaries for packet ledgers without introducing packaging or remote-backup behavior.",
+      sourceOfTruth: "valid Mycelium packet ledger export/import material",
+      maySync: [
         "ledger export manifests",
         "valid packet bundles",
         "import cursors",
         "integrity summaries",
       ],
-      must_not_sync: [
+      mustNotSync: [
         "derived caches as source of truth",
         "invalid packet bundles",
         "credentials",
-        "cloud backup artifacts",
+        "remote backup artifacts",
         "application installation packages",
       ],
-      preferred_device_class: "laptop_desktop",
-      phone_constraints: [
-        "Avoid bulk import/export unless explicitly allowed.",
+      preferredDeviceClass: "laptop_desktop",
+      phoneConstraints: [
+        "Avoid bulk import/export unless explicitly allowed by future policy.",
         "Prefer bounded import previews.",
         "Respect storage and battery limits.",
       ],
-      laptop_desktop_responsibilities: [
+      laptopDesktopResponsibilities: [
         "Prepare ledger exports.",
         "Validate imports before admission.",
         "Run bulk packet integrity checks.",
         "Support future native enforcement for portability validation.",
       ],
-      future_native_rust_wasm_enforcement_boundary:
-        "Ledger export/import validation, manifest verification, schema checks, and bulk packet integrity enforcement should move behind a Rust, WASM, or native boundary.",
-      runtime_status: "architecture_only",
+      futureNativeBoundary:
+        "Ledger export/import validation, manifest verification, schema checks, and bulk packet integrity enforcement should move behind a Rust, WASM, or native Mycelium boundary.",
+      runtimeStatus: "architecture_only",
     },
   ],
 } as const satisfies MyceliumMultiDeviceSynchronizerArchitecture;
