@@ -32,6 +32,19 @@ function assertSimulation(condition: boolean, message: string): void {
   }
 }
 
+async function assertRejects(
+  action: () => Promise<unknown>,
+  message: string
+): Promise<void> {
+  try {
+    await action();
+  } catch {
+    return;
+  }
+
+  throw new Error(message);
+}
+
 function listen(server: Server): Promise<void> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -162,6 +175,32 @@ async function runSimulation(): Promise<void> {
       `Expected phrase detail ${phraseId}, got ${phrase.phrase?.phrase_id}`
     );
 
+    const noMeaningPhraseId = "app_api_smoke_phrase_no_meaning";
+
+    const noMeaningObserved = await client.observePhrase({
+      phrase_id: noMeaningPhraseId,
+      surface_text: "app api smoke phrase without meaning",
+      language_hint: "English",
+      input_type: "text",
+    });
+
+    assertSimulation(
+      noMeaningObserved.result.phrase_id === noMeaningPhraseId,
+      `Expected observed no-meaning phrase ${noMeaningPhraseId}, got ${noMeaningObserved.result.phrase_id}`
+    );
+
+    const noMeaningBest = await client.getBestMeaning(noMeaningPhraseId);
+
+    assertSimulation(
+      noMeaningBest.has_best_meaning === false,
+      "Expected no best meaning before any meaning proposal"
+    );
+    assertSimulation(
+      noMeaningBest.best_meaning === undefined ||
+        noMeaningBest.best_meaning === null,
+      "Expected empty best_meaning before any meaning proposal"
+    );
+
     const proposed = await client.proposeMeaning({
       phrase_id: phraseId,
       meaning_id: meaningId,
@@ -216,11 +255,24 @@ async function runSimulation(): Promise<void> {
       `Expected packet trace meaning_proposal count 1, got ${trace.trace.packet_types.meaning_proposal}`
     );
 
+    const unreachableClient = new MyceliumClient({
+      baseUrl: "http://127.0.0.1:65530",
+    });
+
+    await assertRejects(
+      () => unreachableClient.getNodeStatus(),
+      "Expected unreachable app API client request to fail"
+    );
+
     console.log("app API node status passed");
     console.log("app API diagnostics and sync status passed");
     console.log("app API observe/search/detail flow passed");
     console.log("app API propose/best-meaning/explanation flow passed");
     console.log("app API packet trace flow passed");
+    console.log("app API no-meaning negative flow passed");
+    console.log("app API unreachable server negative flow passed");
+    console.log("app API no-meaning negative flow passed");
+    console.log("app API unreachable server negative flow passed");
     console.log("App API smoke simulation succeeded.");
   } finally {
     await close(server);
