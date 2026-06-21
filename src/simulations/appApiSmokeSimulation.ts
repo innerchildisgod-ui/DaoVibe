@@ -149,6 +149,19 @@ async function runSimulation(): Promise<void> {
       "Expected unknown phrase detail request to fail"
     );
 
+    const invalidObservePhraseId = "app_api_smoke_invalid_observe_phrase";
+
+    await assertRejects(
+      () =>
+        client.observePhrase({
+          phrase_id: invalidObservePhraseId,
+          surface_text: " ",
+          language_hint: "English",
+          input_type: "text",
+        }),
+      "Expected blank surface_text observe request to fail"
+    );
+
     const phraseId = "app_api_smoke_phrase_001";
     const meaningId = "app_api_smoke_meaning_001";
 
@@ -206,6 +219,18 @@ async function runSimulation(): Promise<void> {
       noMeaningBest.best_meaning === undefined ||
         noMeaningBest.best_meaning === null,
       "Expected empty best_meaning before any meaning proposal"
+    );
+
+    await assertRejects(
+      () =>
+        client.proposeMeaning({
+          phrase_id: phraseId,
+          meaning_id: "app_api_smoke_invalid_meaning",
+          reference_meaning: " ",
+          context: "app-api-smoke-invalid-write",
+          confidence: 0.5,
+        }),
+      "Expected blank reference_meaning proposal request to fail"
     );
 
     const proposed = await client.proposeMeaning({
@@ -279,6 +304,8 @@ async function runSimulation(): Promise<void> {
     console.log("app API no-meaning negative flow passed");
     console.log("app API unreachable server negative flow passed");
     console.log("app API unknown phrase negative flow passed");
+    console.log("app API invalid observe negative flow passed");
+    console.log("app API invalid propose negative flow passed");
     console.log("App API smoke simulation succeeded.");
   } finally {
     await close(server);
