@@ -15,7 +15,8 @@
     "simulate:three-node": "ts-node src/simulations/threeNodeSyncSimulation.ts",
     "simulate:unique-voters": "ts-node src/simulations/uniqueVoterConfidenceSimulation.ts",
     "simulate:sync-batch-size": "ts-node src/simulations/syncBatchSizeGuardSimulation.ts",
-    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node && npm run simulate:unique-voters && npm run simulate:sync-batch-size"
+    "simulate:sync-cursor-monotonicity": "ts-node src/simulations/syncCursorMonotonicitySimulation.ts",
+    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node && npm run simulate:unique-voters && npm run simulate:sync-batch-size && npm run simulate:sync-cursor-monotonicity"
   },
   "keywords": [],
   "author": "",

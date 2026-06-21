@@ -89,6 +89,42 @@ function packetField(packet: unknown, field: "packet_id" | "packet_type") {
   return typeof value === "string" && value ? value : "(missing)";
 }
 
+interface SyncCursorParts {
+  received_at: number;
+  packet_id: string;
+}
+
+function decodeSyncCursor(cursor: string): SyncCursorParts {
+  const separatorIndex = cursor.indexOf(":");
+
+  if (separatorIndex === -1) {
+    throw new Error(`Invalid sync cursor: ${cursor}`);
+  }
+
+  const receivedAtText = cursor.slice(0, separatorIndex);
+  const receivedAt = Number(receivedAtText);
+
+  if (!Number.isInteger(receivedAt) || receivedAt < 0) {
+    throw new Error(`Invalid sync cursor timestamp: ${receivedAtText}`);
+  }
+
+  return {
+    received_at: receivedAt,
+    packet_id: cursor.slice(separatorIndex + 1),
+  };
+}
+
+function compareSyncCursors(left: string, right: string): number {
+  const leftCursor = decodeSyncCursor(left);
+  const rightCursor = decodeSyncCursor(right);
+
+  if (leftCursor.received_at !== rightCursor.received_at) {
+    return leftCursor.received_at - rightCursor.received_at;
+  }
+
+  return leftCursor.packet_id.localeCompare(rightCursor.packet_id);
+}
+
 export class SyncController {
   constructor(
     private readonly engine: SyncControllerEngine,
@@ -132,6 +168,40 @@ export class SyncController {
           `Packet type: not available.`,
           `Cursor was not advanced.`,
           `Reason: Sync cursor mismatch. Expected ${currentCursor.cursor}, received ${params.cursorBefore}`,
+        ].join(" ")
+      );
+    }
+
+    try {
+      const cursorAfterComparison = compareSyncCursors(
+        params.cursorAfter,
+        currentCursor.cursor
+      );
+
+      if (cursorAfterComparison < 0) {
+        throw new Error(
+          `Sync cursor regression. Current ${currentCursor.cursor}, requested cursor_after ${params.cursorAfter}`
+        );
+      }
+
+      if (
+        cursorAfterComparison === 0 &&
+        params.packets.length > 0 &&
+        !this.batchContainsOnlyStoredPackets(params.packets)
+      ) {
+        throw new Error(
+          `Sync cursor did not advance for new packets. Current ${currentCursor.cursor}, requested cursor_after ${params.cursorAfter}`
+        );
+      }
+    } catch (error) {
+      throw new Error(
+        [
+          `Sync import failed for ${params.peerAuthor}.`,
+          `Packet index: none.`,
+          `Packet ID: not available.`,
+          `Packet type: not available.`,
+          `Cursor was not advanced.`,
+          `Reason: ${getErrorMessage(error)}`,
         ].join(" ")
       );
     }
@@ -290,6 +360,22 @@ export class SyncController {
       reason:
         routeReason ?? (status === "accepted_new" ? undefined : decision.reason),
     };
+  }
+
+  private batchContainsOnlyStoredPackets(packets: LmpPacket[]): boolean {
+    const packetIds = packets
+      .map((packet) => packet.packet_id)
+      .filter((packetId): packetId is string => Boolean(packetId));
+
+    if (packetIds.length !== packets.length) {
+      return false;
+    }
+
+    const storedPacketIds = new Set(
+      this.engine.getPacketsByIds(packetIds).map((packet) => packet.packet_id)
+    );
+
+    return packetIds.every((packetId) => storedPacketIds.has(packetId));
   }
 
   private mapDecisionToStatus(
