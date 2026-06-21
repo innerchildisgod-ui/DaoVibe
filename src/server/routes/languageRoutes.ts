@@ -236,6 +236,11 @@ export function registerLanguageRoutes(
         sendApiError(res, 400, "VALIDATION_ERROR", "phrase_id is required");
         return;
       }
+      if (!surfaceText) {
+        sendApiError(res, 400, "VALIDATION_ERROR", "surface_text is required");
+        return;
+      }
+
 
       if (!surfaceText && !phoneticHint && !languageHint) {
         sendApiError(
