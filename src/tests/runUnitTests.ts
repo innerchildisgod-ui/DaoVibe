@@ -2542,5 +2542,150 @@ test("app propose action rejects invalid confidence before client call", async (
   assert.strictEqual(state.proposingMeaning, false);
 });
 
+
+function createUnitAppActionClient(overrides: Record<string, unknown>): never {
+  return {
+    getNodeStatus: async () => ({
+      service: { status: "ready" },
+      node: {
+        node_id: "unit_app_action_node",
+        default_author: "unit_app_action_author",
+      },
+      ledger: { packet_count: 1 },
+    }),
+    getNodeIdentity: async () => ({
+      identity: {
+        node_id: "unit_app_action_node",
+        default_author: "unit_app_action_author",
+      },
+    }),
+    getNodeSettings: async () => ({
+      settings: { sync_mode: "manual" },
+    }),
+    getSyncStatus: async () => ({
+      sync: { enabled: true },
+    }),
+    getNodeDiagnostics: async () => ({
+      diagnostics: { server_reachable: true },
+    }),
+    searchPhrases: async () => ({
+      results: [],
+    }),
+    getPhrase: async (phraseId: string) => ({
+      phrase: {
+        phrase_id: phraseId,
+        surface_text: "unit app action phrase",
+      },
+    }),
+    getBestMeaning: async () => ({
+      has_best_meaning: false,
+    }),
+    getBestMeaningExplanation: async () => ({
+      best_meaning: undefined,
+      evidence: { meaning_count: 0 },
+    }),
+    getPhrasePacketTrace: async () => ({
+      trace: {
+        packet_count: 0,
+        packet_types: {},
+      },
+    }),
+    getCorrections: async () => ({
+      corrections: [],
+    }),
+    getTombstones: async () => ({
+      tombstones: [],
+    }),
+    ...overrides,
+  } as never;
+}
+
+test("app observe action calls client once and resets form after success", async () => {
+  const state = createUnitAppState();
+  let observeCallCount = 0;
+  let observedSurfaceText = "";
+
+  const actions = createAppActions({
+    client: createUnitAppActionClient({
+      observePhrase: async (input: { surface_text: string }) => {
+        observeCallCount += 1;
+        observedSurfaceText = input.surface_text;
+
+        return {
+          result: {
+            phrase_id: "phrase_unit_app_action_success",
+            packet_id: "packet_unit_app_action_observe",
+            packet_type: "phrase_observed",
+          },
+        };
+      },
+    }),
+    state,
+    setState: (nextState) => applyUnitAppStateUpdate(state, nextState),
+  });
+
+  await actions.observePhrase(
+    unitFormData({
+      surface_text: "  unit app action phrase  ",
+      language_hint: "English",
+      phonetic_hint: "",
+    })
+  );
+
+  assert.strictEqual(observeCallCount, 1);
+  assert.strictEqual(observedSurfaceText, "unit app action phrase");
+  assert.strictEqual(state.observingPhrase, false);
+  assert.strictEqual(state.observeResult?.kind, "success");
+  assert.strictEqual(state.observeForm.surfaceText, "");
+  assert.strictEqual(state.proposeForm.phraseId, "phrase_unit_app_action_success");
+});
+
+test("app propose action calls client once and clears proposal text after success", async () => {
+  const state = createUnitAppState();
+  state.searchQuery = "unit app action phrase";
+
+  let proposeCallCount = 0;
+  let proposedReferenceMeaning = "";
+
+  const actions = createAppActions({
+    client: createUnitAppActionClient({
+      proposeMeaning: async (input: { reference_meaning: string }) => {
+        proposeCallCount += 1;
+        proposedReferenceMeaning = input.reference_meaning;
+
+        return {
+          result: {
+            phrase_id: "phrase_unit_app_action_success",
+            meaning_id: "meaning_unit_app_action_success",
+            packet_id: "packet_unit_app_action_propose",
+            packet_type: "meaning_proposal",
+          },
+        };
+      },
+    }),
+    state,
+    setState: (nextState) => applyUnitAppStateUpdate(state, nextState),
+  });
+
+  await actions.proposeMeaning(
+    unitFormData({
+      phrase_id: "phrase_unit_app_action_success",
+      reference_meaning: "  A valid unit app action meaning.  ",
+      context: " unit-test context ",
+      confidence: "0.75",
+    })
+  );
+
+  assert.strictEqual(proposeCallCount, 1);
+  assert.strictEqual(
+    proposedReferenceMeaning,
+    "A valid unit app action meaning."
+  );
+  assert.strictEqual(state.proposingMeaning, false);
+  assert.strictEqual(state.proposeResult?.kind, "success");
+  assert.strictEqual(state.proposeForm.referenceMeaning, "");
+  assert.strictEqual(state.proposeForm.context, "");
+});
+
 void runTests();
 
