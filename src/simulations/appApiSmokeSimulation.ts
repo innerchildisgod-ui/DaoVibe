@@ -142,6 +142,13 @@ async function runSimulation(): Promise<void> {
       "Expected sync status enabled true"
     );
 
+    const missingPhraseId = "app_api_smoke_missing_phrase";
+
+    await assertRejects(
+      () => client.getPhrase(missingPhraseId),
+      "Expected unknown phrase detail request to fail"
+    );
+
     const phraseId = "app_api_smoke_phrase_001";
     const meaningId = "app_api_smoke_meaning_001";
 
@@ -271,6 +278,7 @@ async function runSimulation(): Promise<void> {
     console.log("app API packet trace flow passed");
     console.log("app API no-meaning negative flow passed");
     console.log("app API unreachable server negative flow passed");
+    console.log("app API unknown phrase negative flow passed");
     console.log("App API smoke simulation succeeded.");
   } finally {
     await close(server);
