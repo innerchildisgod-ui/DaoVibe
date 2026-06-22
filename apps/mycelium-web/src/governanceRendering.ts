@@ -34,7 +34,12 @@ export function renderCorrectionRows(corrections: CorrectionSummary[]): string {
       ${corrections
         .map(
           (correction) => `
-            <article class="packet-trace-row">
+            <article
+              class="packet-trace-row governance-correction-row"
+              role="button"
+              tabindex="0"
+              data-correction-id="${escapeHtml(correction.correction_id)}"
+            >
               <div class="packet-trace-heading">
                 <strong>${escapeHtml(correction.correction_id)}</strong>
                 <span>${escapeHtml(correction.status)}</span>

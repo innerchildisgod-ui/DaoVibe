@@ -428,3 +428,65 @@ describe("createAppActions correction proposal writes", () => {
     expect(state.correctionProposalForm.correctionContext).toBe("");
   });
 });
+
+describe("createAppActions correction governance prefill", () => {
+  let state: AppState;
+
+  beforeEach(() => {
+    state = createUnitAppState();
+  });
+
+  it("prefills correction proposal phrase_id when a phrase is selected", async () => {
+    const actions = createAppActions({
+      client: createClient(),
+      state,
+      setState: (nextState) => applyStateUpdate(state, nextState),
+    });
+
+    await actions.selectPhrase("phrase_prefill_proposal");
+
+    expect(state.selectedPhrase?.phrase_id).toBe("phrase_prefill_proposal");
+    expect(state.correctionProposalForm.phraseId).toBe(
+      "phrase_prefill_proposal"
+    );
+  });
+
+  it("prefills correction governance forms from selected phrase and correction row", async () => {
+    const getCorrections = vi.fn(async () => ({
+      corrections: [
+        {
+          correction_id: "correction_prefill_vote",
+          corrected_reference_meaning: "Corrected meaning for prefill.",
+          correction_score: 1,
+          confirm_votes: 1,
+          reject_votes: 0,
+          conflict_rank: 1,
+          is_conflicting: false,
+          original_meaning_id: "meaning_prefill_original",
+          status: "weak",
+          proposal_packet_id: "packet_prefill_correction",
+        },
+      ],
+    }));
+
+    const actions = createAppActions({
+      client: createClient({ getCorrections }),
+      state,
+      setState: (nextState) => applyStateUpdate(state, nextState),
+    });
+
+    await actions.selectPhrase("phrase_prefill_vote");
+
+    expect(state.selectedPhrase?.phrase_id).toBe("phrase_prefill_vote");
+    expect(state.corrections?.[0]?.correction_id).toBe(
+      "correction_prefill_vote"
+    );
+
+    actions.prefillCorrectionVote(" correction_prefill_vote ");
+
+    expect(state.correctionVoteForm.phraseId).toBe("phrase_prefill_vote");
+    expect(state.correctionVoteForm.correctionId).toBe(
+      "correction_prefill_vote"
+    );
+  });
+});

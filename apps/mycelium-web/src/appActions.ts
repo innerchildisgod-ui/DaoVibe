@@ -17,6 +17,7 @@ export type AppActions = {
   loadDiagnostics: () => Promise<void>;
   searchPhrases: (query: string) => Promise<void>;
   selectPhrase: (phraseId: string) => Promise<void>;
+  prefillCorrectionVote: (correctionId: string) => void;
   loadPacketTrace: (phraseId: string) => Promise<void>;
   refreshAfterWrite: (phraseId: string, searchQuery?: string) => Promise<void>;
   observePhrase: (formData: FormData) => Promise<void>;
@@ -179,6 +180,10 @@ export function createAppActions({
         loadingPacketTrace: false,
         loadingGovernance: false,
         selectedPhrase: phrase.value.phrase,
+        correctionProposalForm: {
+          ...state.correctionProposalForm,
+          phraseId: phrase.value.phrase.phrase_id,
+        },
         bestMeaning:
           bestMeaning.status === "fulfilled" ? bestMeaning.value : undefined,
         meaningExplanation:
@@ -261,6 +266,23 @@ export function createAppActions({
       searchQuery ? searchPhrases(searchQuery) : Promise.resolve(),
       selectPhrase(phraseId),
     ]);
+  }
+
+  function prefillCorrectionVote(correctionId: string): void {
+    const trimmedCorrectionId = correctionId.trim();
+    const phraseId = state.selectedPhrase?.phrase_id ?? "";
+
+    if (!phraseId || !trimmedCorrectionId) {
+      return;
+    }
+
+    setState({
+      correctionVoteForm: {
+        ...state.correctionVoteForm,
+        phraseId,
+        correctionId: trimmedCorrectionId,
+      },
+    });
   }
 
   async function observePhrase(formData: FormData): Promise<void> {
@@ -604,6 +626,7 @@ export function createAppActions({
     loadDiagnostics,
     searchPhrases,
     selectPhrase,
+    prefillCorrectionVote,
     loadPacketTrace,
     refreshAfterWrite,
     observePhrase,

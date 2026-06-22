@@ -96,6 +96,7 @@ const {
   loadDiagnostics,
   searchPhrases,
   selectPhrase,
+  prefillCorrectionVote,
   loadPacketTrace,
   refreshAfterWrite,
   observePhrase,
@@ -170,6 +171,26 @@ function bindEvents(): void {
 
         if (phraseId) {
           void selectPhrase(phraseId);
+        }
+      });
+    }
+  );
+
+  document.querySelectorAll<HTMLElement>("[data-correction-id]").forEach(
+    (row) => {
+      const prefillFromRow = (): void => {
+        const correctionId = row.dataset.correctionId;
+
+        if (correctionId) {
+          prefillCorrectionVote(correctionId);
+        }
+      };
+
+      row.addEventListener("click", prefillFromRow);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          prefillFromRow();
         }
       });
     }
