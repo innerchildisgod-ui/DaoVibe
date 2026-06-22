@@ -1,4 +1,4 @@
-import assert from "assert";
+﻿import assert from "assert";
 import Database from "better-sqlite3";
 import type { Server as HttpServer } from "http";
 import { join } from "path";
@@ -2056,7 +2056,7 @@ test("correction voter tiebreaker uses packet id when timestamps match", () => {
     [proposalPacket, lowerPacketIdConfirm, higherPacketIdReject],
     [proposalPacket, higherPacketIdReject, lowerPacketIdConfirm],
   ]) {
-    const corrections = summarizeCorrectionPacketsForPhrase(packets, phraseId);
+    const corrections = summarizeCorrectionPacketsForPhrase(phraseId, packets);
 
     assert.strictEqual(corrections.length, 1);
     assert.strictEqual(corrections[0].confirm_votes, 0);
