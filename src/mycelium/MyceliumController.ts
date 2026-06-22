@@ -44,6 +44,7 @@ import {
   listCorrectionTombstonesForPhrase,
   listTombstonePacketsForPhrase,
 } from "./TombstoneLookup";
+import { getKycClaimSummary } from "./KycLookup";
 
 type LocalNodeIdentityUpdate = {
   display_name?: string;
@@ -398,6 +399,10 @@ export class MyceliumController {
 
   getPhrasePacketTrace(phraseId: string) {
     return getPacketTraceForPhrase(this.engine, phraseId);
+  }
+
+  getKycClaimSummary(kycClaimId: string) {
+    return getKycClaimSummary(this.engine, kycClaimId);
   }
 
   getBestMeaning(phraseId: string) {

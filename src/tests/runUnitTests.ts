@@ -1131,6 +1131,152 @@ test("KYC event-only packets are stored without knowledge mutation", () => {
   assert.deepStrictEqual(engine.listKnowledge(), []);
 });
 
+test("KYC claim summary reports current claim state", () => {
+  const engine = unitEngine("unit_kyc_claim_summary");
+  const controller = new MyceliumController(engine);
+  const claimId = "unit_kyc_claim_summary_001";
+
+  const claim = engine.createKycClaim({
+    kyc_claim_id: claimId,
+    subject_node_id: "unit_subject_node_summary_001",
+    country_hint: "IN",
+    document_type_hint: "government_id",
+    consent_text_hash: "unit_consent_text_hash_summary",
+    consented_at: 1_000,
+  });
+
+  const evidence = engine.prepareKycEvidence(
+    {
+      kyc_claim_id: claimId,
+      evidence_id: "unit_kyc_evidence_summary_001",
+      evidence_kinds: ["id_face_crop", "current_selfie", "liveness_video"],
+      evidence_bundle_hash: "unit_minimized_evidence_bundle_hash_summary",
+      full_id_shared: false,
+      retention_expires_at: 2_000,
+    },
+    claim.packet.packet_id
+  );
+
+  const aiAssessment = engine.completeKycAiAssessment(
+    {
+      kyc_claim_id: claimId,
+      assessment_id: "unit_kyc_ai_assessment_summary_001",
+      result: "unsure",
+      face_match_score: 0.7,
+      liveness_score: 0.9,
+      spoof_risk_score: 0.1,
+      reason: "human review required",
+    },
+    evidence.packet.packet_id
+  );
+
+  const invite = engine.inviteKycKnownVerifier(
+    {
+      kyc_claim_id: claimId,
+      verifier_node_id: "unit_known_verifier_summary_001",
+      invite_id: "unit_kyc_invite_summary_001",
+      evidence_bundle_hash: "unit_minimized_evidence_bundle_hash_summary",
+      expires_at: 2_000,
+    },
+    aiAssessment.packet.packet_id
+  );
+
+  const firstVote = engine.voteKycKnownVerifier(
+    {
+      kyc_claim_id: claimId,
+      invite_id: "unit_kyc_invite_summary_001",
+      verifier_node_id: "unit_known_verifier_summary_001",
+      vote: "unsure",
+      reason: "old ID photo",
+    },
+    invite.packet.packet_id
+  );
+
+  const latestVote = engine.voteKycKnownVerifier(
+    {
+      kyc_claim_id: claimId,
+      invite_id: "unit_kyc_invite_summary_001",
+      verifier_node_id: "unit_known_verifier_summary_001",
+      vote: "same_person",
+      reason: "video confirms identity continuity",
+    },
+    firstVote.packet.packet_id
+  );
+
+  const quorum = engine.recordKycQuorumResult(
+    {
+      kyc_claim_id: claimId,
+      status: "needs_more_review",
+      same_person_votes: 1,
+      not_same_person_votes: 0,
+      unsure_votes: 0,
+      suspicious_votes: 0,
+      ai_result: "unsure",
+      result_reason: "more known verifiers needed",
+    },
+    latestVote.packet.packet_id
+  );
+
+  engine.expireKycEvidence(
+    {
+      kyc_claim_id: claimId,
+      evidence_id: "unit_kyc_evidence_summary_001",
+      expired_at: 2_001,
+      deletion_proof_hash: "unit_summary_deletion_proof_hash",
+    },
+    quorum.packet.packet_id
+  );
+
+  const summary = controller.getKycClaimSummary(claimId);
+
+  assert.strictEqual(summary.found, true);
+
+  if (!summary.found) {
+    throw new Error("Expected KYC summary to be found");
+  }
+
+  assert.strictEqual(summary.kyc_claim_id, claimId);
+  assert.strictEqual(summary.subject_node_id, "unit_subject_node_summary_001");
+  assert.strictEqual(summary.country_hint, "IN");
+  assert.strictEqual(summary.document_type_hint, "government_id");
+  assert.strictEqual(summary.status, "needs_more_review");
+  assert.strictEqual(summary.packet_count, 8);
+  assert.strictEqual(summary.evidence_count, 1);
+  assert.deepStrictEqual(summary.evidence_bundle_hashes, [
+    "unit_minimized_evidence_bundle_hash_summary",
+  ]);
+  assert.strictEqual(summary.full_id_shared, false);
+  assert.strictEqual(summary.evidence_expired, true);
+  assert.deepStrictEqual(summary.expired_evidence_ids, [
+    "unit_kyc_evidence_summary_001",
+  ]);
+  assert.strictEqual(summary.latest_ai_result, "unsure");
+  assert.strictEqual(summary.known_verifier_invite_count, 1);
+  assert.deepStrictEqual(summary.known_verifier_vote_counts, {
+    same_person: 1,
+    not_same_person: 0,
+    unsure: 0,
+    suspicious: 0,
+    low_quality: 0,
+  });
+  assert.strictEqual(summary.latest_quorum_reason, "more known verifiers needed");
+});
+
+test("KYC claim summary reports missing claims without mutation", () => {
+  const engine = unitEngine("unit_kyc_claim_summary_missing");
+  const controller = new MyceliumController(engine);
+  const packetCountBefore = engine.packetCount();
+
+  const summary = controller.getKycClaimSummary("missing_kyc_claim");
+
+  assert.deepStrictEqual(summary, {
+    found: false,
+    kyc_claim_id: "missing_kyc_claim",
+    packet_count: 0,
+  });
+  assert.strictEqual(engine.packetCount(), packetCountBefore);
+});
+
 test("ledger export returns durable packets without mutating count", () => {
   const engine = unitEngine("unit_ledger_export_read_only");
   const packet = engine.observePhrase({
