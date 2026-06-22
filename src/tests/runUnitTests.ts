@@ -1033,7 +1033,7 @@ test("node diagnostics does not create packets", () => {
 });
 
 test("KYC event-only packets are stored without knowledge mutation", () => {
-  const engine = createTestEngine("kyc_event_only_packets.db");
+  const engine = unitEngine("kyc_event_only_packets");
 
   const claim = engine.createKycClaim({
     kyc_claim_id: "unit_kyc_claim_001",
