@@ -285,6 +285,33 @@ async function runSimulation(): Promise<void> {
       `Expected explanation meaning_count >= 1, got ${explanation.evidence.meaning_count}`
     );
 
+    const packetCountBeforeInvalidCorrectionProposal = (
+      await client.getNodeStatus()
+    ).ledger.packet_count;
+
+    await assertRejects(
+      () =>
+        client.proposeMeaningCorrection({
+          phrase_id: phraseId,
+          original_meaning_id: meaningId,
+          correction_id: "app_api_smoke_invalid_correction",
+          corrected_reference_meaning: " ",
+          correction_context: "app-api-smoke-invalid-correction",
+          source: "app-api-smoke",
+        }),
+      "Expected blank corrected_reference_meaning correction proposal to fail"
+    );
+
+    const packetCountAfterInvalidCorrectionProposal = (
+      await client.getNodeStatus()
+    ).ledger.packet_count;
+
+    assertSimulation(
+      packetCountAfterInvalidCorrectionProposal ===
+        packetCountBeforeInvalidCorrectionProposal,
+      `Expected invalid correction proposal to leave packet_count at ${packetCountBeforeInvalidCorrectionProposal}, got ${packetCountAfterInvalidCorrectionProposal}`
+    );
+
     const correctionId = "app_api_smoke_correction_001";
 
     const correctionProposal = await client.proposeMeaningCorrection({
@@ -370,6 +397,7 @@ async function runSimulation(): Promise<void> {
     console.log("app API propose/best-meaning/explanation flow passed");
     console.log("app API packet trace flow passed");
     console.log("app API correction vote flow passed");
+    console.log("app API invalid correction proposal no-mutation flow passed");
     console.log("app API no-meaning negative flow passed");
     console.log("app API unreachable server negative flow passed");
     console.log("app API unknown phrase negative flow passed");
