@@ -1127,7 +1127,7 @@ test("KYC event-only packets are stored without knowledge mutation", () => {
   assert.strictEqual(expiry.packet.packet_type, "kyc_evidence_expired");
 
   assert.strictEqual(evidence.packet.payload.full_id_shared, false);
-  assert.strictEqual(engine.getPacketCount(), 7);
+  assert.strictEqual(engine.packetCount(), 7);
   assert.deepStrictEqual(engine.listKnowledge(), []);
 });
 

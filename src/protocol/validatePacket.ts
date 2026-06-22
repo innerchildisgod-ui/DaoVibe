@@ -19,6 +19,13 @@ const SUPPORTED_PACKET_TYPES: Set<PacketType> = new Set([
   "meaning_correction_tombstone_proposed",
   "meaning_correction_tombstone_vote",
   "safety_label",
+  "kyc_claim_created",
+  "kyc_evidence_prepared",
+  "kyc_ai_assessment_completed",
+  "kyc_known_verifier_invited",
+  "kyc_known_verifier_vote",
+  "kyc_quorum_result",
+  "kyc_evidence_expired",
   "symbol_sample",
 ]);
 
