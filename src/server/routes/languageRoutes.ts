@@ -180,6 +180,26 @@ export function registerLanguageRoutes(
     }
   });
 
+  app.get("/kyc/claims/:kycClaimId/summary", (req, res) => {
+    const result = myceliumController.getKycClaimSummary(
+      req.params.kycClaimId
+    );
+
+    if (!result.found) {
+      sendApiError(res, 404, "NOT_FOUND", "KYC claim not found.", {
+        kyc_claim_id: result.kyc_claim_id,
+      });
+      return;
+    }
+
+    const { found: _found, ...summary } = result;
+
+    res.json({
+      ok: true,
+      summary,
+    });
+  });
+
   app.get("/phrases/:phraseId", (req, res) => {
     const result = myceliumController.getPhraseById(req.params.phraseId);
 

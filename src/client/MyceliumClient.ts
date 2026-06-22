@@ -528,6 +528,41 @@ export interface ApiErrorBody {
   };
 }
 
+export interface KycKnownVerifierVoteCounts {
+  same_person: number;
+  not_same_person: number;
+  unsure: number;
+  suspicious: number;
+  low_quality: number;
+}
+
+export interface KycClaimSummary {
+  kyc_claim_id: string;
+  subject_node_id: string;
+  country_hint?: string;
+  document_type_hint?: string;
+  claim_packet_id: string;
+  claimed_at: number;
+  status: string;
+  packet_count: number;
+  evidence_count: number;
+  evidence_bundle_hashes: string[];
+  full_id_shared: boolean;
+  evidence_expired: boolean;
+  expired_evidence_ids: string[];
+  latest_ai_result?: string;
+  latest_ai_assessment_packet_id?: string;
+  known_verifier_invite_count: number;
+  known_verifier_vote_counts: KycKnownVerifierVoteCounts;
+  latest_quorum_packet_id?: string;
+  latest_quorum_reason?: string;
+}
+
+export interface KycClaimSummaryResponse {
+  ok: true;
+  summary: KycClaimSummary;
+}
+
 export class MyceliumClientError extends Error {
   readonly status: number;
   readonly statusText: string;
@@ -640,6 +675,14 @@ export class MyceliumClient {
   getPhrasePacketTrace(phraseId: string): Promise<PhrasePacketTraceResponse> {
     return this.getJson(
       `/phrases/${encodeURIComponent(phraseId)}/packetTrace`
+    );
+  }
+
+  getKycClaimSummary(
+    kycClaimId: string
+  ): Promise<KycClaimSummaryResponse> {
+    return this.getJson(
+      `/kyc/claims/${encodeURIComponent(kycClaimId)}/summary`
     );
   }
 

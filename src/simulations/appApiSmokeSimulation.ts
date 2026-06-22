@@ -149,6 +149,118 @@ async function runSimulation(): Promise<void> {
       "Expected unknown phrase detail request to fail"
     );
 
+
+    const missingKycClaimId = "app_api_smoke_missing_kyc_claim";
+
+    await assertRejects(
+      () => client.getKycClaimSummary(missingKycClaimId),
+      "Expected unknown KYC claim summary request to fail"
+    );
+
+    const kycClaimId = "app_api_smoke_kyc_claim_001";
+
+    const kycClaim = engine.createKycClaim({
+      kyc_claim_id: kycClaimId,
+      subject_node_id: "app_api_smoke_subject_node_001",
+      country_hint: "IN",
+      document_type_hint: "government_id",
+      consent_text_hash: "app_api_smoke_kyc_consent_hash",
+      consented_at: 1_000,
+    });
+
+    const kycEvidence = engine.prepareKycEvidence(
+      {
+        kyc_claim_id: kycClaimId,
+        evidence_id: "app_api_smoke_kyc_evidence_001",
+        evidence_kinds: ["id_face_crop", "current_selfie", "liveness_video"],
+        evidence_bundle_hash: "app_api_smoke_minimized_evidence_bundle_hash",
+        full_id_shared: false,
+        retention_expires_at: 2_000,
+      },
+      kycClaim.packet.packet_id
+    );
+
+    const kycAiAssessment = engine.completeKycAiAssessment(
+      {
+        kyc_claim_id: kycClaimId,
+        assessment_id: "app_api_smoke_kyc_ai_assessment_001",
+        result: "unsure",
+        face_match_score: 0.73,
+        liveness_score: 0.91,
+        spoof_risk_score: 0.08,
+        reason: "known-person verification required",
+      },
+      kycEvidence.packet.packet_id
+    );
+
+    const kycInvite = engine.inviteKycKnownVerifier(
+      {
+        kyc_claim_id: kycClaimId,
+        verifier_node_id: "app_api_smoke_known_verifier_001",
+        invite_id: "app_api_smoke_kyc_invite_001",
+        evidence_bundle_hash: "app_api_smoke_minimized_evidence_bundle_hash",
+        expires_at: 2_000,
+      },
+      kycAiAssessment.packet.packet_id
+    );
+
+    const kycVote = engine.voteKycKnownVerifier(
+      {
+        kyc_claim_id: kycClaimId,
+        invite_id: "app_api_smoke_kyc_invite_001",
+        verifier_node_id: "app_api_smoke_known_verifier_001",
+        vote: "same_person",
+        reason: "known verifier confirms identity continuity",
+      },
+      kycInvite.packet.packet_id
+    );
+
+    const kycQuorum = engine.recordKycQuorumResult(
+      {
+        kyc_claim_id: kycClaimId,
+        status: "needs_more_review",
+        same_person_votes: 1,
+        not_same_person_votes: 0,
+        unsure_votes: 0,
+        suspicious_votes: 0,
+        ai_result: "unsure",
+        result_reason: "more known verifiers needed",
+      },
+      kycVote.packet.packet_id
+    );
+
+    engine.expireKycEvidence(
+      {
+        kyc_claim_id: kycClaimId,
+        evidence_id: "app_api_smoke_kyc_evidence_001",
+        expired_at: 2_001,
+        deletion_proof_hash: "app_api_smoke_kyc_evidence_deletion_hash",
+      },
+      kycQuorum.packet.packet_id
+    );
+
+    const kycSummary = await client.getKycClaimSummary(kycClaimId);
+
+    assertSimulation(
+      kycSummary.summary.kyc_claim_id === kycClaimId,
+      `Expected KYC summary for ${kycClaimId}, got ${kycSummary.summary.kyc_claim_id}`
+    );
+
+    assertSimulation(
+      kycSummary.summary.status === "needs_more_review",
+      `Expected KYC status needs_more_review, got ${kycSummary.summary.status}`
+    );
+
+    assertSimulation(
+      kycSummary.summary.full_id_shared === false,
+      "Expected KYC summary to preserve full_id_shared=false"
+    );
+
+    assertSimulation(
+      kycSummary.summary.known_verifier_vote_counts.same_person === 1,
+      "Expected KYC summary to include one same_person verifier vote"
+    );
+
     const packetCountBeforeInvalidWrites = (
       await client.getNodeStatus()
     ).ledger.packet_count;
@@ -397,6 +509,7 @@ async function runSimulation(): Promise<void> {
     console.log("app API propose/best-meaning/explanation flow passed");
     console.log("app API packet trace flow passed");
     console.log("app API correction vote flow passed");
+    console.log("app API KYC summary flow passed");
     console.log("app API invalid correction proposal no-mutation flow passed");
     console.log("app API no-meaning negative flow passed");
     console.log("app API unreachable server negative flow passed");
