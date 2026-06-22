@@ -3,6 +3,13 @@ import { estimatePacketSize, PacketSizeEstimate } from "./protocol/packetSize";
 import { SQLiteStore } from "./storage/sqliteStore";
 
 import {
+  KycAiAssessmentCompletedPayload,
+  KycClaimCreatedPayload,
+  KycEvidenceExpiredPayload,
+  KycEvidencePreparedPayload,
+  KycKnownVerifierInvitedPayload,
+  KycKnownVerifierVotePayload,
+  KycQuorumResultPayload,
   MeaningCorrectionProposedPayload,
   MeaningCorrectionTombstoneProposedPayload,
   MeaningCorrectionTombstoneVotePayload,
@@ -300,6 +307,111 @@ export class LanguageEngine {
     return this.storeEventOnlyPacket(packet);
   }
 
+  createKycClaim(
+    payload: KycClaimCreatedPayload,
+    parent?: string
+  ): EngineActionResult<KycClaimCreatedPayload> {
+    const packet = createPacket({
+      packet_type: "kyc_claim_created",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  prepareKycEvidence(
+    payload: KycEvidencePreparedPayload,
+    parent?: string
+  ): EngineActionResult<KycEvidencePreparedPayload> {
+    const packet = createPacket({
+      packet_type: "kyc_evidence_prepared",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  completeKycAiAssessment(
+    payload: KycAiAssessmentCompletedPayload,
+    parent?: string
+  ): EngineActionResult<KycAiAssessmentCompletedPayload> {
+    const packet = createPacket({
+      packet_type: "kyc_ai_assessment_completed",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  inviteKycKnownVerifier(
+    payload: KycKnownVerifierInvitedPayload,
+    parent?: string
+  ): EngineActionResult<KycKnownVerifierInvitedPayload> {
+    const packet = createPacket({
+      packet_type: "kyc_known_verifier_invited",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  voteKycKnownVerifier(
+    payload: KycKnownVerifierVotePayload,
+    parent?: string
+  ): EngineActionResult<KycKnownVerifierVotePayload> {
+    const packet = createPacket({
+      packet_type: "kyc_known_verifier_vote",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  recordKycQuorumResult(
+    payload: KycQuorumResultPayload,
+    parent?: string
+  ): EngineActionResult<KycQuorumResultPayload> {
+    const packet = createPacket({
+      packet_type: "kyc_quorum_result",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  expireKycEvidence(
+    payload: KycEvidenceExpiredPayload,
+    parent?: string
+  ): EngineActionResult<KycEvidenceExpiredPayload> {
+    const packet = createPacket({
+      packet_type: "kyc_evidence_expired",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
   listKnowledge() {
     return this.sqliteStore.listKnowledge();
   }
@@ -483,6 +595,13 @@ export class LanguageEngine {
         break;
       }
 
+      case "kyc_claim_created":
+      case "kyc_evidence_prepared":
+      case "kyc_ai_assessment_completed":
+      case "kyc_known_verifier_invited":
+      case "kyc_known_verifier_vote":
+      case "kyc_quorum_result":
+      case "kyc_evidence_expired":
       case "correction":
       case "meaning_correction_proposed":
       case "meaning_correction_vote":

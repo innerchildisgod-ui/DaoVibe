@@ -1032,6 +1032,105 @@ test("node diagnostics does not create packets", () => {
   assert.strictEqual(engine.packetCount(), packetCountBefore);
 });
 
+test("KYC event-only packets are stored without knowledge mutation", () => {
+  const engine = createTestEngine("kyc_event_only_packets.db");
+
+  const claim = engine.createKycClaim({
+    kyc_claim_id: "unit_kyc_claim_001",
+    subject_node_id: "unit_subject_node_001",
+    country_hint: "IN",
+    document_type_hint: "government_id",
+    consent_text_hash: "unit_consent_text_hash",
+    consented_at: 1_000,
+  });
+
+  const evidence = engine.prepareKycEvidence(
+    {
+      kyc_claim_id: "unit_kyc_claim_001",
+      evidence_id: "unit_kyc_evidence_001",
+      evidence_kinds: ["id_face_crop", "current_selfie", "liveness_video"],
+      evidence_bundle_hash: "unit_minimized_evidence_bundle_hash",
+      full_id_shared: false,
+      retention_expires_at: 2_000,
+    },
+    claim.packet.packet_id
+  );
+
+  const aiAssessment = engine.completeKycAiAssessment(
+    {
+      kyc_claim_id: "unit_kyc_claim_001",
+      assessment_id: "unit_kyc_ai_assessment_001",
+      result: "unsure",
+      face_match_score: 0.72,
+      liveness_score: 0.91,
+      spoof_risk_score: 0.08,
+      reason: "human review required",
+    },
+    evidence.packet.packet_id
+  );
+
+  const invite = engine.inviteKycKnownVerifier(
+    {
+      kyc_claim_id: "unit_kyc_claim_001",
+      verifier_node_id: "unit_verified_friend_node_001",
+      invite_id: "unit_kyc_invite_001",
+      evidence_bundle_hash: "unit_minimized_evidence_bundle_hash",
+      expires_at: 2_000,
+    },
+    aiAssessment.packet.packet_id
+  );
+
+  const vote = engine.voteKycKnownVerifier(
+    {
+      kyc_claim_id: "unit_kyc_claim_001",
+      invite_id: "unit_kyc_invite_001",
+      verifier_node_id: "unit_verified_friend_node_001",
+      vote: "same_person",
+      reason: "known person confirms match",
+    },
+    invite.packet.packet_id
+  );
+
+  const quorum = engine.recordKycQuorumResult(
+    {
+      kyc_claim_id: "unit_kyc_claim_001",
+      status: "needs_more_review",
+      same_person_votes: 1,
+      not_same_person_votes: 0,
+      unsure_votes: 0,
+      suspicious_votes: 0,
+      ai_result: "unsure",
+      result_reason: "not enough known verifiers yet",
+    },
+    vote.packet.packet_id
+  );
+
+  const expiry = engine.expireKycEvidence(
+    {
+      kyc_claim_id: "unit_kyc_claim_001",
+      evidence_id: "unit_kyc_evidence_001",
+      expired_at: 2_001,
+      deletion_proof_hash: "unit_evidence_deletion_proof_hash",
+    },
+    quorum.packet.packet_id
+  );
+
+  assert.strictEqual(claim.packet.packet_type, "kyc_claim_created");
+  assert.strictEqual(evidence.packet.packet_type, "kyc_evidence_prepared");
+  assert.strictEqual(
+    aiAssessment.packet.packet_type,
+    "kyc_ai_assessment_completed"
+  );
+  assert.strictEqual(invite.packet.packet_type, "kyc_known_verifier_invited");
+  assert.strictEqual(vote.packet.packet_type, "kyc_known_verifier_vote");
+  assert.strictEqual(quorum.packet.packet_type, "kyc_quorum_result");
+  assert.strictEqual(expiry.packet.packet_type, "kyc_evidence_expired");
+
+  assert.strictEqual(evidence.packet.payload.full_id_shared, false);
+  assert.strictEqual(engine.getPacketCount(), 7);
+  assert.deepStrictEqual(engine.listKnowledge(), []);
+});
+
 test("ledger export returns durable packets without mutating count", () => {
   const engine = unitEngine("unit_ledger_export_read_only");
   const packet = engine.observePhrase({

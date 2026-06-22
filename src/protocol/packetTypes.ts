@@ -9,6 +9,13 @@ export type PacketType =
   | "meaning_correction_vote"
   | "meaning_correction_tombstone_proposed"
   | "meaning_correction_tombstone_vote"
+  | "kyc_claim_created"
+  | "kyc_evidence_prepared"
+  | "kyc_ai_assessment_completed"
+  | "kyc_known_verifier_invited"
+  | "kyc_known_verifier_vote"
+  | "kyc_quorum_result"
+  | "kyc_evidence_expired"
   | "safety_label"
   | "symbol_sample";
 
@@ -17,6 +24,33 @@ export type InputType = "speech" | "text" | "symbol" | "drawing";
 export type VoteValue = "confirm" | "reject" | "unsure";
 
 export type CorrectionVoteValue = "confirm" | "reject";
+
+export type KycEvidenceKind =
+  | "id_face_crop"
+  | "current_selfie"
+  | "liveness_video";
+
+export type KycAiAssessmentResult =
+  | "pass"
+  | "fail"
+  | "unsure"
+  | "suspicious"
+  | "low_quality";
+
+export type KycKnownVerifierVoteValue =
+  | "same_person"
+  | "not_same_person"
+  | "unsure"
+  | "suspicious"
+  | "low_quality";
+
+export type KycQuorumStatus =
+  | "pending"
+  | "verified"
+  | "rejected"
+  | "needs_more_review"
+  | "escalated"
+  | "expired";
 
 export type CorrectionTombstoneReason =
   | "rejected_status"
@@ -94,4 +128,67 @@ export interface SymbolSamplePayload {
   image_hash?: string;
   stroke_data_hash?: string;
   phonetic_hint?: string;
+}
+
+
+export interface KycClaimCreatedPayload {
+  kyc_claim_id: string;
+  subject_node_id: string;
+  country_hint?: string;
+  document_type_hint?: string;
+  consent_text_hash: string;
+  consented_at: number;
+}
+
+export interface KycEvidencePreparedPayload {
+  kyc_claim_id: string;
+  evidence_id: string;
+  evidence_kinds: KycEvidenceKind[];
+  evidence_bundle_hash: string;
+  full_id_shared: false;
+  retention_expires_at: number;
+}
+
+export interface KycAiAssessmentCompletedPayload {
+  kyc_claim_id: string;
+  assessment_id: string;
+  result: KycAiAssessmentResult;
+  face_match_score?: number;
+  liveness_score?: number;
+  spoof_risk_score?: number;
+  reason?: string;
+}
+
+export interface KycKnownVerifierInvitedPayload {
+  kyc_claim_id: string;
+  verifier_node_id: string;
+  invite_id: string;
+  evidence_bundle_hash: string;
+  expires_at: number;
+}
+
+export interface KycKnownVerifierVotePayload {
+  kyc_claim_id: string;
+  invite_id: string;
+  verifier_node_id: string;
+  vote: KycKnownVerifierVoteValue;
+  reason?: string;
+}
+
+export interface KycQuorumResultPayload {
+  kyc_claim_id: string;
+  status: KycQuorumStatus;
+  same_person_votes: number;
+  not_same_person_votes: number;
+  unsure_votes: number;
+  suspicious_votes: number;
+  ai_result?: KycAiAssessmentResult;
+  result_reason?: string;
+}
+
+export interface KycEvidenceExpiredPayload {
+  kyc_claim_id: string;
+  evidence_id: string;
+  expired_at: number;
+  deletion_proof_hash?: string;
 }
