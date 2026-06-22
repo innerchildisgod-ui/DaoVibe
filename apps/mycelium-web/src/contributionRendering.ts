@@ -19,6 +19,15 @@ export type ProposeFormState = {
   confidence: string;
 };
 
+export type CorrectionProposalFormState = {
+  phraseId: string;
+  originalMeaningId: string;
+  correctionId: string;
+  correctedReferenceMeaning: string;
+  correctionContext: string;
+  source: string;
+};
+
 export type CorrectionVoteFormState = {
   phraseId: string;
   correctionId: string;
@@ -29,12 +38,15 @@ export type CorrectionVoteFormState = {
 export type ContributionRenderingState = {
   observingPhrase: boolean;
   proposingMeaning: boolean;
+  proposingCorrection: boolean;
   votingCorrection: boolean;
   observeForm: ObserveFormState;
   proposeForm: ProposeFormState;
+  correctionProposalForm: CorrectionProposalFormState;
   correctionVoteForm: CorrectionVoteFormState;
   observeResult?: FormResult;
   proposeResult?: FormResult;
+  correctionProposalResult?: FormResult;
   correctionVoteResult?: FormResult;
   selectedPhrase?: PhraseRecord;
   nodeIdentity?: LocalNodeIdentity;
@@ -46,6 +58,12 @@ function currentProposePhraseId(state: ContributionRenderingState): string {
 
 function currentCorrectionVotePhraseId(state: ContributionRenderingState): string {
   return state.correctionVoteForm.phraseId || state.selectedPhrase?.phrase_id || "";
+}
+
+function currentCorrectionProposalPhraseId(
+  state: ContributionRenderingState
+): string {
+  return state.correctionProposalForm.phraseId || state.selectedPhrase?.phrase_id || "";
 }
 
 export function renderObservePhrase(state: ContributionRenderingState): string {
@@ -148,6 +166,79 @@ export function renderProposeMeaning(state: ContributionRenderingState): string 
   `;
 }
 
+
+
+export function renderProposeMeaningCorrection(
+  state: ContributionRenderingState
+): string {
+  return `
+    <section class="panel contribution-panel">
+      <div class="panel-heading">
+        <h2>Propose Meaning Correction</h2>
+      </div>
+      <form id="propose-correction-form" class="contribution-form">
+        <label>
+          <span>phrase_id</span>
+          <input
+            name="phrase_id"
+            value="${escapeAttribute(currentCorrectionProposalPhraseId(state))}"
+            autocomplete="off"
+            ${state.proposingCorrection ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>original_meaning_id</span>
+          <input
+            name="original_meaning_id"
+            value="${escapeAttribute(state.correctionProposalForm.originalMeaningId)}"
+            autocomplete="off"
+            ${state.proposingCorrection ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>correction_id</span>
+          <input
+            name="correction_id"
+            value="${escapeAttribute(state.correctionProposalForm.correctionId)}"
+            autocomplete="off"
+            ${state.proposingCorrection ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>corrected_reference_meaning</span>
+          <textarea
+            name="corrected_reference_meaning"
+            rows="3"
+            ${state.proposingCorrection ? "disabled" : ""}
+          >${escapeHtml(state.correctionProposalForm.correctedReferenceMeaning)}</textarea>
+        </label>
+        <label>
+          <span>correction_context</span>
+          <input
+            name="correction_context"
+            value="${escapeAttribute(state.correctionProposalForm.correctionContext)}"
+            autocomplete="off"
+            ${state.proposingCorrection ? "disabled" : ""}
+          />
+        </label>
+        <label>
+          <span>source</span>
+          <input
+            name="source"
+            value="${escapeAttribute(state.correctionProposalForm.source)}"
+            autocomplete="off"
+            ${state.proposingCorrection ? "disabled" : ""}
+          />
+        </label>
+        <button type="submit" ${state.proposingCorrection ? "disabled" : ""}>
+          ${state.proposingCorrection ? "Saving..." : "Propose Correction"}
+        </button>
+      </form>
+      <p class="muted form-note">Correction proposals are stored as governance events. Tombstone proposals are not enabled here.</p>
+      ${renderFormResult(state.correctionProposalResult)}
+    </section>
+  `;
+}
 
 export function renderVoteMeaningCorrection(
   state: ContributionRenderingState

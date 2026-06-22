@@ -14,6 +14,7 @@ import type {
 } from "@mycelium/client";
 import type { FormResult } from "./formRendering";
 import type {
+  CorrectionProposalFormState,
   CorrectionVoteFormState,
   ObserveFormState,
   ProposeFormState,
@@ -28,6 +29,7 @@ export type AppState = {
   loadingGovernance: boolean;
   observingPhrase: boolean;
   proposingMeaning: boolean;
+  proposingCorrection: boolean;
   votingCorrection: boolean;
   error?: string;
   searchError?: string;
@@ -37,6 +39,7 @@ export type AppState = {
   governanceError?: string;
   observeResult?: FormResult;
   proposeResult?: FormResult;
+  correctionProposalResult?: FormResult;
   correctionVoteResult?: FormResult;
   nodeStatus?: NodeStatusResponse;
   nodeDiagnostics?: NodeDiagnosticsResponse["diagnostics"];
@@ -46,6 +49,7 @@ export type AppState = {
   searchQuery: string;
   observeForm: ObserveFormState;
   proposeForm: ProposeFormState;
+  correctionProposalForm: CorrectionProposalFormState;
   correctionVoteForm: CorrectionVoteFormState;
   searchResults?: PhraseSearchResponse["results"];
   selectedPhrase?: PhraseRecord;
@@ -65,6 +69,7 @@ export const state: AppState = {
   loadingGovernance: false,
   observingPhrase: false,
   proposingMeaning: false,
+  proposingCorrection: false,
   votingCorrection: false,
   searchQuery: "",
   observeForm: {
@@ -77,6 +82,14 @@ export const state: AppState = {
     referenceMeaning: "",
     context: "",
     confidence: "0.5",
+  },
+  correctionProposalForm: {
+    phraseId: "",
+    originalMeaningId: "",
+    correctionId: "",
+    correctedReferenceMeaning: "",
+    correctionContext: "",
+    source: "",
   },
   correctionVoteForm: {
     phraseId: "",

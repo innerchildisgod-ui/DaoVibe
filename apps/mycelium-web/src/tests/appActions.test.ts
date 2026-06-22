@@ -12,6 +12,7 @@ function createUnitAppState(): AppState {
     loadingGovernance: false,
     observingPhrase: false,
     proposingMeaning: false,
+    proposingCorrection: false,
     votingCorrection: false,
     searchQuery: "",
     observeForm: {
@@ -24,6 +25,14 @@ function createUnitAppState(): AppState {
       referenceMeaning: "",
       context: "",
       confidence: "0.5",
+    },
+    correctionProposalForm: {
+      phraseId: "",
+      originalMeaningId: "",
+      correctionId: "",
+      correctedReferenceMeaning: "",
+      correctionContext: "",
+      source: "",
     },
     correctionVoteForm: {
       phraseId: "",
@@ -103,6 +112,7 @@ function createClient(overrides: Record<string, unknown> = {}): never {
     })),
     observePhrase: vi.fn(),
     proposeMeaning: vi.fn(),
+    proposeMeaningCorrection: vi.fn(),
     voteMeaningCorrection: vi.fn(),
     ...overrides,
   } as never;
@@ -338,5 +348,83 @@ describe("createAppActions successful writes", () => {
     expect(state.votingCorrection).toBe(false);
     expect(state.correctionVoteResult?.kind).toBe("success");
     expect(state.correctionVoteForm.voter).toBe("");
+  });
+});
+
+describe("createAppActions correction proposal writes", () => {
+  let state: AppState;
+
+  beforeEach(() => {
+    state = createUnitAppState();
+  });
+
+  it("rejects blank corrected_reference_meaning before calling proposeMeaningCorrection", async () => {
+    const proposeMeaningCorrection = vi.fn();
+
+    const actions = createAppActions({
+      client: createClient({ proposeMeaningCorrection }),
+      state,
+      setState: (nextState) => applyStateUpdate(state, nextState),
+    });
+
+    await actions.proposeMeaningCorrection(
+      formData({
+        phrase_id: "unit_phrase",
+        original_meaning_id: "unit_meaning",
+        correction_id: "unit_correction",
+        corrected_reference_meaning: "   ",
+        correction_context: "unit-test",
+        source: "unit-test",
+      })
+    );
+
+    expect(proposeMeaningCorrection).not.toHaveBeenCalled();
+    expect(state.correctionProposalResult).toEqual({
+      kind: "error",
+      message: "corrected_reference_meaning is required.",
+    });
+    expect(state.proposingCorrection).toBe(false);
+  });
+
+  it("calls proposeMeaningCorrection once with trimmed payload and records success", async () => {
+    const proposeMeaningCorrection = vi.fn(async () => ({
+      result: {
+        phrase_id: "phrase_unit_web_correction",
+        correction_id: "correction_unit_web_proposal",
+        packet_id: "packet_unit_web_correction_proposal",
+        packet_type: "meaning_correction_proposed",
+      },
+    }));
+
+    const actions = createAppActions({
+      client: createClient({ proposeMeaningCorrection }),
+      state,
+      setState: (nextState) => applyStateUpdate(state, nextState),
+    });
+
+    await actions.proposeMeaningCorrection(
+      formData({
+        phrase_id: " phrase_unit_web_correction ",
+        original_meaning_id: " meaning_unit_web_original ",
+        correction_id: " correction_unit_web_proposal ",
+        corrected_reference_meaning: "  A corrected unit web meaning.  ",
+        correction_context: " unit correction context ",
+        source: " unit-source ",
+      })
+    );
+
+    expect(proposeMeaningCorrection).toHaveBeenCalledTimes(1);
+    expect(proposeMeaningCorrection).toHaveBeenCalledWith({
+      phrase_id: "phrase_unit_web_correction",
+      original_meaning_id: "meaning_unit_web_original",
+      correction_id: "correction_unit_web_proposal",
+      corrected_reference_meaning: "A corrected unit web meaning.",
+      correction_context: "unit correction context",
+      source: "unit-source",
+    });
+    expect(state.proposingCorrection).toBe(false);
+    expect(state.correctionProposalResult?.kind).toBe("success");
+    expect(state.correctionProposalForm.correctedReferenceMeaning).toBe("");
+    expect(state.correctionProposalForm.correctionContext).toBe("");
   });
 });

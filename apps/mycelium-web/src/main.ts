@@ -24,6 +24,7 @@ import type { AppState } from "./appState";
 import {
   renderObservePhrase,
   renderProposeMeaning,
+  renderProposeMeaningCorrection,
   renderVoteMeaningCorrection,
 } from "./contributionRendering";
 import type {
@@ -99,6 +100,7 @@ const {
   refreshAfterWrite,
   observePhrase,
   proposeMeaning,
+  proposeMeaningCorrection,
   voteMeaningCorrection,
 } = createAppActions({
   client,
@@ -125,6 +127,7 @@ function render(): void {
         ${renderMeaningExplanation(state)}
         ${renderPacketTrace(state)}
         ${renderProposeMeaning(state)}
+        ${renderProposeMeaningCorrection(state)}
         ${renderVoteMeaningCorrection(state)}
       </div>
     </main>
@@ -141,6 +144,9 @@ function bindEvents(): void {
   );
   const proposeForm = document.querySelector<HTMLFormElement>(
     "#propose-meaning-form"
+  );
+  const correctionProposalForm = document.querySelector<HTMLFormElement>(
+    "#propose-correction-form"
   );
   const correctionVoteForm = document.querySelector<HTMLFormElement>(
     "#vote-correction-form"
@@ -191,6 +197,34 @@ function bindEvents(): void {
     state.proposeForm.confidence = value;
   });
 
+  bindFormInput("propose-correction-form", "phrase_id", (value) => {
+    state.correctionProposalForm.phraseId = value;
+  });
+
+  bindFormInput("propose-correction-form", "original_meaning_id", (value) => {
+    state.correctionProposalForm.originalMeaningId = value;
+  });
+
+  bindFormInput("propose-correction-form", "correction_id", (value) => {
+    state.correctionProposalForm.correctionId = value;
+  });
+
+  bindFormInput(
+    "propose-correction-form",
+    "corrected_reference_meaning",
+    (value) => {
+      state.correctionProposalForm.correctedReferenceMeaning = value;
+    }
+  );
+
+  bindFormInput("propose-correction-form", "correction_context", (value) => {
+    state.correctionProposalForm.correctionContext = value;
+  });
+
+  bindFormInput("propose-correction-form", "source", (value) => {
+    state.correctionProposalForm.source = value;
+  });
+
   bindFormInput("vote-correction-form", "phrase_id", (value) => {
     state.correctionVoteForm.phraseId = value;
   });
@@ -220,6 +254,11 @@ function bindEvents(): void {
   proposeForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     void proposeMeaning(new FormData(proposeForm));
+  });
+
+  correctionProposalForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void proposeMeaningCorrection(new FormData(correctionProposalForm));
   });
 
   correctionVoteForm?.addEventListener("submit", (event) => {

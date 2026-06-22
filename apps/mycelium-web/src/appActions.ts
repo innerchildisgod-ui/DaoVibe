@@ -21,6 +21,7 @@ export type AppActions = {
   refreshAfterWrite: (phraseId: string, searchQuery?: string) => Promise<void>;
   observePhrase: (formData: FormData) => Promise<void>;
   proposeMeaning: (formData: FormData) => Promise<void>;
+  proposeMeaningCorrection: (formData: FormData) => Promise<void>;
   voteMeaningCorrection: (formData: FormData) => Promise<void>;
 };
 
@@ -327,6 +328,110 @@ export function createAppActions({
     }
   }
 
+  async function proposeMeaningCorrection(formData: FormData): Promise<void> {
+    const phraseId = String(formData.get("phrase_id") ?? "").trim();
+    const originalMeaningId = String(
+      formData.get("original_meaning_id") ?? ""
+    ).trim();
+    const correctionId = String(formData.get("correction_id") ?? "").trim();
+    const correctedReferenceMeaning = String(
+      formData.get("corrected_reference_meaning") ?? ""
+    ).trim();
+    const correctionContext = String(
+      formData.get("correction_context") ?? ""
+    ).trim();
+    const source = String(formData.get("source") ?? "").trim();
+
+    state.correctionProposalForm = {
+      phraseId,
+      originalMeaningId,
+      correctionId,
+      correctedReferenceMeaning,
+      correctionContext,
+      source,
+    };
+
+    if (!phraseId) {
+      setState({
+        correctionProposalResult: {
+          kind: "error",
+          message: "phrase_id is required.",
+        },
+      });
+      return;
+    }
+
+    if (!originalMeaningId) {
+      setState({
+        correctionProposalResult: {
+          kind: "error",
+          message: "original_meaning_id is required.",
+        },
+      });
+      return;
+    }
+
+    if (!correctionId) {
+      setState({
+        correctionProposalResult: {
+          kind: "error",
+          message: "correction_id is required.",
+        },
+      });
+      return;
+    }
+
+    if (!correctedReferenceMeaning) {
+      setState({
+        correctionProposalResult: {
+          kind: "error",
+          message: "corrected_reference_meaning is required.",
+        },
+      });
+      return;
+    }
+
+    setState({
+      proposingCorrection: true,
+      correctionProposalResult: undefined,
+    });
+
+    try {
+      const result = await client.proposeMeaningCorrection({
+        phrase_id: phraseId,
+        original_meaning_id: originalMeaningId,
+        correction_id: correctionId,
+        corrected_reference_meaning: correctedReferenceMeaning,
+        correction_context: optionalTrimmed(correctionContext),
+        source: optionalTrimmed(source),
+      });
+
+      state.correctionProposalForm.correctedReferenceMeaning = "";
+      state.correctionProposalForm.correctionContext = "";
+
+      setState({
+        proposingCorrection: false,
+        correctionProposalResult: {
+          kind: "success",
+          message: `Proposed correction ${correctionId} with packet ${result.result.packet_id}.`,
+        },
+      });
+
+      await refreshAfterWrite(phraseId, state.searchQuery || undefined);
+    } catch (error) {
+      setState({
+        proposingCorrection: false,
+        correctionProposalResult: {
+          kind: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Meaning correction proposal failed.",
+        },
+      });
+    }
+  }
+
   async function voteMeaningCorrection(formData: FormData): Promise<void> {
     const phraseId = String(formData.get("phrase_id") ?? "").trim();
     const correctionId = String(formData.get("correction_id") ?? "").trim();
@@ -503,6 +608,7 @@ export function createAppActions({
     refreshAfterWrite,
     observePhrase,
     proposeMeaning,
+    proposeMeaningCorrection,
     voteMeaningCorrection,
   };
 }
