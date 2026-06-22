@@ -1997,6 +1997,74 @@ test("correction voter duplicate protection counts latest identified voter vote 
   assert.strictEqual(corrections[0].status, "maturing");
 });
 
+test("correction voter tiebreaker uses packet id when timestamps match", () => {
+  const phraseId = "unit_phrase_same_time_voter_tiebreak";
+  const correctionId = "unit_correction_same_time_voter_tiebreak";
+  const sameCreatedAt = 424242;
+  const voter = "unit_same_time_voter";
+
+  const proposalPacket = {
+    ...createPacket({
+      packet_type: "meaning_correction_proposed",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: phraseId,
+        original_meaning_id: "unit_original_same_time_voter_tiebreak",
+        correction_id: correctionId,
+        corrected_reference_meaning:
+          "Corrected meaning used to prove deterministic same-time voter tiebreaking.",
+      },
+    }),
+    packet_id: "packet_same_time_correction_proposal",
+    created_at: sameCreatedAt - 1,
+  };
+
+  const lowerPacketIdConfirm = {
+    ...createPacket({
+      packet_type: "meaning_correction_vote",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: phraseId,
+        correction_id: correctionId,
+        vote: "confirm",
+        voter,
+      },
+    }),
+    packet_id: "aaa_same_time_confirm_vote",
+    created_at: sameCreatedAt,
+  };
+
+  const higherPacketIdReject = {
+    ...createPacket({
+      packet_type: "meaning_correction_vote",
+      zone: TEST_ZONE,
+      author: TEST_AUTHOR,
+      payload: {
+        phrase_id: phraseId,
+        correction_id: correctionId,
+        vote: "reject",
+        voter,
+      },
+    }),
+    packet_id: "zzz_same_time_reject_vote",
+    created_at: sameCreatedAt,
+  };
+
+  for (const packets of [
+    [proposalPacket, lowerPacketIdConfirm, higherPacketIdReject],
+    [proposalPacket, higherPacketIdReject, lowerPacketIdConfirm],
+  ]) {
+    const corrections = summarizeCorrectionPacketsForPhrase(packets, phraseId);
+
+    assert.strictEqual(corrections.length, 1);
+    assert.strictEqual(corrections[0].confirm_votes, 0);
+    assert.strictEqual(corrections[0].reject_votes, 1);
+    assert.strictEqual(corrections[0].correction_score, -1);
+  }
+});
+
 test("correction status requires maturity threshold", () => {
   const cases = [
     { confirmVotes: 1, rejectVotes: 0, status: "maturing" },
