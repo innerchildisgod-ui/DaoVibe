@@ -1,4 +1,4 @@
-﻿import assert from "assert";
+import assert from "assert";
 import Database from "better-sqlite3";
 import type { Server as HttpServer } from "http";
 import { join } from "path";
@@ -1977,6 +1977,53 @@ test("order fulfillment status summary derives full flow", () => {
   assert.strictEqual(summary.fulfillment_id, "unit_order_fulfillment_status_001");
   assert.strictEqual(summary.fulfilled_started_at, 8_030);
   assert.strictEqual(summary.memo, "vendor started fulfillment");
+
+  const completion = engine.completeOrderFulfillment(
+    {
+      order_reference_id: "unit_order_status_001",
+      payment_intent_id: "unit_payment_intent_for_order_status_001",
+      proof_id: "unit_payment_proof_for_order_status_001",
+      acknowledgement_id: "unit_payment_ack_for_order_status_001",
+      fulfillment_id: "unit_order_fulfillment_status_001",
+      completion_id: "unit_order_fulfillment_completion_status_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_order_status_001",
+      completed_at: 8_040,
+      memo: "vendor completed fulfillment",
+    },
+    fulfillment.packet.packet_id
+  );
+
+  const completedSummary = getOrderFulfillmentStatusSummary(
+    engine.exportLedgerPackets(),
+    "unit_order_status_001"
+  );
+
+  assert.strictEqual(completedSummary.status, "fulfillment_completed");
+  assert.strictEqual(completedSummary.intent_packet_id, intent.packet.packet_id);
+  assert.strictEqual(completedSummary.proof_packet_id, proof.packet.packet_id);
+  assert.strictEqual(
+    completedSummary.acknowledgement_packet_id,
+    acknowledgement.packet.packet_id
+  );
+  assert.strictEqual(
+    completedSummary.fulfillment_packet_id,
+    fulfillment.packet.packet_id
+  );
+  assert.strictEqual(
+    completedSummary.completion_packet_id,
+    completion.packet.packet_id
+  );
+  assert.strictEqual(
+    completedSummary.fulfillment_id,
+    "unit_order_fulfillment_status_001"
+  );
+  assert.strictEqual(
+    completedSummary.completion_id,
+    "unit_order_fulfillment_completion_status_001"
+  );
+  assert.strictEqual(completedSummary.fulfilled_started_at, 8_030);
+  assert.strictEqual(completedSummary.fulfilled_completed_at, 8_040);
+  assert.strictEqual(completedSummary.memo, "vendor completed fulfillment");
 });
 
 test("engine order fulfillment status summary reads derived order state", () => {
@@ -2022,7 +2069,7 @@ test("engine order fulfillment status summary reads derived order state", () => 
     proof.packet.packet_id
   );
 
-  engine.startOrderFulfillment(
+  const fulfillment = engine.startOrderFulfillment(
     {
       order_reference_id: "unit_engine_order_status_001",
       payment_intent_id: "unit_engine_payment_intent_for_order_status_001",
@@ -2035,12 +2082,32 @@ test("engine order fulfillment status summary reads derived order state", () => 
     acknowledgement.packet.packet_id
   );
 
+  engine.completeOrderFulfillment(
+    {
+      order_reference_id: "unit_engine_order_status_001",
+      payment_intent_id: "unit_engine_payment_intent_for_order_status_001",
+      proof_id: "unit_engine_payment_proof_for_order_status_001",
+      acknowledgement_id: "unit_engine_payment_ack_for_order_status_001",
+      fulfillment_id: "unit_engine_order_fulfillment_status_001",
+      completion_id: "unit_engine_order_fulfillment_completion_status_001",
+      vendor_subject_node_id: "unit_engine_vendor_subject_node_for_order_status_001",
+      completed_at: 8_140,
+    },
+    fulfillment.packet.packet_id
+  );
+
   const summary = engine.getOrderFulfillmentStatusSummary(
     "unit_engine_order_status_001"
   );
 
-  assert.strictEqual(summary.status, "fulfillment_started");
+  assert.strictEqual(summary.status, "fulfillment_completed");
   assert.strictEqual(summary.fulfillment_id, "unit_engine_order_fulfillment_status_001");
+  assert.strictEqual(
+    summary.completion_id,
+    "unit_engine_order_fulfillment_completion_status_001"
+  );
+  assert.strictEqual(summary.fulfilled_started_at, 8_130);
+  assert.strictEqual(summary.fulfilled_completed_at, 8_140);
   assert.strictEqual(summary.amount_minor_units, 888);
   assert.strictEqual(summary.currency_code, "INR");
 });
@@ -3773,4 +3840,5 @@ test("sync import rejects stale cursor batch without storing new packets", async
 });
 
 void runTests();
+
 

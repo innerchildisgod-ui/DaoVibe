@@ -1,5 +1,6 @@
 import { LmpPacket } from "../protocol/packet";
 import {
+  OrderFulfillmentCompletedPayload,
   OrderFulfillmentStartedPayload,
   PaymentAcknowledgedPayload,
   PaymentIntentCreatedPayload,
@@ -11,7 +12,8 @@ export type OrderFulfillmentDerivedStatus =
   | "payment_intent_created"
   | "payment_proof_submitted"
   | "payment_acknowledged"
-  | "fulfillment_started";
+  | "fulfillment_started"
+  | "fulfillment_completed";
 
 export interface OrderFulfillmentStatusSummary {
   order_reference_id: string;
@@ -20,10 +22,12 @@ export interface OrderFulfillmentStatusSummary {
   proof_packet_id?: string;
   acknowledgement_packet_id?: string;
   fulfillment_packet_id?: string;
+  completion_packet_id?: string;
   payment_intent_id?: string;
   proof_id?: string;
   acknowledgement_id?: string;
   fulfillment_id?: string;
+  completion_id?: string;
   buyer_subject_node_id?: string;
   vendor_subject_node_id?: string;
   buyer_kyc_claim_id?: string;
@@ -33,6 +37,7 @@ export interface OrderFulfillmentStatusSummary {
   amount_minor_units?: number;
   acknowledgement_status?: PaymentAcknowledgedPayload["status"];
   fulfilled_started_at?: number;
+  fulfilled_completed_at?: number;
   memo?: string;
 }
 
@@ -190,9 +195,45 @@ export function getOrderFulfillmentStatusSummary(
 
   const latestFulfillment = newestPacket(orderFulfillmentPackets);
 
-  const status: OrderFulfillmentDerivedStatus = latestFulfillment
-    ? "fulfillment_started"
-    : latestAcknowledgement
+  const orderFulfillmentCompletionPackets = latestFulfillment
+    ? packets
+        .map((packet) => {
+          if (packet.packet_type !== "order_fulfillment_completed") return undefined;
+
+          const payload = asPayloadObject(packet.payload);
+          if (!payload) return undefined;
+
+          if (payloadString(payload, "order_reference_id") !== orderReferenceId) {
+            return undefined;
+          }
+
+          if (payloadString(payload, "payment_intent_id") !== paymentIntentId) {
+            return undefined;
+          }
+
+          if (
+            payloadString(payload, "fulfillment_id") !==
+            latestFulfillment.payload.fulfillment_id
+          ) {
+            return undefined;
+          }
+
+          return {
+            packet,
+            payload: payload as unknown as OrderFulfillmentCompletedPayload,
+            sort_value: packetSortValue(packet, payloadNumber(payload, "completed_at")),
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    : [];
+
+  const latestCompletion = newestPacket(orderFulfillmentCompletionPackets);
+
+  const status: OrderFulfillmentDerivedStatus = latestCompletion
+    ? "fulfillment_completed"
+    : latestFulfillment
+      ? "fulfillment_started"
+      : latestAcknowledgement
       ? "payment_acknowledged"
       : latestProof
         ? "payment_proof_submitted"
@@ -205,10 +246,12 @@ export function getOrderFulfillmentStatusSummary(
     proof_packet_id: latestProof?.packet.packet_id,
     acknowledgement_packet_id: latestAcknowledgement?.packet.packet_id,
     fulfillment_packet_id: latestFulfillment?.packet.packet_id,
+    completion_packet_id: latestCompletion?.packet.packet_id,
     payment_intent_id: paymentIntentId,
     proof_id: latestProof?.payload.proof_id,
     acknowledgement_id: latestAcknowledgement?.payload.acknowledgement_id,
     fulfillment_id: latestFulfillment?.payload.fulfillment_id,
+    completion_id: latestCompletion?.payload.completion_id,
     buyer_subject_node_id: latestIntent.payload.buyer_subject_node_id,
     vendor_subject_node_id:
       latestFulfillment?.payload.vendor_subject_node_id ??
@@ -227,6 +270,8 @@ export function getOrderFulfillmentStatusSummary(
       latestIntent.payload.amount_minor_units,
     acknowledgement_status: latestAcknowledgement?.payload.status,
     fulfilled_started_at: latestFulfillment?.payload.started_at,
-    memo: latestFulfillment?.payload.memo,
+    fulfilled_completed_at: latestCompletion?.payload.completed_at,
+    memo: latestCompletion?.payload.memo ?? latestFulfillment?.payload.memo,
   };
 }
+

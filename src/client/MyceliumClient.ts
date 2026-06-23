@@ -602,7 +602,8 @@ export type OrderFulfillmentDerivedStatus =
   | "payment_intent_created"
   | "payment_proof_submitted"
   | "payment_acknowledged"
-  | "fulfillment_started";
+  | "fulfillment_started"
+  | "fulfillment_completed";
 
 export interface OrderFulfillmentStatusSummary {
   order_reference_id: string;
@@ -611,10 +612,12 @@ export interface OrderFulfillmentStatusSummary {
   proof_packet_id?: string;
   acknowledgement_packet_id?: string;
   fulfillment_packet_id?: string;
+  completion_packet_id?: string;
   payment_intent_id?: string;
   proof_id?: string;
   acknowledgement_id?: string;
   fulfillment_id?: string;
+  completion_id?: string;
   buyer_subject_node_id?: string;
   vendor_subject_node_id?: string;
   buyer_kyc_claim_id?: string;
@@ -624,6 +627,7 @@ export interface OrderFulfillmentStatusSummary {
   amount_minor_units?: number;
   acknowledgement_status?: "received" | "not_received" | "needs_review";
   fulfilled_started_at?: number;
+  fulfilled_completed_at?: number;
   memo?: string;
 }
 
@@ -945,3 +949,4 @@ function parseErrorBody(bodyText: string): {
     message: bodyText,
   };
 }
+

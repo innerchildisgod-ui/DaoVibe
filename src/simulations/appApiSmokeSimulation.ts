@@ -583,7 +583,7 @@ async function runSimulation(): Promise<void> {
     "Expected payment status endpoint to include acknowledgement id"
   );
 
-  engine.startOrderFulfillment({
+  const orderFulfillment = engine.startOrderFulfillment({
     order_reference_id: "app_api_payment_status_order_001",
     payment_intent_id: "app_api_payment_status_intent_001",
     proof_id: "app_api_payment_status_proof_001",
@@ -593,6 +593,21 @@ async function runSimulation(): Promise<void> {
     started_at: 8_030,
     memo: "app API vendor started fulfillment",
   });
+
+  engine.completeOrderFulfillment(
+    {
+      order_reference_id: "app_api_payment_status_order_001",
+      payment_intent_id: "app_api_payment_status_intent_001",
+      proof_id: "app_api_payment_status_proof_001",
+      acknowledgement_id: "app_api_payment_status_ack_001",
+      fulfillment_id: "app_api_order_fulfillment_status_001",
+      completion_id: "app_api_order_fulfillment_completion_status_001",
+      vendor_subject_node_id: "app_api_payment_status_vendor_001",
+      completed_at: 8_040,
+      memo: "app API vendor completed fulfillment",
+    },
+    orderFulfillment.packet.packet_id
+  );
 
   const orderFulfillmentStatusResponse =
     await client.getOrderFulfillmentStatusSummary(
@@ -605,8 +620,8 @@ async function runSimulation(): Promise<void> {
   );
 
   assertSimulation(
-    orderFulfillmentStatusResponse.summary.status === "fulfillment_started",
-    "Expected order fulfillment status endpoint to return fulfillment_started"
+    orderFulfillmentStatusResponse.summary.status === "fulfillment_completed",
+    "Expected order fulfillment status endpoint to return fulfillment_completed"
   );
 
   assertSimulation(
@@ -618,6 +633,17 @@ async function runSimulation(): Promise<void> {
   assertSimulation(
     orderFulfillmentStatusResponse.summary.fulfilled_started_at === 8_030,
     "Expected order fulfillment status endpoint to include started_at"
+  );
+
+  assertSimulation(
+    orderFulfillmentStatusResponse.summary.completion_id ===
+      "app_api_order_fulfillment_completion_status_001",
+    "Expected order fulfillment status endpoint to include completion id"
+  );
+
+  assertSimulation(
+    orderFulfillmentStatusResponse.summary.fulfilled_completed_at === 8_040,
+    "Expected order fulfillment status endpoint to include completed_at"
   );
 
   console.log("app API payment status summary flow passed");
@@ -642,3 +668,4 @@ runSimulation().catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });
+

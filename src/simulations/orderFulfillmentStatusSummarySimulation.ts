@@ -183,13 +183,76 @@ function runSimulation(): void {
     "Expected order fulfillment status to expose fulfillment memo"
   );
 
-  assertSimulation(
-    engine.packetCount() === 4,
-    "Expected full order fulfillment flow to store four packets"
+  console.log("order fulfillment status fulfillment state passed");
+
+  const completion = engine.completeOrderFulfillment(
+    {
+      order_reference_id: "sim_order_fulfillment_status_001",
+      payment_intent_id: "sim_payment_intent_for_order_status_001",
+      proof_id: "sim_payment_proof_for_order_status_001",
+      acknowledgement_id: "sim_payment_ack_for_order_status_001",
+      fulfillment_id: "sim_order_fulfillment_status_started_001",
+      completion_id: "sim_order_fulfillment_status_completed_001",
+      vendor_subject_node_id: "sim_vendor_subject_node_for_order_status_001",
+      completed_at: 10_040,
+      memo: "vendor completed fulfillment",
+    },
+    fulfillment.packet.packet_id
   );
 
-  console.log("order fulfillment status fulfillment state passed");
+  const completionSummary = engine.getOrderFulfillmentStatusSummary(
+    "sim_order_fulfillment_status_001"
+  );
+
+  assertSimulation(
+    completionSummary.status === "fulfillment_completed",
+    "Expected order fulfillment status to derive fulfillment completed state"
+  );
+
+  assertSimulation(
+    completionSummary.fulfillment_packet_id === fulfillment.packet.packet_id,
+    "Expected completed order fulfillment status to keep fulfillment packet id"
+  );
+
+  assertSimulation(
+    completionSummary.completion_packet_id === completion.packet.packet_id,
+    "Expected order fulfillment status to expose completion packet id"
+  );
+
+  assertSimulation(
+    completionSummary.fulfillment_id === "sim_order_fulfillment_status_started_001",
+    "Expected completed order fulfillment status to keep fulfillment id"
+  );
+
+  assertSimulation(
+    completionSummary.completion_id === "sim_order_fulfillment_status_completed_001",
+    "Expected order fulfillment status to expose completion id"
+  );
+
+  assertSimulation(
+    completionSummary.fulfilled_started_at === 10_030,
+    "Expected completed order fulfillment status to keep started_at"
+  );
+
+  assertSimulation(
+    completionSummary.fulfilled_completed_at === 10_040,
+    "Expected order fulfillment status to expose completed_at"
+  );
+
+  assertSimulation(
+    completionSummary.memo === "vendor completed fulfillment",
+    "Expected completed order fulfillment status to expose completion memo"
+  );
+
+  assertSimulation(
+    engine.packetCount() === 5,
+    "Expected full order fulfillment flow to store five packets"
+  );
+
+  console.log("order fulfillment status completion state passed");
   console.log("Order fulfillment status summary simulation succeeded.");
 }
 
 runSimulation();
+
+
