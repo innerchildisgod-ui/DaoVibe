@@ -522,6 +522,69 @@ async function runSimulation(): Promise<void> {
     console.log("app API packet trace flow passed");
     console.log("app API correction vote flow passed");
     console.log("app API KYC summary flow passed");
+
+  const paymentIntent = engine.createPaymentIntent({
+    payment_intent_id: "app_api_payment_status_intent_001",
+    order_reference_id: "app_api_payment_status_order_001",
+    buyer_subject_node_id: "app_api_payment_status_buyer_001",
+    vendor_subject_node_id: "app_api_payment_status_vendor_001",
+    buyer_kyc_claim_id: "app_api_payment_status_buyer_kyc_001",
+    vendor_kyc_claim_id: "app_api_payment_status_vendor_kyc_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 777,
+    created_at: 8_000,
+  });
+
+  const paymentProof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "app_api_payment_status_intent_001",
+      proof_id: "app_api_payment_status_proof_001",
+      external_rail: "upi",
+      external_reference_hash: "app_api_payment_status_hash_001",
+      currency_code: "INR",
+      amount_minor_units: 777,
+      submitted_at: 8_010,
+    },
+    paymentIntent.packet.packet_id
+  );
+
+  engine.acknowledgePayment(
+    {
+      payment_intent_id: "app_api_payment_status_intent_001",
+      proof_id: "app_api_payment_status_proof_001",
+      acknowledgement_id: "app_api_payment_status_ack_001",
+      vendor_subject_node_id: "app_api_payment_status_vendor_001",
+      status: "received",
+      currency_code: "INR",
+      amount_minor_units: 777,
+      acknowledged_at: 8_020,
+    },
+    paymentProof.packet.packet_id
+  );
+
+  const paymentStatusResponse = await client.getPaymentStatusSummary(
+    "app_api_payment_status_intent_001"
+  );
+
+  assertSimulation(
+    paymentStatusResponse.ok === true,
+    "Expected payment status response to be ok"
+  );
+
+  assertSimulation(
+    paymentStatusResponse.summary.status === "vendor_received",
+    "Expected payment status endpoint to return vendor_received"
+  );
+
+  assertSimulation(
+    paymentStatusResponse.summary.acknowledgement_id ===
+      "app_api_payment_status_ack_001",
+    "Expected payment status endpoint to include acknowledgement id"
+  );
+
+  console.log("app API payment status summary flow passed");
+
     console.log("app API KYC summary verifier privacy guard passed");
     console.log("app API invalid correction proposal no-mutation flow passed");
     console.log("app API no-meaning negative flow passed");

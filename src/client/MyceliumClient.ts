@@ -563,6 +563,40 @@ export interface KycClaimSummaryResponse {
   summary: KycClaimSummary;
 }
 
+
+export type PaymentDerivedStatus =
+  | "missing"
+  | "intent_created"
+  | "proof_submitted"
+  | "vendor_received"
+  | "vendor_not_received"
+  | "vendor_needs_review";
+
+export interface PaymentStatusSummary {
+  payment_intent_id: string;
+  status: PaymentDerivedStatus;
+  intent_packet_id?: string;
+  proof_packet_id?: string;
+  acknowledgement_packet_id?: string;
+  order_reference_id?: string;
+  buyer_subject_node_id?: string;
+  vendor_subject_node_id?: string;
+  buyer_kyc_claim_id?: string;
+  vendor_kyc_claim_id?: string;
+  proof_id?: string;
+  acknowledgement_id?: string;
+  external_rail?: string;
+  currency_code?: string;
+  amount_minor_units?: number;
+  acknowledgement_status?: "received" | "not_received" | "needs_review";
+  reason?: string;
+}
+
+export interface PaymentStatusSummaryResponse {
+  ok: true;
+  summary: PaymentStatusSummary;
+}
+
 export class MyceliumClientError extends Error {
   readonly status: number;
   readonly statusText: string;
@@ -683,6 +717,14 @@ export class MyceliumClient {
   ): Promise<KycClaimSummaryResponse> {
     return this.getJson(
       `/kyc/claims/${encodeURIComponent(kycClaimId)}/summary`
+    );
+  }
+
+  getPaymentStatusSummary(
+    paymentIntentId: string
+  ): Promise<PaymentStatusSummaryResponse> {
+    return this.getJson(
+      `/payments/${encodeURIComponent(paymentIntentId)}/status`
     );
   }
 

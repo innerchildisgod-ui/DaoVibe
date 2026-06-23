@@ -428,6 +428,10 @@ export class MyceliumController {
     return getKycClaimSummary(this.engine, kycClaimId);
   }
 
+  getPaymentStatusSummary(paymentIntentId: string) {
+    return this.engine.getPaymentStatusSummary(paymentIntentId);
+  }
+
   getBestMeaning(phraseId: string) {
     const phraseResult = this.getPhraseById(phraseId);
     const correctionPackets = listCorrectionPacketsForPhrase(

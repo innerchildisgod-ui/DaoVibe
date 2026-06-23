@@ -200,6 +200,17 @@ export function registerLanguageRoutes(
     });
   });
 
+  app.get("/payments/:paymentIntentId/status", (req, res) => {
+    try {
+      res.json({
+        ok: true,
+        summary: myceliumController.getPaymentStatusSummary(req.params.paymentIntentId),
+      });
+    } catch (error) {
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
+    }
+  });
+
   app.get("/phrases/:phraseId", (req, res) => {
     const result = myceliumController.getPhraseById(req.params.phraseId);
 
