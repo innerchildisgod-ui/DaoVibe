@@ -33,6 +33,10 @@ import { NodeProfile } from "./network/nodeProfile";
 import { RoutePlan, RoutePlanner } from "./network/routePlanner";
 import { SyncController } from "./sync/SyncController";
 import type { DetailedSyncImportResult } from "./sync/SyncResultSummary";
+import {
+  getPaymentStatusSummary as derivePaymentStatusSummary,
+  PaymentStatusSummary,
+} from "./mycelium/PaymentLookup";
 
 export interface LanguageEngineConfig {
   zone: string;
@@ -458,6 +462,13 @@ export class LanguageEngine {
     });
 
     return this.storeEventOnlyPacket(packet);
+  }
+
+  getPaymentStatusSummary(paymentIntentId: string): PaymentStatusSummary {
+    return derivePaymentStatusSummary(
+      this.exportLedgerPackets(),
+      paymentIntentId
+    );
   }
 
   listKnowledge() {

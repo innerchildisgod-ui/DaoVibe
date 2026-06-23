@@ -49,6 +49,8 @@ import type { ServerConfig } from "../config/env";
 import { createTypeScriptNativeCoreStub } from "../kernel/TypeScriptNativeCoreStub";
 import { TypeScriptDoriBoundaryStub } from "../kernel/orchestrators/DoriBoundary";
 import { createDefaultMultiDeviceSyncPlan } from "../kernel/sync";
+import { getPaymentStatusSummary } from "../mycelium/PaymentLookup";
+
 
 const TEST_ZONE = "unit_test_zone";
 const TEST_AUTHOR = "unit_test_author";
@@ -1667,6 +1669,256 @@ test("payment acknowledgement packets reject invalid status on import", () => {
 
   assert.strictEqual(importResult.rejected_invalid_count, 1);
   assert.strictEqual(engine.packetCount(), 0);
+});
+
+
+test("payment status summary derives missing, intent, proof, and vendor received states", () => {
+  const engine = unitEngine("unit_payment_status_summary_received");
+
+  assert.deepStrictEqual(
+    getPaymentStatusSummary(engine.exportLedgerPackets(), "unit_payment_status_missing"),
+    {
+      payment_intent_id: "unit_payment_status_missing",
+      status: "missing",
+    }
+  );
+
+  const intent = engine.createPaymentIntent({
+    payment_intent_id: "unit_payment_status_intent_001",
+    order_reference_id: "unit_payment_status_order_001",
+    buyer_subject_node_id: "unit_payment_status_buyer_001",
+    vendor_subject_node_id: "unit_payment_status_vendor_001",
+    buyer_kyc_claim_id: "unit_payment_status_buyer_kyc_001",
+    vendor_kyc_claim_id: "unit_payment_status_vendor_kyc_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 12345,
+    created_at: 3_000,
+  });
+
+  const intentSummary = getPaymentStatusSummary(
+    engine.exportLedgerPackets(),
+    "unit_payment_status_intent_001"
+  );
+
+  assert.strictEqual(intentSummary.status, "intent_created");
+  assert.strictEqual(intentSummary.intent_packet_id, intent.packet.packet_id);
+  assert.strictEqual(intentSummary.order_reference_id, "unit_payment_status_order_001");
+  assert.strictEqual(intentSummary.currency_code, "INR");
+  assert.strictEqual(intentSummary.amount_minor_units, 12345);
+
+  const proof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_payment_status_intent_001",
+      proof_id: "unit_payment_status_proof_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_payment_status_external_hash_001",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      submitted_at: 3_010,
+    },
+    intent.packet.packet_id
+  );
+
+  const proofSummary = getPaymentStatusSummary(
+    engine.exportLedgerPackets(),
+    "unit_payment_status_intent_001"
+  );
+
+  assert.strictEqual(proofSummary.status, "proof_submitted");
+  assert.strictEqual(proofSummary.proof_packet_id, proof.packet.packet_id);
+  assert.strictEqual(proofSummary.proof_id, "unit_payment_status_proof_001");
+
+  const acknowledgement = engine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_payment_status_intent_001",
+      proof_id: "unit_payment_status_proof_001",
+      acknowledgement_id: "unit_payment_status_ack_001",
+      vendor_subject_node_id: "unit_payment_status_vendor_001",
+      status: "received",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      acknowledged_at: 3_020,
+      reason: "received by vendor",
+    },
+    proof.packet.packet_id
+  );
+
+  const acknowledgementSummary = getPaymentStatusSummary(
+    engine.exportLedgerPackets(),
+    "unit_payment_status_intent_001"
+  );
+
+  assert.strictEqual(acknowledgementSummary.status, "vendor_received");
+  assert.strictEqual(
+    acknowledgementSummary.acknowledgement_packet_id,
+    acknowledgement.packet.packet_id
+  );
+  assert.strictEqual(
+    acknowledgementSummary.acknowledgement_id,
+    "unit_payment_status_ack_001"
+  );
+  assert.strictEqual(acknowledgementSummary.acknowledgement_status, "received");
+  assert.strictEqual(acknowledgementSummary.reason, "received by vendor");
+});
+
+test("payment status summary derives not received and needs review acknowledgements", () => {
+  const notReceivedEngine = unitEngine("unit_payment_status_summary_not_received");
+
+  const notReceivedIntent = notReceivedEngine.createPaymentIntent({
+    payment_intent_id: "unit_payment_status_not_received_001",
+    order_reference_id: "unit_payment_status_not_received_order_001",
+    buyer_subject_node_id: "unit_payment_status_not_received_buyer_001",
+    vendor_subject_node_id: "unit_payment_status_not_received_vendor_001",
+    buyer_kyc_claim_id: "unit_payment_status_not_received_buyer_kyc_001",
+    vendor_kyc_claim_id: "unit_payment_status_not_received_vendor_kyc_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 100,
+    created_at: 4_000,
+  });
+
+  const notReceivedProof = notReceivedEngine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_payment_status_not_received_001",
+      proof_id: "unit_payment_status_not_received_proof_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_payment_status_not_received_hash_001",
+      currency_code: "INR",
+      amount_minor_units: 100,
+      submitted_at: 4_010,
+    },
+    notReceivedIntent.packet.packet_id
+  );
+
+  notReceivedEngine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_payment_status_not_received_001",
+      proof_id: "unit_payment_status_not_received_proof_001",
+      acknowledgement_id: "unit_payment_status_not_received_ack_001",
+      vendor_subject_node_id: "unit_payment_status_not_received_vendor_001",
+      status: "not_received",
+      currency_code: "INR",
+      amount_minor_units: 100,
+      acknowledged_at: 4_020,
+    },
+    notReceivedProof.packet.packet_id
+  );
+
+  assert.strictEqual(
+    getPaymentStatusSummary(
+      notReceivedEngine.exportLedgerPackets(),
+      "unit_payment_status_not_received_001"
+    ).status,
+    "vendor_not_received"
+  );
+
+  const reviewEngine = unitEngine("unit_payment_status_summary_needs_review");
+
+  const reviewIntent = reviewEngine.createPaymentIntent({
+    payment_intent_id: "unit_payment_status_needs_review_001",
+    order_reference_id: "unit_payment_status_needs_review_order_001",
+    buyer_subject_node_id: "unit_payment_status_needs_review_buyer_001",
+    vendor_subject_node_id: "unit_payment_status_needs_review_vendor_001",
+    buyer_kyc_claim_id: "unit_payment_status_needs_review_buyer_kyc_001",
+    vendor_kyc_claim_id: "unit_payment_status_needs_review_vendor_kyc_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 100,
+    created_at: 5_000,
+  });
+
+  const reviewProof = reviewEngine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_payment_status_needs_review_001",
+      proof_id: "unit_payment_status_needs_review_proof_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_payment_status_needs_review_hash_001",
+      currency_code: "INR",
+      amount_minor_units: 100,
+      submitted_at: 5_010,
+    },
+    reviewIntent.packet.packet_id
+  );
+
+  reviewEngine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_payment_status_needs_review_001",
+      proof_id: "unit_payment_status_needs_review_proof_001",
+      acknowledgement_id: "unit_payment_status_needs_review_ack_001",
+      vendor_subject_node_id: "unit_payment_status_needs_review_vendor_001",
+      status: "needs_review",
+      currency_code: "INR",
+      amount_minor_units: 100,
+      acknowledged_at: 5_020,
+    },
+    reviewProof.packet.packet_id
+  );
+
+  assert.strictEqual(
+    getPaymentStatusSummary(
+      reviewEngine.exportLedgerPackets(),
+      "unit_payment_status_needs_review_001"
+    ).status,
+    "vendor_needs_review"
+  );
+});
+
+
+test("engine payment status summary reads derived payment state", () => {
+  const engine = unitEngine("unit_engine_payment_status_summary");
+
+  const intent = engine.createPaymentIntent({
+    payment_intent_id: "unit_engine_payment_status_intent_001",
+    order_reference_id: "unit_engine_payment_status_order_001",
+    buyer_subject_node_id: "unit_engine_payment_status_buyer_001",
+    vendor_subject_node_id: "unit_engine_payment_status_vendor_001",
+    buyer_kyc_claim_id: "unit_engine_payment_status_buyer_kyc_001",
+    vendor_kyc_claim_id: "unit_engine_payment_status_vendor_kyc_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 999,
+    created_at: 6_000,
+  });
+
+  const proof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_engine_payment_status_intent_001",
+      proof_id: "unit_engine_payment_status_proof_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_engine_payment_status_hash_001",
+      currency_code: "INR",
+      amount_minor_units: 999,
+      submitted_at: 6_010,
+    },
+    intent.packet.packet_id
+  );
+
+  engine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_engine_payment_status_intent_001",
+      proof_id: "unit_engine_payment_status_proof_001",
+      acknowledgement_id: "unit_engine_payment_status_ack_001",
+      vendor_subject_node_id: "unit_engine_payment_status_vendor_001",
+      status: "needs_review",
+      currency_code: "INR",
+      amount_minor_units: 999,
+      acknowledged_at: 6_020,
+      reason: "vendor needs review",
+    },
+    proof.packet.packet_id
+  );
+
+  const summary = engine.getPaymentStatusSummary(
+    "unit_engine_payment_status_intent_001"
+  );
+
+  assert.strictEqual(summary.status, "vendor_needs_review");
+  assert.strictEqual(summary.intent_packet_id, intent.packet.packet_id);
+  assert.strictEqual(summary.proof_packet_id, proof.packet.packet_id);
+  assert.strictEqual(summary.acknowledgement_id, "unit_engine_payment_status_ack_001");
+  assert.strictEqual(summary.acknowledgement_status, "needs_review");
+  assert.strictEqual(summary.reason, "vendor needs review");
 });
 
 test("ledger export returns durable packets without mutating count", () => {
