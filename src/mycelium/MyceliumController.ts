@@ -9,44 +9,13 @@ import type {
   PeerSyncCursor,
   SQLiteStore,
 } from "../storage/sqliteStore";
-import type {
-  MeaningCorrectionProposedPayload,
-  MeaningCorrectionTombstoneProposedPayload,
-  MeaningCorrectionTombstoneVotePayload,
-  MeaningCorrectionVotePayload,
-  MeaningProposalPayload,
-  MeaningVotePayload,
-  PhraseObservedPayload,
-  SafetyLabelPayload,
-} from "../protocol/packetTypes";
-import type { SafetyLabel } from "../safety/safetyLabels";
-import {
-  findPhraseById,
-  listCorrectionCleanupCandidatesForPhrase,
-  listCorrectionHistoryForPhrase,
-  listCorrectionsForPhrase,
-  listCorrectionPacketsForPhrase,
-  listKnowledgeWithEffectiveMeaningVotes,
-  listMeaningConfidencePacketsForPhrase,
-  searchPhrases,
-  selectBestMeaning,
-} from "./PhraseLookup";
-import {
-  buildBestMeaningExplanation,
-  type BestMeaningExplanationResult,
-} from "./MeaningExplanation";
-import { getPacketTraceForPhrase } from "./PacketTrace";
 import {
   MYCELIUM_API_VERSION,
   MYCELIUM_APP_CONTRACT_VERSION,
   MYCELIUM_PROTOCOL_VERSION,
 } from "./MyceliumVersions";
-import { listTombstoneExecutionPreviewForPhrase } from "./TombstoneExecutionPreview";
-import {
-  listCorrectionTombstonesForPhrase,
-  listTombstonePacketsForPhrase,
-} from "./TombstoneLookup";
 import { getKycClaimSummary } from "./KycLookup";
+import { LanguageController } from "./LanguageController";
 
 type LocalNodeIdentityUpdate = {
   display_name?: string;
@@ -66,15 +35,6 @@ type LocalNodeStore = Pick<
   | "listAppliedSchemaMigrations"
   | "listPeerSyncCursors"
 >;
-
-type BestMeaningExplanationControllerResult =
-  | {
-      found: false;
-      phrase_id: string;
-    }
-  | ({
-      found: true;
-    } & BestMeaningExplanationResult);
 
 export interface MyceliumRuntimeOptions {
   tombstoneExecutionEnabled?: boolean;
@@ -167,11 +127,14 @@ export interface MyceliumNodeDiagnostics {
 
 export class MyceliumController {
   private readonly startedAtMs = Date.now();
+  private readonly languageController: LanguageController;
 
   constructor(
     private readonly engine: LanguageEngine,
     private readonly runtimeOptions: MyceliumRuntimeOptions = {}
-  ) {}
+  ) {
+    this.languageController = new LanguageController(engine, runtimeOptions);
+  }
 
   getLocalNodeIdentity(): LocalNodeIdentity {
     return this.localNodeIdentityStore().getOrCreateLocalNodeIdentity();
@@ -315,113 +278,98 @@ export class MyceliumController {
     };
   }
 
-  observePhrase(
-    payload: PhraseObservedPayload,
-    safetyLabel?: SafetyLabel
+  observePhrase(...args: Parameters<LanguageController["observePhrase"]>) {
+    return this.languageController.observePhrase(...args);
+  }
+
+  proposeMeaning(...args: Parameters<LanguageController["proposeMeaning"]>) {
+    return this.languageController.proposeMeaning(...args);
+  }
+
+  voteMeaning(...args: Parameters<LanguageController["voteMeaning"]>) {
+    return this.languageController.voteMeaning(...args);
+  }
+
+  applySafetyLabel(
+    ...args: Parameters<LanguageController["applySafetyLabel"]>
   ) {
-    return this.engine.observePhrase(payload, safetyLabel);
-  }
-
-  proposeMeaning(payload: MeaningProposalPayload, parent?: string) {
-    return this.engine.proposeMeaning(payload, parent);
-  }
-
-  voteMeaning(payload: MeaningVotePayload, parent?: string) {
-    return this.engine.voteMeaning(payload, parent);
-  }
-
-  applySafetyLabel(payload: SafetyLabelPayload, parent?: string) {
-    return this.engine.applySafetyLabel(payload, parent);
+    return this.languageController.applySafetyLabel(...args);
   }
 
   proposeMeaningCorrection(
-    payload: MeaningCorrectionProposedPayload,
-    parent?: string
+    ...args: Parameters<LanguageController["proposeMeaningCorrection"]>
   ) {
-    return this.engine.proposeMeaningCorrection(payload, parent);
+    return this.languageController.proposeMeaningCorrection(...args);
   }
 
-  voteMeaningCorrection(payload: MeaningCorrectionVotePayload, parent?: string) {
-    return this.engine.voteMeaningCorrection(payload, parent);
+  voteMeaningCorrection(
+    ...args: Parameters<LanguageController["voteMeaningCorrection"]>
+  ) {
+    return this.languageController.voteMeaningCorrection(...args);
   }
 
   proposeMeaningCorrectionTombstone(
-    payload: MeaningCorrectionTombstoneProposedPayload,
-    parent?: string
+    ...args: Parameters<LanguageController["proposeMeaningCorrectionTombstone"]>
   ) {
-    return this.engine.proposeMeaningCorrectionTombstone(payload, parent);
+    return this.languageController.proposeMeaningCorrectionTombstone(...args);
   }
 
   voteMeaningCorrectionTombstone(
-    payload: MeaningCorrectionTombstoneVotePayload,
-    parent?: string
+    ...args: Parameters<LanguageController["voteMeaningCorrectionTombstone"]>
   ) {
-    return this.engine.voteMeaningCorrectionTombstone(payload, parent);
+    return this.languageController.voteMeaningCorrectionTombstone(...args);
   }
 
   listKnowledge() {
-    return listKnowledgeWithEffectiveMeaningVotes(this.engine);
+    return this.languageController.listKnowledge();
   }
 
   lookupPhrase(query: string) {
-    const normalizedQuery = query.toLowerCase();
-
-    return this.listKnowledge()
-      .filter(
-        (phrase) =>
-          phrase.surface_text?.toLowerCase().includes(normalizedQuery) ||
-          phrase.phonetic_hint?.toLowerCase().includes(normalizedQuery) ||
-          phrase.language_hint?.toLowerCase().includes(normalizedQuery)
-      )
-      .map((phrase) => ({
-        phrase_id: phrase.phrase_id,
-        surface_text: phrase.surface_text,
-        phonetic_hint: phrase.phonetic_hint,
-        language_hint: phrase.language_hint,
-        safety_label: phrase.safety_label,
-        meanings: phrase.meanings.map((meaning) => ({
-          meaning_id: meaning.meaning_id,
-          reference_meaning: meaning.reference_meaning,
-          context: meaning.context,
-          confidence: meaning.confidence,
-          confirms: meaning.confirms,
-          rejects: meaning.rejects,
-        })),
-      }));
+    return this.languageController.lookupPhrase(query);
   }
 
   searchPhrases(query: string, limit?: number) {
-    return searchPhrases(this.engine, query, limit);
+    return this.languageController.searchPhrases(query, limit);
   }
 
   getPhraseById(phraseId: string) {
-    return findPhraseById(this.engine, phraseId);
+    return this.languageController.getPhraseById(phraseId);
   }
 
   getPhraseCorrections(phraseId: string) {
-    return listCorrectionsForPhrase(this.engine, phraseId);
+    return this.languageController.getPhraseCorrections(phraseId);
   }
 
   getPhraseCorrectionHistory(phraseId: string, limit?: number) {
-    return listCorrectionHistoryForPhrase(this.engine, phraseId, limit);
+    return this.languageController.getPhraseCorrectionHistory(phraseId, limit);
   }
 
   getPhraseCorrectionCleanupCandidates(phraseId: string) {
-    return listCorrectionCleanupCandidatesForPhrase(this.engine, phraseId);
+    return this.languageController.getPhraseCorrectionCleanupCandidates(
+      phraseId
+    );
   }
 
   getCorrectionTombstonesForPhrase(phraseId: string) {
-    return listCorrectionTombstonesForPhrase(this.engine, phraseId);
+    return this.languageController.getCorrectionTombstonesForPhrase(phraseId);
   }
 
   getTombstoneExecutionPreviewForPhrase(phraseId: string) {
-    return listTombstoneExecutionPreviewForPhrase(this.engine, phraseId, {
-      tombstoneExecutionEnabled: this.tombstoneExecutionEnabled(),
-    });
+    return this.languageController.getTombstoneExecutionPreviewForPhrase(
+      phraseId
+    );
   }
 
   getPhrasePacketTrace(phraseId: string) {
-    return getPacketTraceForPhrase(this.engine, phraseId);
+    return this.languageController.getPhrasePacketTrace(phraseId);
+  }
+
+  getBestMeaning(phraseId: string) {
+    return this.languageController.getBestMeaning(phraseId);
+  }
+
+  getBestMeaningExplanation(phraseId: string) {
+    return this.languageController.getBestMeaningExplanation(phraseId);
   }
 
   getKycClaimSummary(kycClaimId: string) {
@@ -434,63 +382,6 @@ export class MyceliumController {
 
   getOrderFulfillmentStatusSummary(orderReferenceId: string) {
     return this.engine.getOrderFulfillmentStatusSummary(orderReferenceId);
-  }
-
-  getBestMeaning(phraseId: string) {
-    const phraseResult = this.getPhraseById(phraseId);
-    const correctionPackets = listCorrectionPacketsForPhrase(
-      this.engine,
-      phraseResult.phrase_id
-    );
-    const meaningConfidencePackets = listMeaningConfidencePacketsForPhrase(
-      this.engine,
-      phraseResult.phrase_id
-    );
-    const tombstoneExecutionEnabled = this.tombstoneExecutionEnabled();
-    const tombstonePackets = tombstoneExecutionEnabled
-      ? listTombstonePacketsForPhrase(this.engine, phraseResult.phrase_id)
-      : [];
-
-    return selectBestMeaning(
-      phraseResult.phrase,
-      phraseResult.phrase_id,
-      correctionPackets,
-      meaningConfidencePackets,
-      tombstonePackets,
-      {
-        tombstoneExecutionEnabled,
-      }
-    );
-  }
-
-  getBestMeaningExplanation(
-    phraseId: string
-  ): BestMeaningExplanationControllerResult {
-    const phraseResult = this.getPhraseById(phraseId);
-
-    if (!phraseResult.found) {
-      return {
-        found: false,
-        phrase_id: phraseResult.phrase_id,
-      };
-    }
-
-    const bestMeaningResult = this.getBestMeaning(phraseResult.phrase_id);
-    const correctionsResult = this.getPhraseCorrections(phraseResult.phrase_id);
-    const tombstonesResult = this.getCorrectionTombstonesForPhrase(
-      phraseResult.phrase_id
-    );
-
-    return {
-      found: true,
-      ...buildBestMeaningExplanation({
-        phraseId: phraseResult.phrase_id,
-        phrase: phraseResult.phrase,
-        bestMeaningResult,
-        corrections: correctionsResult.corrections,
-        tombstones: tombstonesResult.tombstones,
-      }),
-    };
   }
 
   listNodes() {
@@ -521,8 +412,5 @@ export class MyceliumController {
     return (this.engine as unknown as { sqliteStore: LocalNodeStore })
       .sqliteStore;
   }
-
-  private tombstoneExecutionEnabled(): boolean {
-    return this.runtimeOptions.tombstoneExecutionEnabled === true;
-  }
 }
+
