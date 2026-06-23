@@ -4,8 +4,6 @@ import type {
   LocalNodeSettings,
   LocalNodeSettingsUpdate,
   LocalNodeIdentity,
-  LocalKycVerifierAlias,
-  LocalKycVerifierAliasInput,
   PeerSyncCursor,
   SQLiteStore,
 } from "../storage/sqliteStore";
@@ -14,7 +12,7 @@ import {
   MYCELIUM_APP_CONTRACT_VERSION,
   MYCELIUM_PROTOCOL_VERSION,
 } from "./MyceliumVersions";
-import { getKycClaimSummary } from "./KycLookup";
+import { KycController } from "./KycController";
 import { LanguageController } from "./LanguageController";
 
 type LocalNodeIdentityUpdate = {
@@ -28,9 +26,6 @@ type LocalNodeStore = Pick<
   | "updateLocalNodeIdentity"
   | "getOrCreateLocalNodeSettings"
   | "updateLocalNodeSettings"
-  | "getOrCreateLocalKycVerifierAlias"
-  | "getLocalKycVerifierAliasByNodeId"
-  | "listLocalKycVerifierAliases"
   | "getPacketCount"
   | "listAppliedSchemaMigrations"
   | "listPeerSyncCursors"
@@ -128,12 +123,14 @@ export interface MyceliumNodeDiagnostics {
 export class MyceliumController {
   private readonly startedAtMs = Date.now();
   private readonly languageController: LanguageController;
+  private readonly kycController: KycController;
 
   constructor(
     private readonly engine: LanguageEngine,
     private readonly runtimeOptions: MyceliumRuntimeOptions = {}
   ) {
     this.languageController = new LanguageController(engine, runtimeOptions);
+    this.kycController = new KycController(engine);
   }
 
   getLocalNodeIdentity(): LocalNodeIdentity {
@@ -157,21 +154,19 @@ export class MyceliumController {
   }
 
   getOrCreateLocalKycVerifierAlias(
-    input: LocalKycVerifierAliasInput
-  ): LocalKycVerifierAlias {
-    return this.localNodeStore().getOrCreateLocalKycVerifierAlias(input);
+    ...args: Parameters<KycController["getOrCreateLocalKycVerifierAlias"]>
+  ) {
+    return this.kycController.getOrCreateLocalKycVerifierAlias(...args);
   }
 
   getLocalKycVerifierAliasByNodeId(
-    verifierNodeId: string
-  ): LocalKycVerifierAlias | undefined {
-    return this.localNodeStore().getLocalKycVerifierAliasByNodeId(
-      verifierNodeId
-    );
+    ...args: Parameters<KycController["getLocalKycVerifierAliasByNodeId"]>
+  ) {
+    return this.kycController.getLocalKycVerifierAliasByNodeId(...args);
   }
 
-  listLocalKycVerifierAliases(): LocalKycVerifierAlias[] {
-    return this.localNodeStore().listLocalKycVerifierAliases();
+  listLocalKycVerifierAliases() {
+    return this.kycController.listLocalKycVerifierAliases();
   }
 
   getNodeStatus(): MyceliumNodeStatus {
@@ -373,7 +368,7 @@ export class MyceliumController {
   }
 
   getKycClaimSummary(kycClaimId: string) {
-    return getKycClaimSummary(this.engine, kycClaimId);
+    return this.kycController.getKycClaimSummary(kycClaimId);
   }
 
   getPaymentStatusSummary(paymentIntentId: string) {
@@ -413,3 +408,4 @@ export class MyceliumController {
       .sqliteStore;
   }
 }
+
