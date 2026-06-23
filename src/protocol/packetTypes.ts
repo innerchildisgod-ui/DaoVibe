@@ -161,7 +161,7 @@ export interface KycAiAssessmentCompletedPayload {
 
 export interface KycKnownVerifierInvitedPayload {
   kyc_claim_id: string;
-  verifier_node_id: string;
+  verifier_alias_id: string;
   invite_id: string;
   evidence_bundle_hash: string;
   expires_at: number;
@@ -170,7 +170,7 @@ export interface KycKnownVerifierInvitedPayload {
 export interface KycKnownVerifierVotePayload {
   kyc_claim_id: string;
   invite_id: string;
-  verifier_node_id: string;
+  verifier_alias_id: string;
   vote: KycKnownVerifierVoteValue;
   reason?: string;
 }

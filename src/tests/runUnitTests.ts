@@ -1075,7 +1075,7 @@ test("KYC event-only packets are stored without knowledge mutation", () => {
   const invite = engine.inviteKycKnownVerifier(
     {
       kyc_claim_id: "unit_kyc_claim_001",
-      verifier_node_id: "unit_verified_friend_node_001",
+      verifier_alias_id: "unit_verified_friend_node_001",
       invite_id: "unit_kyc_invite_001",
       evidence_bundle_hash: "unit_minimized_evidence_bundle_hash",
       expires_at: 2_000,
@@ -1087,7 +1087,7 @@ test("KYC event-only packets are stored without knowledge mutation", () => {
     {
       kyc_claim_id: "unit_kyc_claim_001",
       invite_id: "unit_kyc_invite_001",
-      verifier_node_id: "unit_verified_friend_node_001",
+      verifier_alias_id: "unit_verified_friend_node_001",
       vote: "same_person",
       reason: "known person confirms match",
     },
@@ -1176,7 +1176,7 @@ test("KYC claim summary reports current claim state", () => {
   const invite = engine.inviteKycKnownVerifier(
     {
       kyc_claim_id: claimId,
-      verifier_node_id: "unit_known_verifier_summary_001",
+      verifier_alias_id: "unit_verifier_alias_summary_001",
       invite_id: "unit_kyc_invite_summary_001",
       evidence_bundle_hash: "unit_minimized_evidence_bundle_hash_summary",
       expires_at: 2_000,
@@ -1188,7 +1188,7 @@ test("KYC claim summary reports current claim state", () => {
     {
       kyc_claim_id: claimId,
       invite_id: "unit_kyc_invite_summary_001",
-      verifier_node_id: "unit_known_verifier_summary_001",
+      verifier_alias_id: "unit_verifier_alias_summary_001",
       vote: "unsure",
       reason: "old ID photo",
     },
@@ -1199,7 +1199,7 @@ test("KYC claim summary reports current claim state", () => {
     {
       kyc_claim_id: claimId,
       invite_id: "unit_kyc_invite_summary_001",
-      verifier_node_id: "unit_known_verifier_summary_001",
+      verifier_alias_id: "unit_verifier_alias_summary_001",
       vote: "same_person",
       reason: "video confirms identity continuity",
     },
@@ -1265,7 +1265,7 @@ test("KYC claim summary reports current claim state", () => {
   const serializedSummary = JSON.stringify(summary);
 
   assert(
-    !serializedSummary.includes("unit_known_verifier_summary_001"),
+    !serializedSummary.includes("unit_verifier_alias_summary_001"),
     "KYC claim summary hides known verifier identifiers"
   );
   assert(

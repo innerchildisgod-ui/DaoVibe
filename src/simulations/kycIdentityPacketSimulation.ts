@@ -78,7 +78,7 @@ function runSimulation(): void {
   const invite = nodeA.inviteKycKnownVerifier(
     {
       kyc_claim_id: "sim_kyc_claim_001",
-      verifier_node_id: "sim_known_verified_person_001",
+      verifier_alias_id: "sim_known_verifier_alias_001",
       invite_id: "sim_kyc_invite_001",
       evidence_bundle_hash: "sim_minimized_evidence_bundle_hash",
       expires_at: 2_000,
@@ -90,7 +90,7 @@ function runSimulation(): void {
     {
       kyc_claim_id: "sim_kyc_claim_001",
       invite_id: "sim_kyc_invite_001",
-      verifier_node_id: "sim_known_verified_person_001",
+      verifier_alias_id: "sim_known_verifier_alias_001",
       vote: "same_person",
       reason: "known verifier confirms identity continuity",
     },
@@ -184,6 +184,19 @@ function runSimulation(): void {
 
   console.log("KYC identity packet creation passed");
   console.log("KYC minimized evidence privacy flag passed");
+  console.log("KYC verifier alias packet privacy passed");
+  const serializedKycLedger = JSON.stringify(nodeA.exportLedgerPackets());
+
+  assertSimulation(
+    serializedKycLedger.includes("verifier_alias_id"),
+    "Expected synced KYC verifier packets to use verifier_alias_id"
+  );
+
+  assertSimulation(
+    !serializedKycLedger.includes("verifier_node_id"),
+    "Expected synced KYC verifier packets to avoid verifier_node_id"
+  );
+
   console.log("KYC ledger export passed");
   console.log("KYC ledger import passed");
   console.log("KYC duplicate import protection passed");

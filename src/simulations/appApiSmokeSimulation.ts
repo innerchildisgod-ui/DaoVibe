@@ -196,7 +196,7 @@ async function runSimulation(): Promise<void> {
     const kycInvite = engine.inviteKycKnownVerifier(
       {
         kyc_claim_id: kycClaimId,
-        verifier_node_id: "app_api_smoke_known_verifier_001",
+        verifier_alias_id: "app_api_smoke_verifier_alias_001",
         invite_id: "app_api_smoke_kyc_invite_001",
         evidence_bundle_hash: "app_api_smoke_minimized_evidence_bundle_hash",
         expires_at: 2_000,
@@ -208,7 +208,7 @@ async function runSimulation(): Promise<void> {
       {
         kyc_claim_id: kycClaimId,
         invite_id: "app_api_smoke_kyc_invite_001",
-        verifier_node_id: "app_api_smoke_known_verifier_001",
+        verifier_alias_id: "app_api_smoke_verifier_alias_001",
         vote: "same_person",
         reason: "known verifier confirms identity continuity",
       },
@@ -264,8 +264,8 @@ async function runSimulation(): Promise<void> {
     const serializedKycSummary = JSON.stringify(kycSummary);
 
     assertSimulation(
-      !serializedKycSummary.includes("app_api_smoke_known_verifier_001"),
-      "Expected KYC summary API to hide known verifier node id"
+      !serializedKycSummary.includes("app_api_smoke_verifier_alias_001"),
+      "Expected KYC summary API to hide known verifier alias id"
     );
 
     assertSimulation(

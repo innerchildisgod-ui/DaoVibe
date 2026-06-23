@@ -174,7 +174,7 @@ function countLatestKnownVerifierVotes(
   for (const packet of packets.sort(comparePacketsAscending)) {
     const key = JSON.stringify([
       packet.payload.invite_id,
-      packet.payload.verifier_node_id,
+      packet.payload.verifier_alias_id,
     ]);
     const current = latestVoteByInviteVerifier.get(key);
 
@@ -221,7 +221,7 @@ function uniqueInviteCount(
 ): number {
   return new Set(
     packets.map((packet) =>
-      JSON.stringify([packet.payload.invite_id, packet.payload.verifier_node_id])
+      JSON.stringify([packet.payload.invite_id, packet.payload.verifier_alias_id])
     )
   ).size;
 }
@@ -277,7 +277,7 @@ function isKycKnownVerifierInvitePacket(
   return (
     packet.packet_type === "kyc_known_verifier_invited" &&
     isNonEmptyString(payload.kyc_claim_id) &&
-    isNonEmptyString(payload.verifier_node_id) &&
+    isNonEmptyString(payload.verifier_alias_id) &&
     isNonEmptyString(payload.invite_id) &&
     isNonEmptyString(payload.evidence_bundle_hash) &&
     isFiniteNumber(payload.expires_at)
@@ -293,7 +293,7 @@ function isKycKnownVerifierVotePacket(
     packet.packet_type === "kyc_known_verifier_vote" &&
     isNonEmptyString(payload.kyc_claim_id) &&
     isNonEmptyString(payload.invite_id) &&
-    isNonEmptyString(payload.verifier_node_id) &&
+    isNonEmptyString(payload.verifier_alias_id) &&
     isKycKnownVerifierVote(payload.vote)
   );
 }
