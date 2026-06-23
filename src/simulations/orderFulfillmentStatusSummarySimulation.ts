@@ -254,5 +254,3 @@ function runSimulation(): void {
 }
 
 runSimulation();
-
-

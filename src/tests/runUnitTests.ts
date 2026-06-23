@@ -3840,5 +3840,3 @@ test("sync import rejects stale cursor batch without storing new packets", async
 });
 
 void runTests();
-
-

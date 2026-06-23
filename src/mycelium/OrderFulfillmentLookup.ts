@@ -274,4 +274,3 @@ export function getOrderFulfillmentStatusSummary(
     memo: latestCompletion?.payload.memo ?? latestFulfillment?.payload.memo,
   };
 }
-
