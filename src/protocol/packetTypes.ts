@@ -20,6 +20,7 @@ export type PacketType =
   | "payment_proof_submitted"
   | "payment_acknowledged"
   | "order_fulfillment_started"
+  | "order_fulfillment_completed"
   | "safety_label"
   | "symbol_sample";
 
@@ -258,5 +259,17 @@ export interface OrderFulfillmentStartedPayload {
   fulfillment_id: string;
   vendor_subject_node_id: string;
   started_at: number;
+  memo?: string;
+}
+
+export interface OrderFulfillmentCompletedPayload {
+  order_reference_id: string;
+  payment_intent_id: string;
+  proof_id: string;
+  acknowledgement_id: string;
+  fulfillment_id: string;
+  completion_id: string;
+  vendor_subject_node_id: string;
+  completed_at: number;
   memo?: string;
 }

@@ -1761,6 +1761,113 @@ test("order fulfillment started packets reject invalid started_at on import", ()
   assert.strictEqual(engine.packetCount(), 0);
 });
 
+test("order fulfillment completed packets are event-only vendor responses", () => {
+  const engine = unitEngine("unit_order_fulfillment_completed_event_only");
+
+  const intent = engine.createPaymentIntent({
+    payment_intent_id: "unit_payment_intent_for_completion_001",
+    order_reference_id: "unit_order_for_completion_001",
+    buyer_subject_node_id: "unit_buyer_subject_node_for_completion_001",
+    vendor_subject_node_id: "unit_vendor_subject_node_for_completion_001",
+    buyer_kyc_claim_id: "unit_buyer_kyc_claim_for_completion_001",
+    vendor_kyc_claim_id: "unit_vendor_kyc_claim_for_completion_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 12345,
+    created_at: 11_000,
+  });
+
+  const proof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_payment_intent_for_completion_001",
+      proof_id: "unit_payment_proof_for_completion_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_external_payment_reference_hash_for_completion_001",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      submitted_at: 11_010,
+    },
+    intent.packet.packet_id
+  );
+
+  const acknowledgement = engine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_payment_intent_for_completion_001",
+      proof_id: "unit_payment_proof_for_completion_001",
+      acknowledgement_id: "unit_payment_ack_for_completion_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_completion_001",
+      status: "received",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      acknowledged_at: 11_020,
+    },
+    proof.packet.packet_id
+  );
+
+  const fulfillment = engine.startOrderFulfillment(
+    {
+      order_reference_id: "unit_order_for_completion_001",
+      payment_intent_id: "unit_payment_intent_for_completion_001",
+      proof_id: "unit_payment_proof_for_completion_001",
+      acknowledgement_id: "unit_payment_ack_for_completion_001",
+      fulfillment_id: "unit_order_fulfillment_for_completion_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_completion_001",
+      started_at: 11_030,
+    },
+    acknowledgement.packet.packet_id
+  );
+
+  const completion = engine.completeOrderFulfillment(
+    {
+      order_reference_id: "unit_order_for_completion_001",
+      payment_intent_id: "unit_payment_intent_for_completion_001",
+      proof_id: "unit_payment_proof_for_completion_001",
+      acknowledgement_id: "unit_payment_ack_for_completion_001",
+      fulfillment_id: "unit_order_fulfillment_for_completion_001",
+      completion_id: "unit_order_fulfillment_completion_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_completion_001",
+      completed_at: 11_040,
+      memo: "vendor completed fulfillment",
+    },
+    fulfillment.packet.packet_id
+  );
+
+  assert.strictEqual(completion.packet.packet_type, "order_fulfillment_completed");
+  assert.strictEqual(completion.packet.parent, fulfillment.packet.packet_id);
+  assert.strictEqual(
+    completion.packet.payload.completion_id,
+    "unit_order_fulfillment_completion_001"
+  );
+  assert.strictEqual(completion.packet.payload.completed_at, 11_040);
+  assert.strictEqual(engine.packetCount(), 5);
+  assert.strictEqual(engine.listKnowledge().length, 0);
+});
+
+test("order fulfillment completed packets reject invalid completed_at on import", () => {
+  const engine = unitEngine("unit_order_fulfillment_completed_invalid_completed_at");
+
+  const invalidCompletion = createPacket({
+    packet_type: "order_fulfillment_completed",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      order_reference_id: "unit_order_for_invalid_completion_001",
+      payment_intent_id: "unit_payment_intent_for_invalid_completion_001",
+      proof_id: "unit_payment_proof_for_invalid_completion_001",
+      acknowledgement_id: "unit_payment_ack_for_invalid_completion_001",
+      fulfillment_id: "unit_order_fulfillment_for_invalid_completion_001",
+      completion_id: "unit_order_fulfillment_completion_invalid_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_invalid_completion_001",
+      completed_at: 0,
+    },
+  });
+
+  const importResult = engine.importLedgerPackets([invalidCompletion]);
+
+  assert.strictEqual(importResult.rejected_invalid_count, 1);
+  assert.strictEqual(engine.packetCount(), 0);
+});
+
 test("order fulfillment status summary derives full flow", () => {
   const engine = unitEngine("unit_order_fulfillment_status_summary");
 
