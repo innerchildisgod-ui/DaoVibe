@@ -1521,6 +1521,75 @@ test("payment intent packets reject invalid rail and amount on import", () => {
   assert.strictEqual(engine.packetCount(), 0);
 });
 
+
+test("payment proof packets store hashed external references only", () => {
+  const engine = unitEngine("unit_payment_proof_event_only");
+
+  const intent = engine.createPaymentIntent({
+    payment_intent_id: "unit_payment_intent_for_proof_001",
+    order_reference_id: "unit_order_for_proof_001",
+    buyer_subject_node_id: "unit_buyer_subject_node_for_proof_001",
+    vendor_subject_node_id: "unit_vendor_subject_node_for_proof_001",
+    buyer_kyc_claim_id: "unit_buyer_kyc_claim_for_proof_001",
+    vendor_kyc_claim_id: "unit_vendor_kyc_claim_for_proof_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 12345,
+    created_at: 1_000,
+  });
+
+  const proof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_payment_intent_for_proof_001",
+      proof_id: "unit_payment_proof_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_external_payment_reference_hash_001",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      submitted_at: 1_010,
+      memo: "hash only; no raw external reference",
+    },
+    intent.packet.packet_id
+  );
+
+  const serializedLedger = JSON.stringify(engine.exportLedgerPackets());
+
+  assert.strictEqual(proof.packet.packet_type, "payment_proof_submitted");
+  assert.strictEqual(engine.packetCount(), 2);
+  assert.strictEqual(engine.listKnowledge().length, 0);
+  assert(serializedLedger.includes("external_reference_hash"));
+  assert(serializedLedger.includes("unit_external_payment_reference_hash_001"));
+  assert(!serializedLedger.includes("payer_upi_id"));
+  assert(!serializedLedger.includes("payee_upi_id"));
+  assert(!serializedLedger.includes("card_number"));
+});
+
+test("payment proof packets reject raw payment reference fields on import", () => {
+  const engine = unitEngine("unit_payment_proof_raw_reference_rejection");
+
+  const invalidProof = createPacket({
+    packet_type: "payment_proof_submitted",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      payment_intent_id: "unit_payment_intent_for_invalid_proof_001",
+      proof_id: "unit_payment_proof_invalid_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_external_payment_reference_hash_invalid_001",
+      external_reference: "raw-upi-reference-must-not-sync",
+      payer_upi_id: "buyer@example-upi",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      submitted_at: 1_010,
+    },
+  });
+
+  const importResult = engine.importLedgerPackets([invalidProof]);
+
+  assert.strictEqual(importResult.rejected_invalid_count, 1);
+  assert.strictEqual(engine.packetCount(), 0);
+});
+
 test("ledger export returns durable packets without mutating count", () => {
   const engine = unitEngine("unit_ledger_export_read_only");
   const packet = engine.observePhrase({

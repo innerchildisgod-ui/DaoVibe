@@ -27,6 +27,7 @@ const SUPPORTED_PACKET_TYPES: Set<PacketType> = new Set([
   "kyc_quorum_result",
   "kyc_evidence_expired",
   "payment_intent_created",
+  "payment_proof_submitted",
   "symbol_sample",
 ]);
 
@@ -61,6 +62,8 @@ export const KYC_PACKET_FIELD_LIMITS = {
 
 export const PAYMENT_PACKET_FIELD_LIMITS = {
   payment_intent_id: 160,
+  proof_id: 160,
+  external_reference_hash: 300,
   order_reference_id: 160,
   buyer_subject_node_id: 160,
   vendor_subject_node_id: 160,
@@ -472,6 +475,30 @@ function validateKycPayload(packet: LmpPacket, errors: string[]): void {
   }
 }
 
+function rejectRawPaymentProofFields(
+  payload: Record<string, unknown>,
+  errors: string[]
+): void {
+  const forbiddenFields = [
+    "external_reference",
+    "raw_external_reference",
+    "payment_reference",
+    "upi_id",
+    "payer_upi_id",
+    "payee_upi_id",
+    "card_number",
+    "bank_account_number",
+    "screenshot_hash",
+    "screenshot_url",
+  ];
+
+  for (const field of forbiddenFields) {
+    if (payload[field] !== undefined) {
+      errors.push(`Invalid payload.${field}: store only external_reference_hash`);
+    }
+  }
+}
+
 function validatePaymentIntentCreatedPayload(
   packet: LmpPacket,
   errors: string[]
@@ -566,9 +593,94 @@ function validatePaymentIntentCreatedPayload(
   }
 }
 
+function validatePaymentProofSubmittedPayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  rejectRawPaymentProofFields(payload, errors);
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "payment_intent_id",
+    PAYMENT_PACKET_FIELD_LIMITS.payment_intent_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "proof_id",
+    PAYMENT_PACKET_FIELD_LIMITS.proof_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "external_reference_hash",
+    PAYMENT_PACKET_FIELD_LIMITS.external_reference_hash,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "currency_code",
+    PAYMENT_PACKET_FIELD_LIMITS.currency_code,
+    errors
+  );
+
+  if (
+    typeof payload.currency_code === "string" &&
+    !/^[A-Z]{3}$/.test(payload.currency_code)
+  ) {
+    errors.push("Invalid payload.currency_code");
+  }
+
+  requirePayloadString(payload, "external_rail", errors);
+
+  if (
+    typeof payload.external_rail === "string" &&
+    !PAYMENT_EXTERNAL_RAILS.has(payload.external_rail)
+  ) {
+    errors.push("Invalid payload.external_rail");
+  }
+
+  if (
+    !Number.isInteger(payload.amount_minor_units) ||
+    Number(payload.amount_minor_units) <= 0
+  ) {
+    errors.push("Invalid payload.amount_minor_units");
+  }
+
+  if (
+    !Number.isInteger(payload.submitted_at) ||
+    Number(payload.submitted_at) <= 0
+  ) {
+    errors.push("Invalid payload.submitted_at");
+  }
+
+  if (
+    payload.memo !== undefined &&
+    (typeof payload.memo !== "string" ||
+      payload.memo.trim().length === 0 ||
+      payload.memo.length > PAYMENT_PACKET_FIELD_LIMITS.memo)
+  ) {
+    errors.push("Invalid payload.memo");
+  }
+}
+
 function validatePaymentPayload(packet: LmpPacket, errors: string[]): void {
   if (packet.packet_type === "payment_intent_created") {
     validatePaymentIntentCreatedPayload(packet, errors);
+  }
+
+  if (packet.packet_type === "payment_proof_submitted") {
+    validatePaymentProofSubmittedPayload(packet, errors);
   }
 }
 

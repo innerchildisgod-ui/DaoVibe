@@ -17,6 +17,7 @@ export type PacketType =
   | "kyc_quorum_result"
   | "kyc_evidence_expired"
   | "payment_intent_created"
+  | "payment_proof_submitted"
   | "safety_label"
   | "symbol_sample";
 
@@ -216,5 +217,16 @@ export interface PaymentIntentCreatedPayload {
   currency_code: string;
   amount_minor_units: number;
   created_at: number;
+  memo?: string;
+}
+
+export interface PaymentProofSubmittedPayload {
+  payment_intent_id: string;
+  proof_id: string;
+  external_rail: PaymentExternalRail;
+  external_reference_hash: string;
+  currency_code: string;
+  amount_minor_units: number;
+  submitted_at: number;
   memo?: string;
 }
