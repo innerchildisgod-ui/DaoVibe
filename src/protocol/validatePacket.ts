@@ -26,6 +26,7 @@ const SUPPORTED_PACKET_TYPES: Set<PacketType> = new Set([
   "kyc_known_verifier_vote",
   "kyc_quorum_result",
   "kyc_evidence_expired",
+  "payment_intent_created",
   "symbol_sample",
 ]);
 
@@ -57,6 +58,29 @@ export const KYC_PACKET_FIELD_LIMITS = {
   invite_id: 160,
   evidence_bundle_hash: 300,
 } as const;
+
+export const PAYMENT_PACKET_FIELD_LIMITS = {
+  payment_intent_id: 160,
+  order_reference_id: 160,
+  buyer_subject_node_id: 160,
+  vendor_subject_node_id: 160,
+  buyer_kyc_claim_id: 160,
+  vendor_kyc_claim_id: 160,
+  currency_code: 12,
+  memo: 500,
+} as const;
+
+const PAYMENT_EXTERNAL_RAILS = new Set([
+  "upi",
+  "card",
+  "bank_transfer",
+  "ach",
+  "sepa",
+  "pix",
+  "mobile_money",
+  "wallet",
+  "other",
+]);
 
 const KYC_KNOWN_VERIFIER_VOTES = new Set([
   "same_person",
@@ -448,6 +472,106 @@ function validateKycPayload(packet: LmpPacket, errors: string[]): void {
   }
 }
 
+function validatePaymentIntentCreatedPayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "payment_intent_id",
+    PAYMENT_PACKET_FIELD_LIMITS.payment_intent_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "order_reference_id",
+    PAYMENT_PACKET_FIELD_LIMITS.order_reference_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "buyer_subject_node_id",
+    PAYMENT_PACKET_FIELD_LIMITS.buyer_subject_node_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "vendor_subject_node_id",
+    PAYMENT_PACKET_FIELD_LIMITS.vendor_subject_node_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "buyer_kyc_claim_id",
+    PAYMENT_PACKET_FIELD_LIMITS.buyer_kyc_claim_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "vendor_kyc_claim_id",
+    PAYMENT_PACKET_FIELD_LIMITS.vendor_kyc_claim_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "currency_code",
+    PAYMENT_PACKET_FIELD_LIMITS.currency_code,
+    errors
+  );
+
+  if (
+    typeof payload.currency_code === "string" &&
+    !/^[A-Z]{3}$/.test(payload.currency_code)
+  ) {
+    errors.push("Invalid payload.currency_code");
+  }
+
+  requirePayloadString(payload, "external_rail", errors);
+
+  if (
+    typeof payload.external_rail === "string" &&
+    !PAYMENT_EXTERNAL_RAILS.has(payload.external_rail)
+  ) {
+    errors.push("Invalid payload.external_rail");
+  }
+
+  if (
+    !Number.isInteger(payload.amount_minor_units) ||
+    Number(payload.amount_minor_units) <= 0
+  ) {
+    errors.push("Invalid payload.amount_minor_units");
+  }
+
+  if (
+    !Number.isInteger(payload.created_at) ||
+    Number(payload.created_at) <= 0
+  ) {
+    errors.push("Invalid payload.created_at");
+  }
+
+  if (
+    payload.memo !== undefined &&
+    (typeof payload.memo !== "string" ||
+      payload.memo.trim().length === 0 ||
+      payload.memo.length > PAYMENT_PACKET_FIELD_LIMITS.memo)
+  ) {
+    errors.push("Invalid payload.memo");
+  }
+}
+
+function validatePaymentPayload(packet: LmpPacket, errors: string[]): void {
+  if (packet.packet_type === "payment_intent_created") {
+    validatePaymentIntentCreatedPayload(packet, errors);
+  }
+}
+
 export function validatePacket(packet: LmpPacket): PacketValidationResult {
   const errors: string[] = [];
   let signatureStatus: PacketSignatureStatus = "missing";
@@ -462,6 +586,7 @@ export function validatePacket(packet: LmpPacket): PacketValidationResult {
 
   validateCorrectionPayload(packet, errors);
   validateKycPayload(packet, errors);
+  validatePaymentPayload(packet, errors);
 
   if (!packet.packet_id) errors.push("Missing packet_id");
   if (!packet.zone) errors.push("Missing zone");

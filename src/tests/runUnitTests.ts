@@ -1460,6 +1460,67 @@ test("KYC claim summary reports missing claims without mutation", () => {
   assert.strictEqual(engine.packetCount(), packetCountBefore);
 });
 
+
+test("payment intent packets are event-only and require KYC claim references", () => {
+  const engine = unitEngine("unit_payment_intent_event_only");
+  const result = engine.createPaymentIntent({
+    payment_intent_id: "unit_payment_intent_001",
+    order_reference_id: "unit_order_001",
+    buyer_subject_node_id: "unit_buyer_subject_node_001",
+    vendor_subject_node_id: "unit_vendor_subject_node_001",
+    buyer_kyc_claim_id: "unit_buyer_kyc_claim_001",
+    vendor_kyc_claim_id: "unit_vendor_kyc_claim_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 12345,
+    created_at: 1_000,
+    memo: "intent only; external payment rail handles money movement",
+  });
+
+  assert.strictEqual(result.packet.packet_type, "payment_intent_created");
+  assert.strictEqual(engine.packetCount(), 1);
+  assert.strictEqual(engine.listKnowledge().length, 0);
+  assert.deepStrictEqual(result.packet.payload, {
+    payment_intent_id: "unit_payment_intent_001",
+    order_reference_id: "unit_order_001",
+    buyer_subject_node_id: "unit_buyer_subject_node_001",
+    vendor_subject_node_id: "unit_vendor_subject_node_001",
+    buyer_kyc_claim_id: "unit_buyer_kyc_claim_001",
+    vendor_kyc_claim_id: "unit_vendor_kyc_claim_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 12345,
+    created_at: 1_000,
+    memo: "intent only; external payment rail handles money movement",
+  });
+});
+
+test("payment intent packets reject invalid rail and amount on import", () => {
+  const engine = unitEngine("unit_payment_intent_invalid_import");
+  const invalidPaymentIntent = createPacket({
+    packet_type: "payment_intent_created",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      payment_intent_id: "unit_payment_intent_invalid_001",
+      order_reference_id: "unit_order_invalid_001",
+      buyer_subject_node_id: "unit_buyer_subject_node_invalid_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_invalid_001",
+      buyer_kyc_claim_id: "unit_buyer_kyc_claim_invalid_001",
+      vendor_kyc_claim_id: "unit_vendor_kyc_claim_invalid_001",
+      external_rail: "cash_under_table",
+      currency_code: "INR",
+      amount_minor_units: 0,
+      created_at: 1_000,
+    },
+  });
+
+  const importResult = engine.importLedgerPackets([invalidPaymentIntent]);
+
+  assert.strictEqual(importResult.rejected_invalid_count, 1);
+  assert.strictEqual(engine.packetCount(), 0);
+});
+
 test("ledger export returns durable packets without mutating count", () => {
   const engine = unitEngine("unit_ledger_export_read_only");
   const packet = engine.observePhrase({

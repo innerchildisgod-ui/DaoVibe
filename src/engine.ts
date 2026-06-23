@@ -6,6 +6,7 @@ import {
   KycAiAssessmentCompletedPayload,
   KycClaimCreatedPayload,
   KycEvidenceExpiredPayload,
+  PaymentIntentCreatedPayload,
   KycEvidencePreparedPayload,
   KycKnownVerifierInvitedPayload,
   KycKnownVerifierVotePayload,
@@ -403,6 +404,21 @@ export class LanguageEngine {
   ): EngineActionResult<KycEvidenceExpiredPayload> {
     const packet = createPacket({
       packet_type: "kyc_evidence_expired",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  createPaymentIntent(
+    payload: PaymentIntentCreatedPayload,
+    parent?: string
+  ): EngineActionResult<PaymentIntentCreatedPayload> {
+    const packet = createPacket({
+      packet_type: "payment_intent_created",
       zone: this.config.zone,
       author: this.config.author,
       parent,

@@ -16,6 +16,7 @@ export type PacketType =
   | "kyc_known_verifier_vote"
   | "kyc_quorum_result"
   | "kyc_evidence_expired"
+  | "payment_intent_created"
   | "safety_label"
   | "symbol_sample";
 
@@ -51,6 +52,17 @@ export type KycQuorumStatus =
   | "needs_more_review"
   | "escalated"
   | "expired";
+
+export type PaymentExternalRail =
+  | "upi"
+  | "card"
+  | "bank_transfer"
+  | "ach"
+  | "sepa"
+  | "pix"
+  | "mobile_money"
+  | "wallet"
+  | "other";
 
 export type CorrectionTombstoneReason =
   | "rejected_status"
@@ -191,4 +203,18 @@ export interface KycEvidenceExpiredPayload {
   evidence_id: string;
   expired_at: number;
   deletion_proof_hash?: string;
+}
+
+export interface PaymentIntentCreatedPayload {
+  payment_intent_id: string;
+  order_reference_id: string;
+  buyer_subject_node_id: string;
+  vendor_subject_node_id: string;
+  buyer_kyc_claim_id: string;
+  vendor_kyc_claim_id: string;
+  external_rail: PaymentExternalRail;
+  currency_code: string;
+  amount_minor_units: number;
+  created_at: number;
+  memo?: string;
 }
