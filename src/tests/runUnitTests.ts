@@ -50,6 +50,7 @@ import { createTypeScriptNativeCoreStub } from "../kernel/TypeScriptNativeCoreSt
 import { TypeScriptDoriBoundaryStub } from "../kernel/orchestrators/DoriBoundary";
 import { createDefaultMultiDeviceSyncPlan } from "../kernel/sync";
 import { getPaymentStatusSummary } from "../mycelium/PaymentLookup";
+import { getOrderFulfillmentStatusSummary } from "../mycelium/OrderFulfillmentLookup";
 
 
 const TEST_ZONE = "unit_test_zone";
@@ -1758,6 +1759,183 @@ test("order fulfillment started packets reject invalid started_at on import", ()
 
   assert.strictEqual(importResult.rejected_invalid_count, 1);
   assert.strictEqual(engine.packetCount(), 0);
+});
+
+test("order fulfillment status summary derives full flow", () => {
+  const engine = unitEngine("unit_order_fulfillment_status_summary");
+
+  assert.deepStrictEqual(
+    getOrderFulfillmentStatusSummary(
+      engine.exportLedgerPackets(),
+      "unit_order_status_missing"
+    ),
+    {
+      order_reference_id: "unit_order_status_missing",
+      status: "missing",
+    }
+  );
+
+  const intent = engine.createPaymentIntent({
+    payment_intent_id: "unit_payment_intent_for_order_status_001",
+    order_reference_id: "unit_order_status_001",
+    buyer_subject_node_id: "unit_buyer_subject_node_for_order_status_001",
+    vendor_subject_node_id: "unit_vendor_subject_node_for_order_status_001",
+    buyer_kyc_claim_id: "unit_buyer_kyc_claim_for_order_status_001",
+    vendor_kyc_claim_id: "unit_vendor_kyc_claim_for_order_status_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 777,
+    created_at: 8_000,
+  });
+
+  assert.strictEqual(
+    getOrderFulfillmentStatusSummary(
+      engine.exportLedgerPackets(),
+      "unit_order_status_001"
+    ).status,
+    "payment_intent_created"
+  );
+
+  const proof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_payment_intent_for_order_status_001",
+      proof_id: "unit_payment_proof_for_order_status_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_external_payment_reference_hash_for_order_status_001",
+      currency_code: "INR",
+      amount_minor_units: 777,
+      submitted_at: 8_010,
+    },
+    intent.packet.packet_id
+  );
+
+  assert.strictEqual(
+    getOrderFulfillmentStatusSummary(
+      engine.exportLedgerPackets(),
+      "unit_order_status_001"
+    ).status,
+    "payment_proof_submitted"
+  );
+
+  const acknowledgement = engine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_payment_intent_for_order_status_001",
+      proof_id: "unit_payment_proof_for_order_status_001",
+      acknowledgement_id: "unit_payment_ack_for_order_status_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_order_status_001",
+      status: "received",
+      currency_code: "INR",
+      amount_minor_units: 777,
+      acknowledged_at: 8_020,
+    },
+    proof.packet.packet_id
+  );
+
+  assert.strictEqual(
+    getOrderFulfillmentStatusSummary(
+      engine.exportLedgerPackets(),
+      "unit_order_status_001"
+    ).status,
+    "payment_acknowledged"
+  );
+
+  const fulfillment = engine.startOrderFulfillment(
+    {
+      order_reference_id: "unit_order_status_001",
+      payment_intent_id: "unit_payment_intent_for_order_status_001",
+      proof_id: "unit_payment_proof_for_order_status_001",
+      acknowledgement_id: "unit_payment_ack_for_order_status_001",
+      fulfillment_id: "unit_order_fulfillment_status_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_order_status_001",
+      started_at: 8_030,
+      memo: "vendor started fulfillment",
+    },
+    acknowledgement.packet.packet_id
+  );
+
+  const summary = getOrderFulfillmentStatusSummary(
+    engine.exportLedgerPackets(),
+    "unit_order_status_001"
+  );
+
+  assert.strictEqual(summary.status, "fulfillment_started");
+  assert.strictEqual(summary.intent_packet_id, intent.packet.packet_id);
+  assert.strictEqual(summary.proof_packet_id, proof.packet.packet_id);
+  assert.strictEqual(
+    summary.acknowledgement_packet_id,
+    acknowledgement.packet.packet_id
+  );
+  assert.strictEqual(summary.fulfillment_packet_id, fulfillment.packet.packet_id);
+  assert.strictEqual(summary.payment_intent_id, "unit_payment_intent_for_order_status_001");
+  assert.strictEqual(summary.fulfillment_id, "unit_order_fulfillment_status_001");
+  assert.strictEqual(summary.fulfilled_started_at, 8_030);
+  assert.strictEqual(summary.memo, "vendor started fulfillment");
+});
+
+test("engine order fulfillment status summary reads derived order state", () => {
+  const engine = unitEngine("unit_engine_order_fulfillment_status_summary");
+
+  const intent = engine.createPaymentIntent({
+    payment_intent_id: "unit_engine_payment_intent_for_order_status_001",
+    order_reference_id: "unit_engine_order_status_001",
+    buyer_subject_node_id: "unit_engine_buyer_subject_node_for_order_status_001",
+    vendor_subject_node_id: "unit_engine_vendor_subject_node_for_order_status_001",
+    buyer_kyc_claim_id: "unit_engine_buyer_kyc_claim_for_order_status_001",
+    vendor_kyc_claim_id: "unit_engine_vendor_kyc_claim_for_order_status_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 888,
+    created_at: 8_100,
+  });
+
+  const proof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_engine_payment_intent_for_order_status_001",
+      proof_id: "unit_engine_payment_proof_for_order_status_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_engine_external_payment_reference_hash_for_order_status_001",
+      currency_code: "INR",
+      amount_minor_units: 888,
+      submitted_at: 8_110,
+    },
+    intent.packet.packet_id
+  );
+
+  const acknowledgement = engine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_engine_payment_intent_for_order_status_001",
+      proof_id: "unit_engine_payment_proof_for_order_status_001",
+      acknowledgement_id: "unit_engine_payment_ack_for_order_status_001",
+      vendor_subject_node_id: "unit_engine_vendor_subject_node_for_order_status_001",
+      status: "received",
+      currency_code: "INR",
+      amount_minor_units: 888,
+      acknowledged_at: 8_120,
+    },
+    proof.packet.packet_id
+  );
+
+  engine.startOrderFulfillment(
+    {
+      order_reference_id: "unit_engine_order_status_001",
+      payment_intent_id: "unit_engine_payment_intent_for_order_status_001",
+      proof_id: "unit_engine_payment_proof_for_order_status_001",
+      acknowledgement_id: "unit_engine_payment_ack_for_order_status_001",
+      fulfillment_id: "unit_engine_order_fulfillment_status_001",
+      vendor_subject_node_id: "unit_engine_vendor_subject_node_for_order_status_001",
+      started_at: 8_130,
+    },
+    acknowledgement.packet.packet_id
+  );
+
+  const summary = engine.getOrderFulfillmentStatusSummary(
+    "unit_engine_order_status_001"
+  );
+
+  assert.strictEqual(summary.status, "fulfillment_started");
+  assert.strictEqual(summary.fulfillment_id, "unit_engine_order_fulfillment_status_001");
+  assert.strictEqual(summary.amount_minor_units, 888);
+  assert.strictEqual(summary.currency_code, "INR");
 });
 
 

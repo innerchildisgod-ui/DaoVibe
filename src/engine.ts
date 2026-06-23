@@ -38,6 +38,10 @@ import {
   getPaymentStatusSummary as derivePaymentStatusSummary,
   PaymentStatusSummary,
 } from "./mycelium/PaymentLookup";
+import {
+  getOrderFulfillmentStatusSummary as deriveOrderFulfillmentStatusSummary,
+  OrderFulfillmentStatusSummary,
+} from "./mycelium/OrderFulfillmentLookup";
 
 export interface LanguageEngineConfig {
   zone: string;
@@ -484,6 +488,15 @@ export class LanguageEngine {
     return derivePaymentStatusSummary(
       this.exportLedgerPackets(),
       paymentIntentId
+    );
+  }
+
+  getOrderFulfillmentStatusSummary(
+    orderReferenceId: string
+  ): OrderFulfillmentStatusSummary {
+    return deriveOrderFulfillmentStatusSummary(
+      this.exportLedgerPackets(),
+      orderReferenceId
     );
   }
 
