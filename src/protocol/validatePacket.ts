@@ -51,6 +51,21 @@ const CORRECTION_TOMBSTONE_REASONS = new Set([
   "other",
 ]);
 
+export const KYC_PACKET_FIELD_LIMITS = {
+  kyc_claim_id: 160,
+  verifier_alias_id: 160,
+  invite_id: 160,
+  evidence_bundle_hash: 300,
+} as const;
+
+const KYC_KNOWN_VERIFIER_VOTES = new Set([
+  "same_person",
+  "not_same_person",
+  "unsure",
+  "suspicious",
+  "low_quality",
+]);
+
 export type PacketSignatureStatus =
   | "missing"
   | "dev_signature_valid"
@@ -329,6 +344,110 @@ function validateCorrectionPayload(packet: LmpPacket, errors: string[]): void {
   }
 }
 
+function rejectLegacyVerifierNodeId(
+  payload: Record<string, unknown>,
+  errors: string[]
+): void {
+  if (payload.verifier_node_id !== undefined) {
+    errors.push("Invalid payload.verifier_node_id: use verifier_alias_id");
+  }
+}
+
+function validateKycKnownVerifierInvitedPayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  rejectLegacyVerifierNodeId(payload, errors);
+  requirePayloadStringWithinLimit(
+    payload,
+    "kyc_claim_id",
+    KYC_PACKET_FIELD_LIMITS.kyc_claim_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "verifier_alias_id",
+    KYC_PACKET_FIELD_LIMITS.verifier_alias_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "invite_id",
+    KYC_PACKET_FIELD_LIMITS.invite_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "evidence_bundle_hash",
+    KYC_PACKET_FIELD_LIMITS.evidence_bundle_hash,
+    errors
+  );
+
+  if (
+    !Number.isInteger(payload.expires_at) ||
+    Number(payload.expires_at) <= 0
+  ) {
+    errors.push("Invalid payload.expires_at");
+  }
+}
+
+function validateKycKnownVerifierVotePayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  rejectLegacyVerifierNodeId(payload, errors);
+  requirePayloadStringWithinLimit(
+    payload,
+    "kyc_claim_id",
+    KYC_PACKET_FIELD_LIMITS.kyc_claim_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "invite_id",
+    KYC_PACKET_FIELD_LIMITS.invite_id,
+    errors
+  );
+  requirePayloadStringWithinLimit(
+    payload,
+    "verifier_alias_id",
+    KYC_PACKET_FIELD_LIMITS.verifier_alias_id,
+    errors
+  );
+  requirePayloadString(payload, "vote", errors);
+
+  if (
+    typeof payload.vote === "string" &&
+    !KYC_KNOWN_VERIFIER_VOTES.has(payload.vote)
+  ) {
+    errors.push("Invalid payload.vote");
+  }
+}
+
+function validateKycPayload(packet: LmpPacket, errors: string[]): void {
+  if (packet.packet_type === "kyc_known_verifier_invited") {
+    validateKycKnownVerifierInvitedPayload(packet, errors);
+  }
+
+  if (packet.packet_type === "kyc_known_verifier_vote") {
+    validateKycKnownVerifierVotePayload(packet, errors);
+  }
+}
+
 export function validatePacket(packet: LmpPacket): PacketValidationResult {
   const errors: string[] = [];
   let signatureStatus: PacketSignatureStatus = "missing";
@@ -342,6 +461,7 @@ export function validatePacket(packet: LmpPacket): PacketValidationResult {
   }
 
   validateCorrectionPayload(packet, errors);
+  validateKycPayload(packet, errors);
 
   if (!packet.packet_id) errors.push("Missing packet_id");
   if (!packet.zone) errors.push("Missing zone");

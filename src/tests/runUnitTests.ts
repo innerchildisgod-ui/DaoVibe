@@ -1134,6 +1134,51 @@ test("KYC event-only packets are stored without knowledge mutation", () => {
   assert.deepStrictEqual(engine.listKnowledge(), []);
 });
 
+
+test("KYC known verifier packets reject raw verifier node IDs", () => {
+  const engine = unitEngine("unit_kyc_reject_raw_verifier_node_ids");
+
+  const legacyInvitePacket = createPacket({
+    packet_type: "kyc_known_verifier_invited",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      kyc_claim_id: "unit_legacy_kyc_claim_001",
+      verifier_node_id: "unit_raw_verifier_node_001",
+      invite_id: "unit_legacy_kyc_invite_001",
+      evidence_bundle_hash: "unit_legacy_evidence_bundle_hash",
+      expires_at: 2_000,
+    },
+  });
+
+  const legacyVotePacket = createPacket({
+    packet_type: "kyc_known_verifier_vote",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      kyc_claim_id: "unit_legacy_kyc_claim_001",
+      invite_id: "unit_legacy_kyc_invite_001",
+      verifier_node_id: "unit_raw_verifier_node_001",
+      vote: "same_person",
+    },
+  });
+
+  const importResult = engine.importLedgerPackets([
+    legacyInvitePacket,
+    legacyVotePacket,
+  ]);
+
+  assert.deepStrictEqual(importResult, {
+    accepted_new_count: 0,
+    already_stored_count: 0,
+    rejected_invalid_count: 2,
+    rejected_expired_count: 0,
+    failed_count: 0,
+  });
+  assert.strictEqual(engine.packetCount(), 0);
+  assert.strictEqual(engine.listKnowledge().length, 0);
+});
+
 test("KYC claim summary reports current claim state", () => {
   const engine = unitEngine("unit_kyc_claim_summary");
   const controller = new MyceliumController(engine);

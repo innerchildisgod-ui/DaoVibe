@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, unlinkSync } from "fs";
 import path from "path";
 import { LanguageEngine } from "../engine";
+import { createPacket } from "../protocol/packet";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const NODE_A_DB = path.join(DATA_DIR, "kyc_identity_packet_node_a.db");
@@ -175,6 +176,33 @@ function runSimulation(): void {
     "Expected synced KYC packets to leave language knowledge unchanged on node B"
   );
 
+  const legacyRawVerifierInvite = createPacket({
+    packet_type: "kyc_known_verifier_invited",
+    zone: ZONE,
+    author: NODE_A_AUTHOR,
+    payload: {
+      kyc_claim_id: "sim_kyc_claim_legacy_raw_verifier",
+      verifier_node_id: "sim_raw_verifier_node_001",
+      invite_id: "sim_legacy_raw_verifier_invite_001",
+      evidence_bundle_hash: "sim_legacy_raw_verifier_evidence_hash",
+      expires_at: 2_000,
+    },
+  });
+
+  const legacyRawVerifierImport = nodeB.importLedgerPackets([
+    legacyRawVerifierInvite,
+  ]);
+
+  assertSimulation(
+    legacyRawVerifierImport.rejected_invalid_count === 1,
+    `Expected raw verifier-node KYC packet rejection, got ${legacyRawVerifierImport.rejected_invalid_count}`
+  );
+
+  assertSimulation(
+    nodeB.packetCount() === 7,
+    `Expected rejected raw verifier packet to leave node B packet count at 7, got ${nodeB.packetCount()}`
+  );
+
   const duplicateImportResult = nodeB.importLedgerPackets(exportedPackets);
 
   assertSimulation(
@@ -185,6 +213,7 @@ function runSimulation(): void {
   console.log("KYC identity packet creation passed");
   console.log("KYC minimized evidence privacy flag passed");
   console.log("KYC verifier alias packet privacy passed");
+  console.log("KYC legacy raw verifier rejection passed");
   const serializedKycLedger = JSON.stringify(nodeA.exportLedgerPackets());
 
   assertSimulation(
