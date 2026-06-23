@@ -211,6 +211,19 @@ export function registerLanguageRoutes(
     }
   });
 
+  app.get("/orders/:orderReferenceId/fulfillment/status", (req, res) => {
+    try {
+      res.json({
+        ok: true,
+        summary: myceliumController.getOrderFulfillmentStatusSummary(
+          req.params.orderReferenceId
+        ),
+      });
+    } catch (error) {
+      sendApiError(res, 400, "VALIDATION_ERROR", errorMessage(error));
+    }
+  });
+
   app.get("/phrases/:phraseId", (req, res) => {
     const result = myceliumController.getPhraseById(req.params.phraseId);
 

@@ -583,7 +583,45 @@ async function runSimulation(): Promise<void> {
     "Expected payment status endpoint to include acknowledgement id"
   );
 
+  engine.startOrderFulfillment({
+    order_reference_id: "app_api_payment_status_order_001",
+    payment_intent_id: "app_api_payment_status_intent_001",
+    proof_id: "app_api_payment_status_proof_001",
+    acknowledgement_id: "app_api_payment_status_ack_001",
+    fulfillment_id: "app_api_order_fulfillment_status_001",
+    vendor_subject_node_id: "app_api_payment_status_vendor_001",
+    started_at: 8_030,
+    memo: "app API vendor started fulfillment",
+  });
+
+  const orderFulfillmentStatusResponse =
+    await client.getOrderFulfillmentStatusSummary(
+      "app_api_payment_status_order_001"
+    );
+
+  assertSimulation(
+    orderFulfillmentStatusResponse.ok === true,
+    "Expected order fulfillment status response to be ok"
+  );
+
+  assertSimulation(
+    orderFulfillmentStatusResponse.summary.status === "fulfillment_started",
+    "Expected order fulfillment status endpoint to return fulfillment_started"
+  );
+
+  assertSimulation(
+    orderFulfillmentStatusResponse.summary.fulfillment_id ===
+      "app_api_order_fulfillment_status_001",
+    "Expected order fulfillment status endpoint to include fulfillment id"
+  );
+
+  assertSimulation(
+    orderFulfillmentStatusResponse.summary.fulfilled_started_at === 8_030,
+    "Expected order fulfillment status endpoint to include started_at"
+  );
+
   console.log("app API payment status summary flow passed");
+  console.log("app API order fulfillment status summary flow passed");
 
     console.log("app API KYC summary verifier privacy guard passed");
     console.log("app API invalid correction proposal no-mutation flow passed");

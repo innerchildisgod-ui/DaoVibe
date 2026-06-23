@@ -597,6 +597,41 @@ export interface PaymentStatusSummaryResponse {
   summary: PaymentStatusSummary;
 }
 
+export type OrderFulfillmentDerivedStatus =
+  | "missing"
+  | "payment_intent_created"
+  | "payment_proof_submitted"
+  | "payment_acknowledged"
+  | "fulfillment_started";
+
+export interface OrderFulfillmentStatusSummary {
+  order_reference_id: string;
+  status: OrderFulfillmentDerivedStatus;
+  intent_packet_id?: string;
+  proof_packet_id?: string;
+  acknowledgement_packet_id?: string;
+  fulfillment_packet_id?: string;
+  payment_intent_id?: string;
+  proof_id?: string;
+  acknowledgement_id?: string;
+  fulfillment_id?: string;
+  buyer_subject_node_id?: string;
+  vendor_subject_node_id?: string;
+  buyer_kyc_claim_id?: string;
+  vendor_kyc_claim_id?: string;
+  external_rail?: string;
+  currency_code?: string;
+  amount_minor_units?: number;
+  acknowledgement_status?: "received" | "not_received" | "needs_review";
+  fulfilled_started_at?: number;
+  memo?: string;
+}
+
+export interface OrderFulfillmentStatusSummaryResponse {
+  ok: true;
+  summary: OrderFulfillmentStatusSummary;
+}
+
 export class MyceliumClientError extends Error {
   readonly status: number;
   readonly statusText: string;
@@ -725,6 +760,14 @@ export class MyceliumClient {
   ): Promise<PaymentStatusSummaryResponse> {
     return this.getJson(
       `/payments/${encodeURIComponent(paymentIntentId)}/status`
+    );
+  }
+
+  getOrderFulfillmentStatusSummary(
+    orderReferenceId: string
+  ): Promise<OrderFulfillmentStatusSummaryResponse> {
+    return this.getJson(
+      `/orders/${encodeURIComponent(orderReferenceId)}/fulfillment/status`
     );
   }
 

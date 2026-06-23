@@ -432,6 +432,10 @@ export class MyceliumController {
     return this.engine.getPaymentStatusSummary(paymentIntentId);
   }
 
+  getOrderFulfillmentStatusSummary(orderReferenceId: string) {
+    return this.engine.getOrderFulfillmentStatusSummary(orderReferenceId);
+  }
+
   getBestMeaning(phraseId: string) {
     const phraseResult = this.getPhraseById(phraseId);
     const correctionPackets = listCorrectionPacketsForPhrase(
