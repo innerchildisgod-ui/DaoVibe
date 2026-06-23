@@ -261,6 +261,18 @@ async function runSimulation(): Promise<void> {
       "Expected KYC summary to include one same_person verifier vote"
     );
 
+    const serializedKycSummary = JSON.stringify(kycSummary);
+
+    assertSimulation(
+      !serializedKycSummary.includes("app_api_smoke_known_verifier_001"),
+      "Expected KYC summary API to hide known verifier node id"
+    );
+
+    assertSimulation(
+      !serializedKycSummary.includes("app_api_smoke_kyc_invite_001"),
+      "Expected KYC summary API to hide verifier invite id"
+    );
+
     const packetCountBeforeInvalidWrites = (
       await client.getNodeStatus()
     ).ledger.packet_count;
@@ -510,6 +522,7 @@ async function runSimulation(): Promise<void> {
     console.log("app API packet trace flow passed");
     console.log("app API correction vote flow passed");
     console.log("app API KYC summary flow passed");
+    console.log("app API KYC summary verifier privacy guard passed");
     console.log("app API invalid correction proposal no-mutation flow passed");
     console.log("app API no-meaning negative flow passed");
     console.log("app API unreachable server negative flow passed");

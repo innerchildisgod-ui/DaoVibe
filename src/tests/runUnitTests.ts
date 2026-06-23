@@ -1262,6 +1262,16 @@ test("KYC claim summary reports current claim state", () => {
     suspicious: 0,
     low_quality: 0,
   });
+  const serializedSummary = JSON.stringify(summary);
+
+  assert(
+    !serializedSummary.includes("unit_known_verifier_summary_001"),
+    "KYC claim summary hides known verifier identifiers"
+  );
+  assert(
+    !serializedSummary.includes("unit_kyc_invite_summary_001"),
+    "KYC claim summary hides verifier invite identifiers"
+  );
   assert.strictEqual(summary.latest_quorum_reason, "more known verifiers needed");
 });
 
