@@ -29,6 +29,7 @@ const SUPPORTED_PACKET_TYPES: Set<PacketType> = new Set([
   "payment_intent_created",
   "payment_proof_submitted",
   "payment_acknowledged",
+  "order_fulfillment_started",
   "symbol_sample",
 ]);
 
@@ -65,6 +66,7 @@ export const PAYMENT_PACKET_FIELD_LIMITS = {
   payment_intent_id: 160,
   proof_id: 160,
   acknowledgement_id: 160,
+  fulfillment_id: 160,
   external_reference_hash: 300,
   order_reference_id: 160,
   buyer_subject_node_id: 160,
@@ -769,6 +771,76 @@ function validatePaymentAcknowledgedPayload(
   }
 }
 
+function validateOrderFulfillmentStartedPayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "order_reference_id",
+    PAYMENT_PACKET_FIELD_LIMITS.order_reference_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "payment_intent_id",
+    PAYMENT_PACKET_FIELD_LIMITS.payment_intent_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "proof_id",
+    PAYMENT_PACKET_FIELD_LIMITS.proof_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "acknowledgement_id",
+    PAYMENT_PACKET_FIELD_LIMITS.acknowledgement_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "fulfillment_id",
+    PAYMENT_PACKET_FIELD_LIMITS.fulfillment_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "vendor_subject_node_id",
+    PAYMENT_PACKET_FIELD_LIMITS.vendor_subject_node_id,
+    errors
+  );
+
+  if (
+    !Number.isInteger(payload.started_at) ||
+    Number(payload.started_at) <= 0
+  ) {
+    errors.push("Invalid payload.started_at");
+  }
+
+  if (
+    payload.memo !== undefined &&
+    (typeof payload.memo !== "string" ||
+      payload.memo.trim().length === 0 ||
+      payload.memo.length > PAYMENT_PACKET_FIELD_LIMITS.memo)
+  ) {
+    errors.push("Invalid payload.memo");
+  }
+}
+
 function validatePaymentPayload(packet: LmpPacket, errors: string[]): void {
   if (packet.packet_type === "payment_intent_created") {
     validatePaymentIntentCreatedPayload(packet, errors);
@@ -780,6 +852,10 @@ function validatePaymentPayload(packet: LmpPacket, errors: string[]): void {
 
   if (packet.packet_type === "payment_acknowledged") {
     validatePaymentAcknowledgedPayload(packet, errors);
+  }
+
+  if (packet.packet_type === "order_fulfillment_started") {
+    validateOrderFulfillmentStartedPayload(packet, errors);
   }
 }
 

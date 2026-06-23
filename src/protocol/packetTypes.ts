@@ -19,6 +19,7 @@ export type PacketType =
   | "payment_intent_created"
   | "payment_proof_submitted"
   | "payment_acknowledged"
+  | "order_fulfillment_started"
   | "safety_label"
   | "symbol_sample";
 
@@ -247,4 +248,15 @@ export interface PaymentAcknowledgedPayload {
   amount_minor_units: number;
   acknowledged_at: number;
   reason?: string;
+}
+
+export interface OrderFulfillmentStartedPayload {
+  order_reference_id: string;
+  payment_intent_id: string;
+  proof_id: string;
+  acknowledgement_id: string;
+  fulfillment_id: string;
+  vendor_subject_node_id: string;
+  started_at: number;
+  memo?: string;
 }

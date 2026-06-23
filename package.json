@@ -17,14 +17,15 @@
     "simulate:sync-batch-size": "ts-node src/simulations/syncBatchSizeGuardSimulation.ts",
     "simulate:sync-cursor-monotonicity": "ts-node src/simulations/syncCursorMonotonicitySimulation.ts",
     "simulate:sync-import-atomicity": "ts-node src/simulations/syncImportAtomicitySimulation.ts",
-    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node && npm run simulate:unique-voters && npm run simulate:sync-batch-size && npm run simulate:sync-cursor-monotonicity && npm run simulate:sync-import-atomicity && npm run simulate:app-api-smoke && npm run simulate:kyc-identity && npm run simulate:payment-intent && npm run simulate:payment-proof && npm run simulate:payment-ack && npm run simulate:payment-status",
+    "simulate:all": "npm run simulate:two-node && npm run simulate:http-two-node && npm run simulate:three-node && npm run simulate:unique-voters && npm run simulate:sync-batch-size && npm run simulate:sync-cursor-monotonicity && npm run simulate:sync-import-atomicity && npm run simulate:app-api-smoke && npm run simulate:kyc-identity && npm run simulate:payment-intent && npm run simulate:payment-proof && npm run simulate:payment-ack && npm run simulate:payment-status && npm run simulate:order-fulfillment-started",
     "simulate:app-api-smoke": "ts-node src/simulations/appApiSmokeSimulation.ts",
     "app:test": "vitest run --config apps/mycelium-web/vitest.config.ts",
     "simulate:kyc-identity": "ts-node src/simulations/kycIdentityPacketSimulation.ts",
     "simulate:payment-intent": "ts-node src/simulations/paymentIntentPacketSimulation.ts",
     "simulate:payment-proof": "ts-node src/simulations/paymentProofPacketSimulation.ts",
     "simulate:payment-ack": "ts-node src/simulations/paymentAcknowledgementPacketSimulation.ts",
-    "simulate:payment-status": "ts-node src/simulations/paymentStatusSummarySimulation.ts"
+    "simulate:payment-status": "ts-node src/simulations/paymentStatusSummarySimulation.ts",
+    "simulate:order-fulfillment-started": "ts-node src/simulations/orderFulfillmentStartedSimulation.ts"
   },
   "keywords": [],
   "author": "",

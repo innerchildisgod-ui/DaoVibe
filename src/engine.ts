@@ -7,6 +7,7 @@ import {
   KycClaimCreatedPayload,
   KycEvidenceExpiredPayload,
   PaymentAcknowledgedPayload,
+  OrderFulfillmentStartedPayload,
   PaymentIntentCreatedPayload,
   PaymentProofSubmittedPayload,
   KycEvidencePreparedPayload,
@@ -455,6 +456,21 @@ export class LanguageEngine {
   ): EngineActionResult<PaymentAcknowledgedPayload> {
     const packet = createPacket({
       packet_type: "payment_acknowledged",
+      zone: this.config.zone,
+      author: this.config.author,
+      parent,
+      payload,
+    });
+
+    return this.storeEventOnlyPacket(packet);
+  }
+
+  startOrderFulfillment(
+    payload: OrderFulfillmentStartedPayload,
+    parent?: string
+  ): EngineActionResult<OrderFulfillmentStartedPayload> {
+    const packet = createPacket({
+      packet_type: "order_fulfillment_started",
       zone: this.config.zone,
       author: this.config.author,
       parent,

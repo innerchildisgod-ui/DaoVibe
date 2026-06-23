@@ -1671,6 +1671,95 @@ test("payment acknowledgement packets reject invalid status on import", () => {
   assert.strictEqual(engine.packetCount(), 0);
 });
 
+test("order fulfillment started packets are event-only vendor responses", () => {
+  const engine = unitEngine("unit_order_fulfillment_started_event_only");
+
+  const intent = engine.createPaymentIntent({
+    payment_intent_id: "unit_payment_intent_for_fulfillment_001",
+    order_reference_id: "unit_order_for_fulfillment_001",
+    buyer_subject_node_id: "unit_buyer_subject_node_for_fulfillment_001",
+    vendor_subject_node_id: "unit_vendor_subject_node_for_fulfillment_001",
+    buyer_kyc_claim_id: "unit_buyer_kyc_claim_for_fulfillment_001",
+    vendor_kyc_claim_id: "unit_vendor_kyc_claim_for_fulfillment_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 12345,
+    created_at: 7_000,
+  });
+
+  const proof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_payment_intent_for_fulfillment_001",
+      proof_id: "unit_payment_proof_for_fulfillment_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_external_payment_reference_hash_for_fulfillment_001",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      submitted_at: 7_010,
+    },
+    intent.packet.packet_id
+  );
+
+  const acknowledgement = engine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_payment_intent_for_fulfillment_001",
+      proof_id: "unit_payment_proof_for_fulfillment_001",
+      acknowledgement_id: "unit_payment_ack_for_fulfillment_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_fulfillment_001",
+      status: "received",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      acknowledged_at: 7_020,
+    },
+    proof.packet.packet_id
+  );
+
+  const fulfillment = engine.startOrderFulfillment(
+    {
+      order_reference_id: "unit_order_for_fulfillment_001",
+      payment_intent_id: "unit_payment_intent_for_fulfillment_001",
+      proof_id: "unit_payment_proof_for_fulfillment_001",
+      acknowledgement_id: "unit_payment_ack_for_fulfillment_001",
+      fulfillment_id: "unit_order_fulfillment_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_fulfillment_001",
+      started_at: 7_030,
+      memo: "fulfillment started",
+    },
+    acknowledgement.packet.packet_id
+  );
+
+  assert.strictEqual(fulfillment.packet.packet_type, "order_fulfillment_started");
+  assert.strictEqual(fulfillment.packet.parent, acknowledgement.packet.packet_id);
+  assert.strictEqual(fulfillment.packet.payload.fulfillment_id, "unit_order_fulfillment_001");
+  assert.strictEqual(fulfillment.packet.payload.started_at, 7_030);
+  assert.strictEqual(engine.packetCount(), 4);
+  assert.strictEqual(engine.listKnowledge().length, 0);
+});
+
+test("order fulfillment started packets reject invalid started_at on import", () => {
+  const engine = unitEngine("unit_order_fulfillment_started_invalid_started_at");
+
+  const invalidFulfillment = createPacket({
+    packet_type: "order_fulfillment_started",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      order_reference_id: "unit_order_for_invalid_fulfillment_001",
+      payment_intent_id: "unit_payment_intent_for_invalid_fulfillment_001",
+      proof_id: "unit_payment_proof_for_invalid_fulfillment_001",
+      acknowledgement_id: "unit_payment_ack_for_invalid_fulfillment_001",
+      fulfillment_id: "unit_order_fulfillment_invalid_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_invalid_fulfillment_001",
+      started_at: 0,
+    },
+  });
+
+  const importResult = engine.importLedgerPackets([invalidFulfillment]);
+
+  assert.strictEqual(importResult.rejected_invalid_count, 1);
+  assert.strictEqual(engine.packetCount(), 0);
+});
+
 
 test("payment status summary derives missing, intent, proof, and vendor received states", () => {
   const engine = unitEngine("unit_payment_status_summary_received");
