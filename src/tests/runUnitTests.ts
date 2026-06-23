@@ -1590,6 +1590,85 @@ test("payment proof packets reject raw payment reference fields on import", () =
   assert.strictEqual(engine.packetCount(), 0);
 });
 
+
+test("payment acknowledgement packets are event-only vendor responses", () => {
+  const engine = unitEngine("unit_payment_ack_event_only");
+
+  const intent = engine.createPaymentIntent({
+    payment_intent_id: "unit_payment_intent_for_ack_001",
+    order_reference_id: "unit_order_for_ack_001",
+    buyer_subject_node_id: "unit_buyer_subject_node_for_ack_001",
+    vendor_subject_node_id: "unit_vendor_subject_node_for_ack_001",
+    buyer_kyc_claim_id: "unit_buyer_kyc_claim_for_ack_001",
+    vendor_kyc_claim_id: "unit_vendor_kyc_claim_for_ack_001",
+    external_rail: "upi",
+    currency_code: "INR",
+    amount_minor_units: 12345,
+    created_at: 2_000,
+  });
+
+  const proof = engine.submitPaymentProof(
+    {
+      payment_intent_id: "unit_payment_intent_for_ack_001",
+      proof_id: "unit_payment_proof_for_ack_001",
+      external_rail: "upi",
+      external_reference_hash: "unit_external_payment_reference_hash_for_ack_001",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      submitted_at: 2_010,
+    },
+    intent.packet.packet_id
+  );
+
+  const acknowledgement = engine.acknowledgePayment(
+    {
+      payment_intent_id: "unit_payment_intent_for_ack_001",
+      proof_id: "unit_payment_proof_for_ack_001",
+      acknowledgement_id: "unit_payment_ack_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_ack_001",
+      status: "received",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      acknowledged_at: 2_020,
+      reason: "vendor confirms received payment proof",
+    },
+    proof.packet.packet_id
+  );
+
+  const serializedLedger = JSON.stringify(engine.exportLedgerPackets());
+
+  assert.strictEqual(acknowledgement.packet.packet_type, "payment_acknowledged");
+  assert.strictEqual(engine.packetCount(), 3);
+  assert.strictEqual(engine.listKnowledge().length, 0);
+  assert(serializedLedger.includes("unit_payment_ack_001"));
+  assert(serializedLedger.includes("received"));
+});
+
+test("payment acknowledgement packets reject invalid status on import", () => {
+  const engine = unitEngine("unit_payment_ack_invalid_status_rejection");
+
+  const invalidAcknowledgement = createPacket({
+    packet_type: "payment_acknowledged",
+    zone: TEST_ZONE,
+    author: TEST_AUTHOR,
+    payload: {
+      payment_intent_id: "unit_payment_intent_for_invalid_ack_001",
+      proof_id: "unit_payment_proof_for_invalid_ack_001",
+      acknowledgement_id: "unit_payment_ack_invalid_001",
+      vendor_subject_node_id: "unit_vendor_subject_node_for_invalid_ack_001",
+      status: "lost",
+      currency_code: "INR",
+      amount_minor_units: 12345,
+      acknowledged_at: 2_020,
+    },
+  });
+
+  const importResult = engine.importLedgerPackets([invalidAcknowledgement]);
+
+  assert.strictEqual(importResult.rejected_invalid_count, 1);
+  assert.strictEqual(engine.packetCount(), 0);
+});
+
 test("ledger export returns durable packets without mutating count", () => {
   const engine = unitEngine("unit_ledger_export_read_only");
   const packet = engine.observePhrase({

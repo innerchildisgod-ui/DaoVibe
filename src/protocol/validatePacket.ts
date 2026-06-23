@@ -28,6 +28,7 @@ const SUPPORTED_PACKET_TYPES: Set<PacketType> = new Set([
   "kyc_evidence_expired",
   "payment_intent_created",
   "payment_proof_submitted",
+  "payment_acknowledged",
   "symbol_sample",
 ]);
 
@@ -63,6 +64,7 @@ export const KYC_PACKET_FIELD_LIMITS = {
 export const PAYMENT_PACKET_FIELD_LIMITS = {
   payment_intent_id: 160,
   proof_id: 160,
+  acknowledgement_id: 160,
   external_reference_hash: 300,
   order_reference_id: 160,
   buyer_subject_node_id: 160,
@@ -71,6 +73,7 @@ export const PAYMENT_PACKET_FIELD_LIMITS = {
   vendor_kyc_claim_id: 160,
   currency_code: 12,
   memo: 500,
+  reason: 500,
 } as const;
 
 const PAYMENT_EXTERNAL_RAILS = new Set([
@@ -83,6 +86,12 @@ const PAYMENT_EXTERNAL_RAILS = new Set([
   "mobile_money",
   "wallet",
   "other",
+]);
+
+const PAYMENT_ACKNOWLEDGEMENT_STATUSES = new Set([
+  "received",
+  "not_received",
+  "needs_review",
 ]);
 
 const KYC_KNOWN_VERIFIER_VOTES = new Set([
@@ -674,6 +683,92 @@ function validatePaymentProofSubmittedPayload(
   }
 }
 
+function validatePaymentAcknowledgedPayload(
+  packet: LmpPacket,
+  errors: string[]
+): void {
+  const payload = asPayloadObject(packet.payload);
+
+  if (!payload) {
+    errors.push("Missing payload");
+    return;
+  }
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "payment_intent_id",
+    PAYMENT_PACKET_FIELD_LIMITS.payment_intent_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "proof_id",
+    PAYMENT_PACKET_FIELD_LIMITS.proof_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "acknowledgement_id",
+    PAYMENT_PACKET_FIELD_LIMITS.acknowledgement_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "vendor_subject_node_id",
+    PAYMENT_PACKET_FIELD_LIMITS.vendor_subject_node_id,
+    errors
+  );
+
+  requirePayloadStringWithinLimit(
+    payload,
+    "currency_code",
+    PAYMENT_PACKET_FIELD_LIMITS.currency_code,
+    errors
+  );
+
+  if (
+    typeof payload.currency_code === "string" &&
+    !/^[A-Z]{3}$/.test(payload.currency_code)
+  ) {
+    errors.push("Invalid payload.currency_code");
+  }
+
+  requirePayloadString(payload, "status", errors);
+
+  if (
+    typeof payload.status === "string" &&
+    !PAYMENT_ACKNOWLEDGEMENT_STATUSES.has(payload.status)
+  ) {
+    errors.push("Invalid payload.status");
+  }
+
+  if (
+    !Number.isInteger(payload.amount_minor_units) ||
+    Number(payload.amount_minor_units) <= 0
+  ) {
+    errors.push("Invalid payload.amount_minor_units");
+  }
+
+  if (
+    !Number.isInteger(payload.acknowledged_at) ||
+    Number(payload.acknowledged_at) <= 0
+  ) {
+    errors.push("Invalid payload.acknowledged_at");
+  }
+
+  if (
+    payload.reason !== undefined &&
+    (typeof payload.reason !== "string" ||
+      payload.reason.trim().length === 0 ||
+      payload.reason.length > PAYMENT_PACKET_FIELD_LIMITS.reason)
+  ) {
+    errors.push("Invalid payload.reason");
+  }
+}
+
 function validatePaymentPayload(packet: LmpPacket, errors: string[]): void {
   if (packet.packet_type === "payment_intent_created") {
     validatePaymentIntentCreatedPayload(packet, errors);
@@ -681,6 +776,10 @@ function validatePaymentPayload(packet: LmpPacket, errors: string[]): void {
 
   if (packet.packet_type === "payment_proof_submitted") {
     validatePaymentProofSubmittedPayload(packet, errors);
+  }
+
+  if (packet.packet_type === "payment_acknowledged") {
+    validatePaymentAcknowledgedPayload(packet, errors);
   }
 }
 

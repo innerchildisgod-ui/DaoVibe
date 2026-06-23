@@ -18,6 +18,7 @@ export type PacketType =
   | "kyc_evidence_expired"
   | "payment_intent_created"
   | "payment_proof_submitted"
+  | "payment_acknowledged"
   | "safety_label"
   | "symbol_sample";
 
@@ -64,6 +65,11 @@ export type PaymentExternalRail =
   | "mobile_money"
   | "wallet"
   | "other";
+
+export type PaymentAcknowledgementStatus =
+  | "received"
+  | "not_received"
+  | "needs_review";
 
 export type CorrectionTombstoneReason =
   | "rejected_status"
@@ -229,4 +235,16 @@ export interface PaymentProofSubmittedPayload {
   amount_minor_units: number;
   submitted_at: number;
   memo?: string;
+}
+
+export interface PaymentAcknowledgedPayload {
+  payment_intent_id: string;
+  proof_id: string;
+  acknowledgement_id: string;
+  vendor_subject_node_id: string;
+  status: PaymentAcknowledgementStatus;
+  currency_code: string;
+  amount_minor_units: number;
+  acknowledged_at: number;
+  reason?: string;
 }
