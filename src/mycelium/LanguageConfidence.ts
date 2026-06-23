@@ -40,6 +40,8 @@ const MIN_CONFIDENCE = 0;
 const MAX_CONFIDENCE = 1;
 const MIN_VOTES_FOR_FULL_WEIGHT = 3;
 const VOTE_WEIGHT = 0.5;
+const IDENTIFIED_VOTE_WEIGHT = 1;
+const ANONYMOUS_VOTE_WEIGHT = 0.5;
 
 export function calculateMeaningScore(
   input: MeaningScoreInput
@@ -81,7 +83,12 @@ export function countUniqueVoterVotes(
     const voterId = normalizeNonEmptyString(vote.voter_id);
 
     if (!voterId) {
-      addVoteCount(countsByTarget, targetKey, vote.vote);
+      addVoteCount(
+        countsByTarget,
+        targetKey,
+        vote.vote,
+        ANONYMOUS_VOTE_WEIGHT
+      );
       continue;
     }
 
@@ -127,6 +134,10 @@ function normalizeVoteCount(value: unknown): number {
     return 0;
   }
 
+  if (numericValue < 1) {
+    return numericValue;
+  }
+
   return Math.floor(numericValue);
 }
 
@@ -137,7 +148,8 @@ function clampScore(value: number): number {
 function addVoteCount(
   countsByTarget: Map<string, UniqueVoterVoteCounts>,
   targetKey: string,
-  vote: CountedVoteValue
+  vote: CountedVoteValue,
+  weight = IDENTIFIED_VOTE_WEIGHT
 ): void {
   const counts = countsByTarget.get(targetKey) ?? {
     confirm_votes: 0,
@@ -145,11 +157,11 @@ function addVoteCount(
   };
 
   if (vote === "confirm") {
-    counts.confirm_votes += 1;
+    counts.confirm_votes += weight;
   }
 
   if (vote === "reject") {
-    counts.reject_votes += 1;
+    counts.reject_votes += weight;
   }
 
   countsByTarget.set(targetKey, counts);

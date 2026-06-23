@@ -33,7 +33,10 @@ import { createCorrectionGovernanceRateLimiter } from "../server/routes/correcti
 import { apiError } from "../server/routes/apiResponses";
 import { createServer as createMyceliumServer } from "../server/createServer";
 import { test, runTests } from "./testHarness";
-import { calculateMeaningScore } from "../mycelium/LanguageConfidence";
+import {
+  calculateMeaningScore,
+  countUniqueVoterVotes,
+} from "../mycelium/LanguageConfidence";
 import { SQLiteStore, type KnowledgePhraseRecord } from "../storage/sqliteStore";
 import {
   listAppliedSchemaMigrations,
@@ -2566,6 +2569,41 @@ test("language confidence gives weak weight to a single vote", () => {
 
   assert(score.score > 0.25);
   assert(score.score < 0.75);
+});
+
+
+test("language confidence gives half weight to anonymous votes", () => {
+  const counts = countUniqueVoterVotes([
+    {
+      target_key: "anonymous_vote_target",
+      vote: "confirm",
+      created_at: 1,
+      packet_id: "anonymous_vote_packet",
+    },
+    {
+      target_key: "anonymous_vote_target",
+      voter_id: "identified_voter",
+      vote: "confirm",
+      created_at: 2,
+      packet_id: "identified_vote_packet",
+    },
+  ]);
+
+  assert.deepStrictEqual(counts.get("anonymous_vote_target"), {
+    confirm_votes: 1.5,
+    reject_votes: 0,
+  });
+
+  const score = calculateMeaningScore({
+    confidence: 0,
+    confirms: 0.5,
+    rejects: 0,
+  });
+
+  assert.strictEqual(score.confirms, 0.5);
+  assert.strictEqual(score.total_votes, 0.5);
+  assert(score.score > 0);
+  assert(score.score < 0.5);
 });
 
 test("language confidence penalizes rejected meanings", () => {
