@@ -819,6 +819,87 @@ test("local node settings reject invalid sync mode", () => {
   );
 });
 
+
+test("local KYC verifier alias registry creates stable local aliases", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_kyc_alias_stable"));
+  const firstAlias = store.getOrCreateLocalKycVerifierAlias({
+    verifier_node_id: " real_verifier_node_001 ",
+    display_name: "Known Friend",
+  });
+  const repeatedAlias = store.getOrCreateLocalKycVerifierAlias({
+    verifier_node_id: "real_verifier_node_001",
+  });
+
+  assert.match(
+    firstAlias.verifier_alias_id,
+    /^kyc_verifier_alias_[0-9a-f]{24}$/
+  );
+  assert.strictEqual(firstAlias.verifier_node_id, "real_verifier_node_001");
+  assert.strictEqual(firstAlias.display_name, "Known Friend");
+  assert.strictEqual(
+    repeatedAlias.verifier_alias_id,
+    firstAlias.verifier_alias_id
+  );
+  assert.strictEqual(
+    repeatedAlias.verifier_node_id,
+    firstAlias.verifier_node_id
+  );
+});
+
+test("local KYC verifier alias registry updates display name without changing alias", () => {
+  const store = new SQLiteStore(unitDbPath("unit_local_kyc_alias_update"));
+  const firstAlias = store.getOrCreateLocalKycVerifierAlias({
+    verifier_node_id: "real_verifier_node_002",
+    display_name: "Old Name",
+  });
+  const updatedAlias = store.getOrCreateLocalKycVerifierAlias({
+    verifier_node_id: "real_verifier_node_002",
+    display_name: "New Name",
+  });
+
+  assert.strictEqual(
+    updatedAlias.verifier_alias_id,
+    firstAlias.verifier_alias_id
+  );
+  assert.strictEqual(updatedAlias.verifier_node_id, firstAlias.verifier_node_id);
+  assert.strictEqual(updatedAlias.display_name, "New Name");
+  assert(updatedAlias.updated_at > firstAlias.updated_at);
+});
+
+test("local KYC verifier alias registry persists after restart", () => {
+  const dbPath = unitDbPath("unit_local_kyc_alias_restart");
+  const firstStore = new SQLiteStore(dbPath);
+  const firstAlias = firstStore.getOrCreateLocalKycVerifierAlias({
+    verifier_node_id: "real_verifier_node_003",
+    display_name: "Restart Friend",
+  });
+  const restartedStore = new SQLiteStore(dbPath);
+  const restartedAlias = restartedStore.getLocalKycVerifierAliasByNodeId(
+    "real_verifier_node_003"
+  );
+
+  assert.deepStrictEqual(restartedAlias, firstAlias);
+});
+
+test("local KYC verifier alias registry is not stored in synced packets", () => {
+  const engine = unitEngine("unit_local_kyc_alias_not_synced");
+  const controller = new MyceliumController(engine);
+  const alias = controller.getOrCreateLocalKycVerifierAlias({
+    verifier_node_id: "real_verifier_node_004",
+    display_name: "Private Friend",
+  });
+  const serializedLedger = JSON.stringify(engine.exportLedgerPackets());
+  const listedAliases = controller.listLocalKycVerifierAliases();
+
+  assert.strictEqual(engine.packetCount(), 0);
+  assert(!serializedLedger.includes("real_verifier_node_004"));
+  assert(!serializedLedger.includes("Private Friend"));
+  assert(!serializedLedger.includes(alias.verifier_alias_id));
+  assert.strictEqual(listedAliases.length, 1);
+  assert.strictEqual(listedAliases[0].verifier_alias_id, alias.verifier_alias_id);
+  assert.strictEqual(listedAliases[0].verifier_node_id, "real_verifier_node_004");
+});
+
 test("sqlite migrations create tracking table and apply stable IDs", () => {
   const db = new Database(":memory:");
 

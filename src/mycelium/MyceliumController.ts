@@ -4,6 +4,8 @@ import type {
   LocalNodeSettings,
   LocalNodeSettingsUpdate,
   LocalNodeIdentity,
+  LocalKycVerifierAlias,
+  LocalKycVerifierAliasInput,
   PeerSyncCursor,
   SQLiteStore,
 } from "../storage/sqliteStore";
@@ -57,6 +59,9 @@ type LocalNodeStore = Pick<
   | "updateLocalNodeIdentity"
   | "getOrCreateLocalNodeSettings"
   | "updateLocalNodeSettings"
+  | "getOrCreateLocalKycVerifierAlias"
+  | "getLocalKycVerifierAliasByNodeId"
+  | "listLocalKycVerifierAliases"
   | "getPacketCount"
   | "listAppliedSchemaMigrations"
   | "listPeerSyncCursors"
@@ -186,6 +191,24 @@ export class MyceliumController {
     input: LocalNodeSettingsUpdate
   ): LocalNodeSettings {
     return this.localNodeStore().updateLocalNodeSettings(input);
+  }
+
+  getOrCreateLocalKycVerifierAlias(
+    input: LocalKycVerifierAliasInput
+  ): LocalKycVerifierAlias {
+    return this.localNodeStore().getOrCreateLocalKycVerifierAlias(input);
+  }
+
+  getLocalKycVerifierAliasByNodeId(
+    verifierNodeId: string
+  ): LocalKycVerifierAlias | undefined {
+    return this.localNodeStore().getLocalKycVerifierAliasByNodeId(
+      verifierNodeId
+    );
+  }
+
+  listLocalKycVerifierAliases(): LocalKycVerifierAlias[] {
+    return this.localNodeStore().listLocalKycVerifierAliases();
   }
 
   getNodeStatus(): MyceliumNodeStatus {

@@ -149,6 +149,23 @@ export const SQLITE_MIGRATIONS: SqliteMigration[] = [
       `);
     },
   },
+  {
+    migration_id: "007_local_kyc_verifier_aliases",
+    run: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS local_kyc_verifier_aliases (
+          verifier_alias_id TEXT PRIMARY KEY,
+          verifier_node_id TEXT NOT NULL UNIQUE,
+          display_name TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_local_kyc_verifier_aliases_node_id
+          ON local_kyc_verifier_aliases(verifier_node_id);
+      `);
+    },
+  },
 ];
 
 export function runSqliteMigrations(db: Database.Database): void {

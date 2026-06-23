@@ -116,6 +116,19 @@ export interface LocalNodeSettingsUpdate {
   show_debug_panels?: boolean;
 }
 
+export interface LocalKycVerifierAlias {
+  verifier_alias_id: string;
+  verifier_node_id: string;
+  display_name?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface LocalKycVerifierAliasInput {
+  verifier_node_id: string;
+  display_name?: string;
+}
+
 interface PacketRow extends PacketSummary {
   packet_json: string;
 }
@@ -131,6 +144,14 @@ interface LocalNodeSettingsRow {
   sync_mode: string;
   developer_mode: number;
   show_debug_panels: number;
+  updated_at: number;
+}
+
+interface LocalKycVerifierAliasRow {
+  verifier_alias_id: string;
+  verifier_node_id: string;
+  display_name: string | null;
+  created_at: number;
   updated_at: number;
 }
 
@@ -295,6 +316,176 @@ export class SQLiteStore {
 
   listAppliedSchemaMigrations(): AppliedSchemaMigration[] {
     return listAppliedSchemaMigrations(this.db);
+  }
+
+  /**
+   * Local-only KYC verifier alias registry.
+   *
+   * This maps real verifier node/contact identifiers to stable local
+   * verifier_alias_id values. This table must never be read by ledger export,
+   * sync export, packet creation payload serialization, or any remote API that
+   * could expose raw verifier identities.
+   */
+  getOrCreateLocalKycVerifierAlias(
+    input: LocalKycVerifierAliasInput
+  ): LocalKycVerifierAlias {
+    const verifierNodeId = input.verifier_node_id.trim();
+
+    if (!verifierNodeId) {
+      throw new Error("verifier_node_id must be a non-empty string");
+    }
+
+    let displayName: string | undefined;
+
+    if (input.display_name !== undefined) {
+      displayName = input.display_name.trim();
+
+      if (!displayName) {
+        throw new Error("display_name must be a non-empty string when provided");
+      }
+    }
+
+    const existingAlias = this.getLocalKycVerifierAliasByNodeId(verifierNodeId);
+
+    if (existingAlias) {
+      if (displayName === undefined || displayName === existingAlias.display_name) {
+        return existingAlias;
+      }
+
+      const updatedAt = Math.max(
+        currentUnixSeconds(),
+        existingAlias.updated_at + 1
+      );
+
+      this.db
+        .prepare(
+          `
+          UPDATE local_kyc_verifier_aliases
+          SET
+            display_name = @display_name,
+            updated_at = @updated_at
+          WHERE verifier_node_id = @verifier_node_id
+        `
+        )
+        .run({
+          verifier_node_id: verifierNodeId,
+          display_name: displayName,
+          updated_at: updatedAt,
+        });
+
+      const updatedAlias = this.getLocalKycVerifierAliasByNodeId(verifierNodeId);
+
+      if (!updatedAlias) {
+        throw new Error("Failed to update local KYC verifier alias");
+      }
+
+      return updatedAlias;
+    }
+
+    const createdAt = currentUnixSeconds();
+    const aliasId = `kyc_verifier_alias_${randomUUID()
+      .replace(/-/g, "")
+      .slice(0, 24)}`;
+
+    this.db
+      .prepare(
+        `
+        INSERT INTO local_kyc_verifier_aliases (
+          verifier_alias_id,
+          verifier_node_id,
+          display_name,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          @verifier_alias_id,
+          @verifier_node_id,
+          @display_name,
+          @created_at,
+          @updated_at
+        )
+      `
+      )
+      .run({
+        verifier_alias_id: aliasId,
+        verifier_node_id: verifierNodeId,
+        display_name: displayName,
+        created_at: createdAt,
+        updated_at: createdAt,
+      });
+
+    const createdAlias = this.getLocalKycVerifierAliasByNodeId(verifierNodeId);
+
+    if (!createdAlias) {
+      throw new Error("Failed to create local KYC verifier alias");
+    }
+
+    return createdAlias;
+  }
+
+  getLocalKycVerifierAliasByNodeId(
+    verifierNodeId: string
+  ): LocalKycVerifierAlias | undefined {
+    const normalizedVerifierNodeId = verifierNodeId.trim();
+
+    if (!normalizedVerifierNodeId) {
+      throw new Error("verifier_node_id must be a non-empty string");
+    }
+
+    const row = this.db
+      .prepare(
+        `
+        SELECT
+          verifier_alias_id,
+          verifier_node_id,
+          display_name,
+          created_at,
+          updated_at
+        FROM local_kyc_verifier_aliases
+        WHERE verifier_node_id = ?
+      `
+      )
+      .get(normalizedVerifierNodeId) as LocalKycVerifierAliasRow | undefined;
+
+    if (!row) {
+      return undefined;
+    }
+
+    return {
+      verifier_alias_id: row.verifier_alias_id,
+      verifier_node_id: row.verifier_node_id,
+      display_name: row.display_name ?? undefined,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  listLocalKycVerifierAliases(): LocalKycVerifierAlias[] {
+    return this.db
+      .prepare(
+        `
+        SELECT
+          verifier_alias_id,
+          verifier_node_id,
+          display_name,
+          created_at,
+          updated_at
+        FROM local_kyc_verifier_aliases
+        ORDER BY updated_at DESC, verifier_alias_id ASC
+      `
+      )
+      .all()
+      .map((row) => {
+        const aliasRow = row as LocalKycVerifierAliasRow;
+
+        return {
+          verifier_alias_id: aliasRow.verifier_alias_id,
+          verifier_node_id: aliasRow.verifier_node_id,
+          display_name: aliasRow.display_name ?? undefined,
+          created_at: aliasRow.created_at,
+          updated_at: aliasRow.updated_at,
+        };
+      });
   }
 
   getOrCreateLocalNodeIdentity(): LocalNodeIdentity {
