@@ -36,6 +36,7 @@ export type KycClaimSummaryResult =
       found: false;
       kyc_claim_id: string;
       packet_count: number;
+      is_kyc_verified: false;
     }
   | {
       found: true;
@@ -46,6 +47,7 @@ export type KycClaimSummaryResult =
       claim_packet_id: string;
       claimed_at: number;
       status: KycQuorumStatus;
+      is_kyc_verified: boolean;
       packet_count: number;
       evidence_count: number;
       evidence_bundle_hashes: string[];
@@ -94,6 +96,7 @@ export function summarizeKycPacketsForClaim(
       found: false,
       kyc_claim_id: normalizedClaimId,
       packet_count: relatedPackets.length,
+      is_kyc_verified: false,
     };
   }
 
@@ -132,6 +135,7 @@ export function summarizeKycPacketsForClaim(
     claim_packet_id: claimPacket.packet_id,
     claimed_at: claimPayload.consented_at,
     status: latestQuorum?.payload.status ?? "pending",
+    is_kyc_verified: latestQuorum?.payload.status === "verified",
     packet_count: relatedPackets.length,
     evidence_count: evidencePackets.length,
     evidence_bundle_hashes: uniqueSorted(

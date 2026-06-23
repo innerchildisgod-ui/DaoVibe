@@ -1369,6 +1369,7 @@ test("KYC claim summary reports current claim state", () => {
   assert.strictEqual(summary.country_hint, "IN");
   assert.strictEqual(summary.document_type_hint, "government_id");
   assert.strictEqual(summary.status, "needs_more_review");
+  assert.strictEqual(summary.is_kyc_verified, false);
   assert.strictEqual(summary.packet_count, 8);
   assert.strictEqual(summary.evidence_count, 1);
   assert.deepStrictEqual(summary.evidence_bundle_hashes, [
@@ -1401,6 +1402,48 @@ test("KYC claim summary reports current claim state", () => {
   assert.strictEqual(summary.latest_quorum_reason, "more known verifiers needed");
 });
 
+
+test("KYC claim summary exposes verified gate from quorum result", () => {
+  const engine = unitEngine("unit_kyc_claim_summary_verified_gate");
+  const controller = new MyceliumController(engine);
+  const claimId = "unit_kyc_claim_verified_gate_001";
+
+  const claim = engine.createKycClaim({
+    kyc_claim_id: claimId,
+    subject_node_id: "unit_subject_node_verified_gate_001",
+    country_hint: "IN",
+    document_type_hint: "government_id",
+    consent_text_hash: "unit_verified_gate_consent_hash",
+    consented_at: 1_000,
+  });
+
+  engine.recordKycQuorumResult(
+    {
+      kyc_claim_id: claimId,
+      status: "verified",
+      same_person_votes: 3,
+      not_same_person_votes: 0,
+      unsure_votes: 0,
+      suspicious_votes: 0,
+      ai_result: "pass",
+      result_reason: "required quorum reached",
+    },
+    claim.packet.packet_id
+  );
+
+  const summary = controller.getKycClaimSummary(claimId);
+
+  assert.strictEqual(summary.found, true);
+
+  if (!summary.found) {
+    throw new Error("Expected KYC summary to be found");
+  }
+
+  assert.strictEqual(summary.status, "verified");
+  assert.strictEqual(summary.is_kyc_verified, true);
+  assert.strictEqual(summary.latest_quorum_reason, "required quorum reached");
+});
+
 test("KYC claim summary reports missing claims without mutation", () => {
   const engine = unitEngine("unit_kyc_claim_summary_missing");
   const controller = new MyceliumController(engine);
@@ -1412,6 +1455,7 @@ test("KYC claim summary reports missing claims without mutation", () => {
     found: false,
     kyc_claim_id: "missing_kyc_claim",
     packet_count: 0,
+    is_kyc_verified: false,
   });
   assert.strictEqual(engine.packetCount(), packetCountBefore);
 });
