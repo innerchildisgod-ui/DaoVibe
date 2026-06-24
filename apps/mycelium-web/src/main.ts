@@ -48,6 +48,7 @@ import {
 import {
   renderBestMeaning,
   renderMeaningExplanation,
+  renderPhraseDetail,
   renderSearch,
   renderSearchResults,
 } from "./phraseRendering";
