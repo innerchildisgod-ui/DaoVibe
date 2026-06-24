@@ -3,19 +3,17 @@ import type { LmpPacket } from "../protocol/packet";
 import { CommerceController } from "./CommerceController";
 import { KycController } from "./KycController";
 import { LanguageController } from "./LanguageController";
-import {
-  NodeRuntimeController,
-  type LocalNodeIdentityUpdate,
-} from "./NodeRuntimeController";
-import type {
-  LocalNodeSettingsUpdate,
-} from "../storage/sqliteStore";
+import { NodeRuntimeController } from "./NodeRuntimeController";
+import type { LocalNodeSettingsUpdate } from "../storage/sqliteStore";
+
+import type { LocalNodeIdentityUpdate } from "./MyceliumRuntimeTypes";
 
 export type {
+  LocalNodeIdentityUpdate,
   MyceliumNodeDiagnostics,
   MyceliumNodeStatus,
   MyceliumSyncStatus,
-} from "./NodeRuntimeController";
+} from "./MyceliumRuntimeTypes";
 
 export interface MyceliumRuntimeOptions {
   tombstoneExecutionEnabled?: boolean;
