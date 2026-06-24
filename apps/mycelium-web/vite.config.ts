@@ -22,6 +22,8 @@ export default defineConfig({
       "/app": "http://localhost:3000",
       "/node": "http://localhost:3000",
       "/phrases": "http://localhost:3000",
+      "/payments": "http://localhost:3000",
+      "/orders": "http://localhost:3000",
       "/sync": "http://localhost:3000",
     },
     fs: {

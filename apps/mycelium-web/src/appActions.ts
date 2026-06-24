@@ -15,6 +15,8 @@ export type SetAppState = (nextState: Partial<AppState>) => void;
 export type AppActions = {
   loadStatus: () => Promise<void>;
   loadDiagnostics: () => Promise<void>;
+  loadPaymentStatus: (paymentIntentId: string) => Promise<void>;
+  loadOrderFulfillmentStatus: (orderReferenceId: string) => Promise<void>;
   searchPhrases: (query: string) => Promise<void>;
   selectPhrase: (phraseId: string) => Promise<void>;
   prefillCorrectionVote: (correctionId: string) => void;
@@ -106,6 +108,83 @@ export function createAppActions({
           error instanceof Error
             ? `Diagnostics unavailable. ${error.message}`
             : "Diagnostics unavailable.",
+      });
+    }
+  }
+
+  async function loadPaymentStatus(paymentIntentId: string): Promise<void> {
+    const trimmedPaymentIntentId = paymentIntentId.trim();
+
+    state.commerceLookupForm.paymentIntentId = trimmedPaymentIntentId;
+
+    if (!trimmedPaymentIntentId) {
+      setState({
+        commerceError: "payment_intent_id is required.",
+      });
+      return;
+    }
+
+    setState({
+      loadingCommerce: true,
+      commerceError: undefined,
+    });
+
+    try {
+      const paymentStatus = await client.getPaymentStatusSummary(
+        trimmedPaymentIntentId
+      );
+
+      setState({
+        loadingCommerce: false,
+        paymentStatus,
+      });
+    } catch (error) {
+      setState({
+        loadingCommerce: false,
+        paymentStatus: undefined,
+        commerceError:
+          error instanceof Error
+            ? error.message
+            : "Payment status lookup failed.",
+      });
+    }
+  }
+
+  async function loadOrderFulfillmentStatus(
+    orderReferenceId: string
+  ): Promise<void> {
+    const trimmedOrderReferenceId = orderReferenceId.trim();
+
+    state.commerceLookupForm.orderReferenceId = trimmedOrderReferenceId;
+
+    if (!trimmedOrderReferenceId) {
+      setState({
+        commerceError: "order_reference_id is required.",
+      });
+      return;
+    }
+
+    setState({
+      loadingCommerce: true,
+      commerceError: undefined,
+    });
+
+    try {
+      const orderFulfillmentStatus =
+        await client.getOrderFulfillmentStatusSummary(trimmedOrderReferenceId);
+
+      setState({
+        loadingCommerce: false,
+        orderFulfillmentStatus,
+      });
+    } catch (error) {
+      setState({
+        loadingCommerce: false,
+        orderFulfillmentStatus: undefined,
+        commerceError:
+          error instanceof Error
+            ? error.message
+            : "Order fulfillment status lookup failed.",
       });
     }
   }
@@ -624,6 +703,8 @@ export function createAppActions({
   return {
     loadStatus,
     loadDiagnostics,
+    loadPaymentStatus,
+    loadOrderFulfillmentStatus,
     searchPhrases,
     selectPhrase,
     prefillCorrectionVote,

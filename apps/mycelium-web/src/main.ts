@@ -21,6 +21,8 @@ import { createAppActions } from "./appActions";
 import { state } from "./appState";
 import type { AppState } from "./appState";
 
+import { renderCommerceStatus } from "./commerceRendering";
+
 import {
   renderObservePhrase,
   renderProposeMeaning,
@@ -94,6 +96,8 @@ function setState(nextState: Partial<AppState>): void {
 const {
   loadStatus,
   loadDiagnostics,
+  loadPaymentStatus,
+  loadOrderFulfillmentStatus,
   searchPhrases,
   selectPhrase,
   prefillCorrectionVote,
@@ -123,6 +127,7 @@ function render(): void {
       </div>
       <div class="work-column">
         ${renderSearch(state)}
+        ${renderCommerceStatus(state)}
         ${renderObservePhrase(state)}
         ${renderPhraseDetail(state)}
         ${renderMeaningExplanation(state)}
@@ -151,6 +156,12 @@ function bindEvents(): void {
   );
   const correctionVoteForm = document.querySelector<HTMLFormElement>(
     "#vote-correction-form"
+  );
+  const paymentStatusForm = document.querySelector<HTMLFormElement>(
+    "#payment-status-form"
+  );
+  const orderFulfillmentStatusForm = document.querySelector<HTMLFormElement>(
+    "#order-fulfillment-status-form"
   );
   const refreshDiagnosticsButton = document.querySelector<HTMLButtonElement>(
     "#refresh-diagnostics"
@@ -258,6 +269,14 @@ function bindEvents(): void {
     state.correctionVoteForm.voter = value;
   });
 
+  bindFormInput("payment-status-form", "payment_intent_id", (value) => {
+    state.commerceLookupForm.paymentIntentId = value;
+  });
+
+  bindFormInput("order-fulfillment-status-form", "order_reference_id", (value) => {
+    state.commerceLookupForm.orderReferenceId = value;
+  });
+
   const correctionVoteSelect = document.querySelector<HTMLSelectElement>(
     '#vote-correction-form [name="vote"]'
   );
@@ -285,6 +304,20 @@ function bindEvents(): void {
   correctionVoteForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     void voteMeaningCorrection(new FormData(correctionVoteForm));
+  });
+
+  paymentStatusForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(paymentStatusForm);
+    void loadPaymentStatus(String(formData.get("payment_intent_id") ?? ""));
+  });
+
+  orderFulfillmentStatusForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(orderFulfillmentStatusForm);
+    void loadOrderFulfillmentStatus(
+      String(formData.get("order_reference_id") ?? "")
+    );
   });
 
   refreshDiagnosticsButton?.addEventListener("click", () => {

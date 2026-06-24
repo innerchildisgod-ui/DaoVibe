@@ -10,11 +10,16 @@ function createUnitAppState(): AppState {
     loadingPacketTrace: false,
     loadingDiagnostics: false,
     loadingGovernance: false,
+    loadingCommerce: false,
     observingPhrase: false,
     proposingMeaning: false,
     proposingCorrection: false,
     votingCorrection: false,
     searchQuery: "",
+    commerceLookupForm: {
+      paymentIntentId: "",
+      orderReferenceId: "",
+    },
     observeForm: {
       surfaceText: "",
       languageHint: "",
@@ -109,6 +114,20 @@ function createClient(overrides: Record<string, unknown> = {}): never {
     })),
     getTombstones: vi.fn(async () => ({
       tombstones: [],
+    })),
+    getPaymentStatusSummary: vi.fn(async (paymentIntentId: string) => ({
+      ok: true,
+      summary: {
+        payment_intent_id: paymentIntentId,
+        status: "intent_created",
+      },
+    })),
+    getOrderFulfillmentStatusSummary: vi.fn(async (orderReferenceId: string) => ({
+      ok: true,
+      summary: {
+        order_reference_id: orderReferenceId,
+        status: "payment_intent_created",
+      },
     })),
     observePhrase: vi.fn(),
     proposeMeaning: vi.fn(),
@@ -488,5 +507,109 @@ describe("createAppActions correction governance prefill", () => {
     expect(state.correctionVoteForm.correctionId).toBe(
       "correction_prefill_vote"
     );
+  });
+});
+
+
+
+describe("createAppActions commerce status lookups", () => {
+  let state: AppState;
+
+  beforeEach(() => {
+    state = createUnitAppState();
+  });
+
+  it("loads payment status with a trimmed payment_intent_id", async () => {
+    const getPaymentStatusSummary = vi.fn(async (paymentIntentId: string) => ({
+      ok: true,
+      summary: {
+        payment_intent_id: paymentIntentId,
+        status: "proof_submitted",
+        proof_id: "proof_unit_web",
+      },
+    }));
+
+    const actions = createAppActions({
+      client: createClient({ getPaymentStatusSummary }),
+      state,
+      setState: (nextState) => applyStateUpdate(state, nextState),
+    });
+
+    await actions.loadPaymentStatus(" payment_intent_unit_web ");
+
+    expect(getPaymentStatusSummary).toHaveBeenCalledTimes(1);
+    expect(getPaymentStatusSummary).toHaveBeenCalledWith(
+      "payment_intent_unit_web"
+    );
+    expect(state.loadingCommerce).toBe(false);
+    expect(state.commerceError).toBeUndefined();
+    expect(state.commerceLookupForm.paymentIntentId).toBe(
+      "payment_intent_unit_web"
+    );
+    expect(state.paymentStatus?.summary.status).toBe("proof_submitted");
+  });
+
+  it("rejects blank payment_intent_id before loading payment status", async () => {
+    const getPaymentStatusSummary = vi.fn();
+
+    const actions = createAppActions({
+      client: createClient({ getPaymentStatusSummary }),
+      state,
+      setState: (nextState) => applyStateUpdate(state, nextState),
+    });
+
+    await actions.loadPaymentStatus("   ");
+
+    expect(getPaymentStatusSummary).not.toHaveBeenCalled();
+    expect(state.loadingCommerce).toBe(false);
+    expect(state.commerceError).toBe("payment_intent_id is required.");
+  });
+
+  it("loads order fulfillment status with a trimmed order_reference_id", async () => {
+    const getOrderFulfillmentStatusSummary = vi.fn(
+      async (orderReferenceId: string) => ({
+        ok: true,
+        summary: {
+          order_reference_id: orderReferenceId,
+          status: "fulfillment_completed",
+          completion_id: "completion_unit_web",
+        },
+      })
+    );
+
+    const actions = createAppActions({
+      client: createClient({ getOrderFulfillmentStatusSummary }),
+      state,
+      setState: (nextState) => applyStateUpdate(state, nextState),
+    });
+
+    await actions.loadOrderFulfillmentStatus(" order_unit_web ");
+
+    expect(getOrderFulfillmentStatusSummary).toHaveBeenCalledTimes(1);
+    expect(getOrderFulfillmentStatusSummary).toHaveBeenCalledWith(
+      "order_unit_web"
+    );
+    expect(state.loadingCommerce).toBe(false);
+    expect(state.commerceError).toBeUndefined();
+    expect(state.commerceLookupForm.orderReferenceId).toBe("order_unit_web");
+    expect(state.orderFulfillmentStatus?.summary.status).toBe(
+      "fulfillment_completed"
+    );
+  });
+
+  it("rejects blank order_reference_id before loading fulfillment status", async () => {
+    const getOrderFulfillmentStatusSummary = vi.fn();
+
+    const actions = createAppActions({
+      client: createClient({ getOrderFulfillmentStatusSummary }),
+      state,
+      setState: (nextState) => applyStateUpdate(state, nextState),
+    });
+
+    await actions.loadOrderFulfillmentStatus("   ");
+
+    expect(getOrderFulfillmentStatusSummary).not.toHaveBeenCalled();
+    expect(state.loadingCommerce).toBe(false);
+    expect(state.commerceError).toBe("order_reference_id is required.");
   });
 });

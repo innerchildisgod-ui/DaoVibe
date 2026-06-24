@@ -6,6 +6,8 @@ import type {
   LocalNodeSettings,
   NodeDiagnosticsResponse,
   NodeStatusResponse,
+  OrderFulfillmentStatusSummaryResponse,
+  PaymentStatusSummaryResponse,
   PhrasePacketTraceResponse,
   PhraseRecord,
   PhraseSearchResponse,
@@ -20,6 +22,11 @@ import type {
   ProposeFormState,
 } from "./contributionRendering";
 
+export type CommerceLookupFormState = {
+  paymentIntentId: string;
+  orderReferenceId: string;
+};
+
 export type AppState = {
   loading: boolean;
   loadingPhrase: boolean;
@@ -27,6 +34,7 @@ export type AppState = {
   loadingPacketTrace: boolean;
   loadingDiagnostics: boolean;
   loadingGovernance: boolean;
+  loadingCommerce: boolean;
   observingPhrase: boolean;
   proposingMeaning: boolean;
   proposingCorrection: boolean;
@@ -37,6 +45,7 @@ export type AppState = {
   packetTraceError?: string;
   diagnosticsError?: string;
   governanceError?: string;
+  commerceError?: string;
   observeResult?: FormResult;
   proposeResult?: FormResult;
   correctionProposalResult?: FormResult;
@@ -46,7 +55,10 @@ export type AppState = {
   nodeIdentity?: LocalNodeIdentity;
   nodeSettings?: LocalNodeSettings;
   syncStatus?: SyncStatusResponse;
+  paymentStatus?: PaymentStatusSummaryResponse;
+  orderFulfillmentStatus?: OrderFulfillmentStatusSummaryResponse;
   searchQuery: string;
+  commerceLookupForm: CommerceLookupFormState;
   observeForm: ObserveFormState;
   proposeForm: ProposeFormState;
   correctionProposalForm: CorrectionProposalFormState;
@@ -67,11 +79,16 @@ export const state: AppState = {
   loadingPacketTrace: false,
   loadingDiagnostics: false,
   loadingGovernance: false,
+  loadingCommerce: false,
   observingPhrase: false,
   proposingMeaning: false,
   proposingCorrection: false,
   votingCorrection: false,
   searchQuery: "",
+  commerceLookupForm: {
+    paymentIntentId: "",
+    orderReferenceId: "",
+  },
   observeForm: {
     surfaceText: "",
     languageHint: "",
