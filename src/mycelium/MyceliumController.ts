@@ -12,6 +12,7 @@ import {
   MYCELIUM_APP_CONTRACT_VERSION,
   MYCELIUM_PROTOCOL_VERSION,
 } from "./MyceliumVersions";
+import { CommerceController } from "./CommerceController";
 import { KycController } from "./KycController";
 import { LanguageController } from "./LanguageController";
 
@@ -124,6 +125,7 @@ export class MyceliumController {
   private readonly startedAtMs = Date.now();
   private readonly languageController: LanguageController;
   private readonly kycController: KycController;
+  private readonly commerceController: CommerceController;
 
   constructor(
     private readonly engine: LanguageEngine,
@@ -131,6 +133,7 @@ export class MyceliumController {
   ) {
     this.languageController = new LanguageController(engine, runtimeOptions);
     this.kycController = new KycController(engine);
+    this.commerceController = new CommerceController(engine);
   }
 
   getLocalNodeIdentity(): LocalNodeIdentity {
@@ -372,11 +375,13 @@ export class MyceliumController {
   }
 
   getPaymentStatusSummary(paymentIntentId: string) {
-    return this.engine.getPaymentStatusSummary(paymentIntentId);
+    return this.commerceController.getPaymentStatusSummary(paymentIntentId);
   }
 
   getOrderFulfillmentStatusSummary(orderReferenceId: string) {
-    return this.engine.getOrderFulfillmentStatusSummary(orderReferenceId);
+    return this.commerceController.getOrderFulfillmentStatusSummary(
+      orderReferenceId
+    );
   }
 
   listNodes() {
