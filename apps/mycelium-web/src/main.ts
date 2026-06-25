@@ -22,6 +22,7 @@ import { state } from "./appState";
 import type { AppState } from "./appState";
 
 import { renderCommerceStatus } from "./commerceRendering";
+import { renderKycStatus } from "./kycRendering";
 
 import {
   renderObservePhrase,
@@ -99,6 +100,7 @@ const {
   loadDiagnostics,
   loadPaymentStatus,
   loadOrderFulfillmentStatus,
+  loadKycClaimSummary,
   searchPhrases,
   selectPhrase,
   prefillCorrectionVote,
@@ -129,6 +131,7 @@ function render(): void {
       <div class="work-column">
         ${renderSearch(state)}
         ${renderCommerceStatus(state)}
+        ${renderKycStatus(state)}
         ${renderObservePhrase(state)}
         ${renderPhraseDetail(state)}
         ${renderMeaningExplanation(state)}
@@ -163,6 +166,9 @@ function bindEvents(): void {
   );
   const orderFulfillmentStatusForm = document.querySelector<HTMLFormElement>(
     "#order-fulfillment-status-form"
+  );
+  const kycClaimSummaryForm = document.querySelector<HTMLFormElement>(
+    "#kyc-claim-summary-form"
   );
   const refreshDiagnosticsButton = document.querySelector<HTMLButtonElement>(
     "#refresh-diagnostics"
@@ -278,6 +284,12 @@ function bindEvents(): void {
     state.commerceLookupForm.orderReferenceId = value;
   });
 
+  bindFormInput("kyc-claim-summary-form", "kyc_claim_id", (value) => {
+    state.kycLookupForm = {
+      kycClaimId: value,
+    };
+  });
+
   const correctionVoteSelect = document.querySelector<HTMLSelectElement>(
     '#vote-correction-form [name="vote"]'
   );
@@ -319,6 +331,12 @@ function bindEvents(): void {
     void loadOrderFulfillmentStatus(
       String(formData.get("order_reference_id") ?? "")
     );
+  });
+
+  kycClaimSummaryForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(kycClaimSummaryForm);
+    void loadKycClaimSummary(String(formData.get("kyc_claim_id") ?? ""));
   });
 
   refreshDiagnosticsButton?.addEventListener("click", () => {

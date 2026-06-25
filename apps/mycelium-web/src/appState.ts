@@ -6,6 +6,7 @@ import type {
   LocalNodeSettings,
   NodeDiagnosticsResponse,
   NodeStatusResponse,
+  KycClaimSummaryResponse,
   OrderFulfillmentStatusSummaryResponse,
   PaymentStatusSummaryResponse,
   PhrasePacketTraceResponse,
@@ -27,6 +28,10 @@ export type CommerceLookupFormState = {
   orderReferenceId: string;
 };
 
+export type KycLookupFormState = {
+  kycClaimId: string;
+};
+
 export type AppState = {
   loading: boolean;
   loadingPhrase: boolean;
@@ -35,6 +40,7 @@ export type AppState = {
   loadingDiagnostics: boolean;
   loadingGovernance: boolean;
   loadingCommerce: boolean;
+  loadingKyc?: boolean;
   observingPhrase: boolean;
   proposingMeaning: boolean;
   proposingCorrection: boolean;
@@ -46,6 +52,7 @@ export type AppState = {
   diagnosticsError?: string;
   governanceError?: string;
   commerceError?: string;
+  kycError?: string;
   observeResult?: FormResult;
   proposeResult?: FormResult;
   correctionProposalResult?: FormResult;
@@ -57,8 +64,10 @@ export type AppState = {
   syncStatus?: SyncStatusResponse;
   paymentStatus?: PaymentStatusSummaryResponse;
   orderFulfillmentStatus?: OrderFulfillmentStatusSummaryResponse;
+  kycClaimSummary?: KycClaimSummaryResponse;
   searchQuery: string;
   commerceLookupForm: CommerceLookupFormState;
+  kycLookupForm?: KycLookupFormState;
   observeForm: ObserveFormState;
   proposeForm: ProposeFormState;
   correctionProposalForm: CorrectionProposalFormState;
@@ -80,6 +89,7 @@ export const state: AppState = {
   loadingDiagnostics: false,
   loadingGovernance: false,
   loadingCommerce: false,
+  loadingKyc: false,
   observingPhrase: false,
   proposingMeaning: false,
   proposingCorrection: false,
@@ -88,6 +98,9 @@ export const state: AppState = {
   commerceLookupForm: {
     paymentIntentId: "",
     orderReferenceId: "",
+  },
+  kycLookupForm: {
+    kycClaimId: "",
   },
   observeForm: {
     surfaceText: "",

@@ -17,6 +17,7 @@ export type AppActions = {
   loadDiagnostics: () => Promise<void>;
   loadPaymentStatus: (paymentIntentId: string) => Promise<void>;
   loadOrderFulfillmentStatus: (orderReferenceId: string) => Promise<void>;
+  loadKycClaimSummary: (kycClaimId: string) => Promise<void>;
   searchPhrases: (query: string) => Promise<void>;
   selectPhrase: (phraseId: string) => Promise<void>;
   prefillCorrectionVote: (correctionId: string) => void;
@@ -185,6 +186,42 @@ export function createAppActions({
           error instanceof Error
             ? error.message
             : "Order fulfillment status lookup failed.",
+      });
+    }
+  }
+
+  async function loadKycClaimSummary(kycClaimId: string): Promise<void> {
+    const trimmedKycClaimId = kycClaimId.trim();
+
+    state.kycLookupForm = {
+      kycClaimId: trimmedKycClaimId,
+    };
+
+    if (!trimmedKycClaimId) {
+      setState({
+        kycError: "kyc_claim_id is required.",
+      });
+      return;
+    }
+
+    setState({
+      loadingKyc: true,
+      kycError: undefined,
+    });
+
+    try {
+      const kycClaimSummary = await client.getKycClaimSummary(trimmedKycClaimId);
+
+      setState({
+        loadingKyc: false,
+        kycClaimSummary,
+      });
+    } catch (error) {
+      setState({
+        loadingKyc: false,
+        kycClaimSummary: undefined,
+        kycError:
+          error instanceof Error ? error.message : "KYC claim lookup failed.",
       });
     }
   }
@@ -705,6 +742,7 @@ export function createAppActions({
     loadDiagnostics,
     loadPaymentStatus,
     loadOrderFulfillmentStatus,
+    loadKycClaimSummary,
     searchPhrases,
     selectPhrase,
     prefillCorrectionVote,
