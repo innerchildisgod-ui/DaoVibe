@@ -108,6 +108,8 @@ describe("renderCommerceStatus", () => {
     expect(html).toContain("Order fulfillment status");
     expect(html).toContain("fulfillment_completed");
     expect(html).toContain("completion_unit_render");
+    expect(html).toContain("1970-01-01T00:00:00.111Z (111)");
+    expect(html).toContain("1970-01-01T00:00:00.222Z (222)");
     expect(html).toContain("unit render memo");
   });
 });

@@ -6,7 +6,24 @@ export function text(value: unknown, fallback = "Not available"): string {
   return String(value);
 }
 
+export function formatTimestamp(value: unknown, fallback = "Not available"): string {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
 
+  const timestamp =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : Number.NaN;
+
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return text(value, fallback);
+  }
+
+  return `${new Date(timestamp).toISOString()} (${timestamp})`;
+}
 
 export function escapeHtml(value: unknown): string {
   return text(value)
@@ -17,27 +34,19 @@ export function escapeHtml(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
-
-
 export function escapeAttribute(value: unknown): string {
   return escapeHtml(value).replace(/`/g, "&#96;");
 }
 
-
-
 export function statusText(value: boolean | undefined): string {
   return value === true ? "true" : value === false ? "false" : "unknown";
 }
-
-
 
 export function optionalTrimmed(value: string): string | undefined {
   const trimmedValue = value.trim();
 
   return trimmedValue ? trimmedValue : undefined;
 }
-
-
 
 export function slugFromText(value: string, fallback: string): string {
   const slug = value
@@ -51,13 +60,9 @@ export function slugFromText(value: string, fallback: string): string {
   return slug || fallback;
 }
 
-
-
 export function createPhraseId(surfaceText: string): string {
   return `phrase_${slugFromText(surfaceText, "observed")}_${Date.now().toString(36)}`;
 }
-
-
 
 export function createMeaningId(phraseId: string, referenceMeaning: string): string {
   const baseText = `${phraseId}_${referenceMeaning}`;

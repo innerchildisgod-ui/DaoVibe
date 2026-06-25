@@ -4,7 +4,12 @@ import type {
 } from "@mycelium/client";
 import type { AppState } from "./appState";
 import { field } from "./formRendering";
-import { escapeAttribute, escapeHtml, text } from "./uiFormatting";
+import {
+  escapeAttribute,
+  escapeHtml,
+  formatTimestamp,
+  text,
+} from "./uiFormatting";
 
 function renderPaymentSummary(summary: PaymentStatusSummary | undefined): string {
   if (!summary) {
@@ -44,8 +49,8 @@ function renderOrderFulfillmentSummary(
       ${field("acknowledgement_id", text(summary.acknowledgement_id))}
       ${field("fulfillment_id", text(summary.fulfillment_id))}
       ${field("completion_id", text(summary.completion_id))}
-      ${field("fulfilled_started_at", text(summary.fulfilled_started_at))}
-      ${field("fulfilled_completed_at", text(summary.fulfilled_completed_at))}
+      ${field("fulfilled_started_at", formatTimestamp(summary.fulfilled_started_at))}
+      ${field("fulfilled_completed_at", formatTimestamp(summary.fulfilled_completed_at))}
       ${field("memo", text(summary.memo))}
     </div>
   `;
