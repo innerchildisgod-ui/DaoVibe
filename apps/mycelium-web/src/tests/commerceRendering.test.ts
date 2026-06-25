@@ -77,6 +77,8 @@ describe("renderCommerceStatus", () => {
             payment_intent_id: "payment_unit_render",
             status: "vendor_received",
             order_reference_id: "order_unit_render",
+            buyer_kyc_claim_id: "buyer_kyc_unit_render",
+            vendor_kyc_claim_id: "vendor_kyc_unit_render",
             proof_id: "proof_unit_render",
             acknowledgement_id: "ack_unit_render",
             acknowledgement_status: "received",
@@ -90,6 +92,8 @@ describe("renderCommerceStatus", () => {
             order_reference_id: "order_unit_render",
             status: "fulfillment_completed",
             payment_intent_id: "payment_unit_render",
+            buyer_kyc_claim_id: "buyer_order_kyc_unit_render",
+            vendor_kyc_claim_id: "vendor_order_kyc_unit_render",
             proof_id: "proof_unit_render",
             acknowledgement_id: "ack_unit_render",
             fulfillment_id: "fulfillment_unit_render",
@@ -111,5 +115,9 @@ describe("renderCommerceStatus", () => {
     expect(html).toContain("1970-01-01T00:00:00.111Z (111)");
     expect(html).toContain("1970-01-01T00:00:00.222Z (222)");
     expect(html).toContain("unit render memo");
+    expect(html).toContain('data-kyc-claim-id="buyer_kyc_unit_render"');
+    expect(html).toContain('data-kyc-claim-id="vendor_kyc_unit_render"');
+    expect(html).toContain('data-kyc-claim-id="buyer_order_kyc_unit_render"');
+    expect(html).toContain('data-kyc-claim-id="vendor_order_kyc_unit_render"');
   });
 });

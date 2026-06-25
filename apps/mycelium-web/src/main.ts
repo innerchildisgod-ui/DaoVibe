@@ -214,6 +214,21 @@ function bindEvents(): void {
     }
   );
 
+  document.querySelectorAll<HTMLButtonElement>("[data-kyc-claim-id]").forEach(
+    (button) => {
+      button.addEventListener("click", () => {
+        const kycClaimId = button.dataset.kycClaimId;
+
+        if (kycClaimId) {
+          state.kycLookupForm = {
+            kycClaimId,
+          };
+          void loadKycClaimSummary(kycClaimId);
+        }
+      });
+    }
+  );
+
   bindFormInput("observe-phrase-form", "surface_text", (value) => {
     state.observeForm.surfaceText = value;
   });
