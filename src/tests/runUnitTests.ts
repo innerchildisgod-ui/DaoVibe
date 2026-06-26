@@ -1,4 +1,4 @@
-import assert from "assert";
+﻿import assert from "assert";
 import Database from "better-sqlite3";
 import type { Server as HttpServer } from "http";
 import { join } from "path";
