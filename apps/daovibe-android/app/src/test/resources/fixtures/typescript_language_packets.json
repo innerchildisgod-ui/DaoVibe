@@ -1,0 +1,207 @@
+{
+  "fixture_version": 1,
+  "source": "Generated from TypeScript src/protocol/createPacket, stableStringify, PhraseStore, and selectBestMeaning",
+  "expected": {
+    "phrase_id": "fixture_phrase_001",
+    "surface_text": "Vanakkam",
+    "phonetic_hint": "va-nak-kam",
+    "language_hint": "ta",
+    "safety_label": "mild_slang",
+    "meaning_id": "fixture_meaning_hello",
+    "reference_meaning": "hello",
+    "context": "greeting",
+    "confidence": 0.25,
+    "confirm_votes": 1,
+    "reject_votes": 1,
+    "score": 0.25,
+    "total_votes": 2,
+    "phrase_count": 1,
+    "meaning_count": 1,
+    "ledger_count": 7
+  },
+  "packets": [
+    {
+      "name": "phrase_observed",
+      "payload_canonical_json": "{\"input_type\":\"text\",\"language_hint\":\"ta\",\"phonetic_hint\":\"va-nak-kam\",\"phrase_id\":\"fixture_phrase_001\",\"surface_text\":\"Vanakkam\"}",
+      "payload_hash": "213ac7413fc1eb5e9061365d20fe87897e3cb6120c6ed05b56ac435eb5c27660",
+      "packet_hash_input_canonical_json": "{\"author\":\"fixture_author_observer\",\"created_at\":1700000100,\"packet_type\":\"phrase_observed\",\"payload\":{\"input_type\":\"text\",\"language_hint\":\"ta\",\"phonetic_hint\":\"va-nak-kam\",\"phrase_id\":\"fixture_phrase_001\",\"surface_text\":\"Vanakkam\"},\"payload_hash\":\"213ac7413fc1eb5e9061365d20fe87897e3cb6120c6ed05b56ac435eb5c27660\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "packet_id": "7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a",
+      "packet_canonical_json": "{\"author\":\"fixture_author_observer\",\"created_at\":1700000100,\"packet_id\":\"7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a\",\"packet_type\":\"phrase_observed\",\"payload\":{\"input_type\":\"text\",\"language_hint\":\"ta\",\"phonetic_hint\":\"va-nak-kam\",\"phrase_id\":\"fixture_phrase_001\",\"surface_text\":\"Vanakkam\"},\"payload_hash\":\"213ac7413fc1eb5e9061365d20fe87897e3cb6120c6ed05b56ac435eb5c27660\",\"signature\":\"dev_signature:fixture_author_observer:7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "signature_input_hash": "ba0a6701ca3eda5b4735c317a133ca8eb2c310fe30decb9920d6ca507f254165",
+      "packet": {
+        "version": "lmp/0.1",
+        "packet_type": "phrase_observed",
+        "created_at": 1700000100,
+        "zone": "fixture_zone",
+        "author": "fixture_author_observer",
+        "payload_hash": "213ac7413fc1eb5e9061365d20fe87897e3cb6120c6ed05b56ac435eb5c27660",
+        "payload": {
+          "phrase_id": "fixture_phrase_001",
+          "surface_text": "Vanakkam",
+          "phonetic_hint": "va-nak-kam",
+          "language_hint": "ta",
+          "input_type": "text"
+        },
+        "packet_id": "7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a",
+        "signature": "dev_signature:fixture_author_observer:7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a"
+      }
+    },
+    {
+      "name": "meaning_proposal",
+      "payload_canonical_json": "{\"confidence\":0.25,\"context\":\"greeting\",\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"reference_meaning\":\"hello\"}",
+      "payload_hash": "e6d7be2a782d2fa0d69a951f67636f0991bb1bec33ce32d9d442ba3900ab283f",
+      "packet_hash_input_canonical_json": "{\"author\":\"fixture_author_observer\",\"created_at\":1700000101,\"packet_type\":\"meaning_proposal\",\"parent\":\"7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a\",\"payload\":{\"confidence\":0.25,\"context\":\"greeting\",\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"reference_meaning\":\"hello\"},\"payload_hash\":\"e6d7be2a782d2fa0d69a951f67636f0991bb1bec33ce32d9d442ba3900ab283f\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "packet_id": "29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008",
+      "packet_canonical_json": "{\"author\":\"fixture_author_observer\",\"created_at\":1700000101,\"packet_id\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"packet_type\":\"meaning_proposal\",\"parent\":\"7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a\",\"payload\":{\"confidence\":0.25,\"context\":\"greeting\",\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"reference_meaning\":\"hello\"},\"payload_hash\":\"e6d7be2a782d2fa0d69a951f67636f0991bb1bec33ce32d9d442ba3900ab283f\",\"signature\":\"dev_signature:fixture_author_observer:29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "signature_input_hash": "f7475a3b32765a88032025cbc21d8aa21b92489259387213f0ff2ee602d9b9f4",
+      "packet": {
+        "version": "lmp/0.1",
+        "packet_type": "meaning_proposal",
+        "created_at": 1700000101,
+        "zone": "fixture_zone",
+        "author": "fixture_author_observer",
+        "parent": "7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a",
+        "payload_hash": "e6d7be2a782d2fa0d69a951f67636f0991bb1bec33ce32d9d442ba3900ab283f",
+        "payload": {
+          "phrase_id": "fixture_phrase_001",
+          "meaning_id": "fixture_meaning_hello",
+          "reference_meaning": "hello",
+          "context": "greeting",
+          "confidence": 0.25
+        },
+        "packet_id": "29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008",
+        "signature": "dev_signature:fixture_author_observer:29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008"
+      }
+    },
+    {
+      "name": "meaning_vote_confirm_same_voter",
+      "payload_canonical_json": "{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"confirm\"}",
+      "payload_hash": "7ef6cf609c88cc3a8025582201c6ed02e1033ff3c6b402a2a8f6926e6118c1aa",
+      "packet_hash_input_canonical_json": "{\"author\":\"fixture_voter_same\",\"created_at\":1700000102,\"packet_type\":\"meaning_vote\",\"parent\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"payload\":{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"confirm\"},\"payload_hash\":\"7ef6cf609c88cc3a8025582201c6ed02e1033ff3c6b402a2a8f6926e6118c1aa\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "packet_id": "8429ab97cecaef993e4adc0ea91d832598a18213c82a477d5094b93682e1b93a",
+      "packet_canonical_json": "{\"author\":\"fixture_voter_same\",\"created_at\":1700000102,\"packet_id\":\"8429ab97cecaef993e4adc0ea91d832598a18213c82a477d5094b93682e1b93a\",\"packet_type\":\"meaning_vote\",\"parent\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"payload\":{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"confirm\"},\"payload_hash\":\"7ef6cf609c88cc3a8025582201c6ed02e1033ff3c6b402a2a8f6926e6118c1aa\",\"signature\":\"dev_signature:fixture_voter_same:8429ab97cecaef993e4adc0ea91d832598a18213c82a477d5094b93682e1b93a\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "signature_input_hash": "5c41a23d2999cf7211b6793b5839d682a453703c50427bf127974b34c4dff563",
+      "packet": {
+        "version": "lmp/0.1",
+        "packet_type": "meaning_vote",
+        "created_at": 1700000102,
+        "zone": "fixture_zone",
+        "author": "fixture_voter_same",
+        "parent": "29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008",
+        "payload_hash": "7ef6cf609c88cc3a8025582201c6ed02e1033ff3c6b402a2a8f6926e6118c1aa",
+        "payload": {
+          "phrase_id": "fixture_phrase_001",
+          "meaning_id": "fixture_meaning_hello",
+          "vote": "confirm",
+          "confidence": 1
+        },
+        "packet_id": "8429ab97cecaef993e4adc0ea91d832598a18213c82a477d5094b93682e1b93a",
+        "signature": "dev_signature:fixture_voter_same:8429ab97cecaef993e4adc0ea91d832598a18213c82a477d5094b93682e1b93a"
+      }
+    },
+    {
+      "name": "meaning_vote_reject_same_voter_latest",
+      "payload_canonical_json": "{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"reject\"}",
+      "payload_hash": "3a7cac4645b63163d0a8d2b0188915a7b37996cbd579608794c785bdde34187b",
+      "packet_hash_input_canonical_json": "{\"author\":\"fixture_voter_same\",\"created_at\":1700000103,\"packet_type\":\"meaning_vote\",\"parent\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"payload\":{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"reject\"},\"payload_hash\":\"3a7cac4645b63163d0a8d2b0188915a7b37996cbd579608794c785bdde34187b\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "packet_id": "3d7d0b33dd6aa38d05f4ee1a53fec9e75933c6305c7d6c022e520da330d304fa",
+      "packet_canonical_json": "{\"author\":\"fixture_voter_same\",\"created_at\":1700000103,\"packet_id\":\"3d7d0b33dd6aa38d05f4ee1a53fec9e75933c6305c7d6c022e520da330d304fa\",\"packet_type\":\"meaning_vote\",\"parent\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"payload\":{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"reject\"},\"payload_hash\":\"3a7cac4645b63163d0a8d2b0188915a7b37996cbd579608794c785bdde34187b\",\"signature\":\"dev_signature:fixture_voter_same:3d7d0b33dd6aa38d05f4ee1a53fec9e75933c6305c7d6c022e520da330d304fa\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "signature_input_hash": "d0cdcd4215194781b5e0f5c7aae19630375b34847d5655b641a71df27a1ce63c",
+      "packet": {
+        "version": "lmp/0.1",
+        "packet_type": "meaning_vote",
+        "created_at": 1700000103,
+        "zone": "fixture_zone",
+        "author": "fixture_voter_same",
+        "parent": "29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008",
+        "payload_hash": "3a7cac4645b63163d0a8d2b0188915a7b37996cbd579608794c785bdde34187b",
+        "payload": {
+          "phrase_id": "fixture_phrase_001",
+          "meaning_id": "fixture_meaning_hello",
+          "vote": "reject",
+          "confidence": 1
+        },
+        "packet_id": "3d7d0b33dd6aa38d05f4ee1a53fec9e75933c6305c7d6c022e520da330d304fa",
+        "signature": "dev_signature:fixture_voter_same:3d7d0b33dd6aa38d05f4ee1a53fec9e75933c6305c7d6c022e520da330d304fa"
+      }
+    },
+    {
+      "name": "meaning_vote_confirm_other_voter",
+      "payload_canonical_json": "{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"confirm\"}",
+      "payload_hash": "7ef6cf609c88cc3a8025582201c6ed02e1033ff3c6b402a2a8f6926e6118c1aa",
+      "packet_hash_input_canonical_json": "{\"author\":\"fixture_voter_other\",\"created_at\":1700000104,\"packet_type\":\"meaning_vote\",\"parent\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"payload\":{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"confirm\"},\"payload_hash\":\"7ef6cf609c88cc3a8025582201c6ed02e1033ff3c6b402a2a8f6926e6118c1aa\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "packet_id": "3f54acbcf865ecb95a12bbdfade6e76f97a1cea7e7321d4759c563c0d5821526",
+      "packet_canonical_json": "{\"author\":\"fixture_voter_other\",\"created_at\":1700000104,\"packet_id\":\"3f54acbcf865ecb95a12bbdfade6e76f97a1cea7e7321d4759c563c0d5821526\",\"packet_type\":\"meaning_vote\",\"parent\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"payload\":{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"confirm\"},\"payload_hash\":\"7ef6cf609c88cc3a8025582201c6ed02e1033ff3c6b402a2a8f6926e6118c1aa\",\"signature\":\"dev_signature:fixture_voter_other:3f54acbcf865ecb95a12bbdfade6e76f97a1cea7e7321d4759c563c0d5821526\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "signature_input_hash": "8c7906bcee255cf4fec62ed54019a29e5c5c03e11e2891ea3665d0b6fda6c670",
+      "packet": {
+        "version": "lmp/0.1",
+        "packet_type": "meaning_vote",
+        "created_at": 1700000104,
+        "zone": "fixture_zone",
+        "author": "fixture_voter_other",
+        "parent": "29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008",
+        "payload_hash": "7ef6cf609c88cc3a8025582201c6ed02e1033ff3c6b402a2a8f6926e6118c1aa",
+        "payload": {
+          "phrase_id": "fixture_phrase_001",
+          "meaning_id": "fixture_meaning_hello",
+          "vote": "confirm",
+          "confidence": 1
+        },
+        "packet_id": "3f54acbcf865ecb95a12bbdfade6e76f97a1cea7e7321d4759c563c0d5821526",
+        "signature": "dev_signature:fixture_voter_other:3f54acbcf865ecb95a12bbdfade6e76f97a1cea7e7321d4759c563c0d5821526"
+      }
+    },
+    {
+      "name": "meaning_vote_unsure_ignored",
+      "payload_canonical_json": "{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"unsure\"}",
+      "payload_hash": "a466dbaaefc3b3b6bc849f48f9d558bfa58ab6c968bdf9a1af7e0677d6ae6b30",
+      "packet_hash_input_canonical_json": "{\"author\":\"fixture_voter_unsure\",\"created_at\":1700000105,\"packet_type\":\"meaning_vote\",\"parent\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"payload\":{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"unsure\"},\"payload_hash\":\"a466dbaaefc3b3b6bc849f48f9d558bfa58ab6c968bdf9a1af7e0677d6ae6b30\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "packet_id": "36ef47a067ded8865886b57bc1e29aaf22b3383e4a906ef43e077ff5f0d04f93",
+      "packet_canonical_json": "{\"author\":\"fixture_voter_unsure\",\"created_at\":1700000105,\"packet_id\":\"36ef47a067ded8865886b57bc1e29aaf22b3383e4a906ef43e077ff5f0d04f93\",\"packet_type\":\"meaning_vote\",\"parent\":\"29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008\",\"payload\":{\"confidence\":1,\"meaning_id\":\"fixture_meaning_hello\",\"phrase_id\":\"fixture_phrase_001\",\"vote\":\"unsure\"},\"payload_hash\":\"a466dbaaefc3b3b6bc849f48f9d558bfa58ab6c968bdf9a1af7e0677d6ae6b30\",\"signature\":\"dev_signature:fixture_voter_unsure:36ef47a067ded8865886b57bc1e29aaf22b3383e4a906ef43e077ff5f0d04f93\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "signature_input_hash": "dd16629f38d98d33bb8e04681c228db331ae8c637d91dcc1e99451860e72f267",
+      "packet": {
+        "version": "lmp/0.1",
+        "packet_type": "meaning_vote",
+        "created_at": 1700000105,
+        "zone": "fixture_zone",
+        "author": "fixture_voter_unsure",
+        "parent": "29843e85843b230146d0de01957927b61b431859fceffa341167da4fd666f008",
+        "payload_hash": "a466dbaaefc3b3b6bc849f48f9d558bfa58ab6c968bdf9a1af7e0677d6ae6b30",
+        "payload": {
+          "phrase_id": "fixture_phrase_001",
+          "meaning_id": "fixture_meaning_hello",
+          "vote": "unsure",
+          "confidence": 1
+        },
+        "packet_id": "36ef47a067ded8865886b57bc1e29aaf22b3383e4a906ef43e077ff5f0d04f93",
+        "signature": "dev_signature:fixture_voter_unsure:36ef47a067ded8865886b57bc1e29aaf22b3383e4a906ef43e077ff5f0d04f93"
+      }
+    },
+    {
+      "name": "safety_label",
+      "payload_canonical_json": "{\"label\":\"mild_slang\",\"phrase_id\":\"fixture_phrase_001\",\"reason\":\"local review\"}",
+      "payload_hash": "300cbba70223b2cb537581e10ccfcfb878d90187a5bf8cc06b22e0098d51bdeb",
+      "packet_hash_input_canonical_json": "{\"author\":\"fixture_safety_reviewer\",\"created_at\":1700000106,\"packet_type\":\"safety_label\",\"parent\":\"7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a\",\"payload\":{\"label\":\"mild_slang\",\"phrase_id\":\"fixture_phrase_001\",\"reason\":\"local review\"},\"payload_hash\":\"300cbba70223b2cb537581e10ccfcfb878d90187a5bf8cc06b22e0098d51bdeb\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "packet_id": "07a53a76de03eae9e9159c62f830919f03a92016835b587c0455cdf4b3882811",
+      "packet_canonical_json": "{\"author\":\"fixture_safety_reviewer\",\"created_at\":1700000106,\"packet_id\":\"07a53a76de03eae9e9159c62f830919f03a92016835b587c0455cdf4b3882811\",\"packet_type\":\"safety_label\",\"parent\":\"7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a\",\"payload\":{\"label\":\"mild_slang\",\"phrase_id\":\"fixture_phrase_001\",\"reason\":\"local review\"},\"payload_hash\":\"300cbba70223b2cb537581e10ccfcfb878d90187a5bf8cc06b22e0098d51bdeb\",\"signature\":\"dev_signature:fixture_safety_reviewer:07a53a76de03eae9e9159c62f830919f03a92016835b587c0455cdf4b3882811\",\"version\":\"lmp/0.1\",\"zone\":\"fixture_zone\"}",
+      "signature_input_hash": "75df1a48e96514c2963adf22133103292ea40618c1516b3a88dc24b5c22ef472",
+      "packet": {
+        "version": "lmp/0.1",
+        "packet_type": "safety_label",
+        "created_at": 1700000106,
+        "zone": "fixture_zone",
+        "author": "fixture_safety_reviewer",
+        "parent": "7ebf3e3114c89c22586b4b8c617edef54cd3d84952c1f26b81b590104873f44a",
+        "payload_hash": "300cbba70223b2cb537581e10ccfcfb878d90187a5bf8cc06b22e0098d51bdeb",
+        "payload": {
+          "phrase_id": "fixture_phrase_001",
+          "label": "mild_slang",
+          "reason": "local review"
+        },
+        "packet_id": "07a53a76de03eae9e9159c62f830919f03a92016835b587c0455cdf4b3882811",
+        "signature": "dev_signature:fixture_safety_reviewer:07a53a76de03eae9e9159c62f830919f03a92016835b587c0455cdf4b3882811"
+      }
+    }
+  ]
+}
+
