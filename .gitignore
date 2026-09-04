@@ -9,3 +9,11 @@ data/
 *.db-wal
 npm-debug.log*
 .DS_Store
+
+# DAOVibe local workloop generated state
+.daovibe/logs/
+.daovibe/status/status.json
+.daovibe/status/workloop.lock
+.daovibe/status/*.tmp
+.daovibe/status/codex-prompt-*.md
+.daovibe/handoff/latest.md
