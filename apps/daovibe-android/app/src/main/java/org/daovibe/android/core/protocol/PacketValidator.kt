@@ -71,6 +71,9 @@ class PacketValidator {
         )
     }
 
+    fun isExpired(packet: LmpPacket<PacketPayload>, atSeconds: Long): Boolean =
+        packet.expiresAt != null && packet.expiresAt < atSeconds
+
     private fun validateMilestonePayload(
         packet: LmpPacket<PacketPayload>,
         errors: MutableList<String>

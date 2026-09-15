@@ -1,0 +1,1 @@
+{"message_type":"connection_reject","pairing_id":"pairing_666e5531acdded9a23e2c70a","protocol_version":"daovibe-connection-v1","reason_code":"pairing_not_found","rejected_at":1700000003,"session_id":"session_0123456789abcdef0123456789abcdef","source_node_id":"mycelium_node_computer","target_node_id":"mycelium_node_phone"}

@@ -1,8 +1,11 @@
 <resources>
-    <style name="Theme.DAOVibe" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.DAOVibe" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:colorAccent">#1F7A5F</item>
+        <item name="android:windowBackground">#050A14</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#050A14</item>
+        <item name="android:navigationBarColor">#050A14</item>
+        <item name="android:colorAccent">#22D3EE</item>
     </style>
 </resources>
-

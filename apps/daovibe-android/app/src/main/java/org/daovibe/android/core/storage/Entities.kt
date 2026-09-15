@@ -124,3 +124,63 @@ data class SyncCursorEntity(
     val updatedAt: Long
 )
 
+@Entity(
+    tableName = "peer_sync_state",
+    indices = [Index(value = ["pairing_id"])]
+)
+data class PeerSyncStateEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "remote_node_id")
+    val remoteNodeId: String,
+    @ColumnInfo(name = "pairing_id")
+    val pairingId: String,
+    @ColumnInfo(name = "inbound_cursor")
+    val inboundCursor: String,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long
+)
+
+@Entity(
+    tableName = "paired_devices",
+    indices = [
+        Index(value = ["local_node_id"]),
+        Index(value = ["local_node_id", "remote_node_id"])
+    ]
+)
+data class PairingRecordEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "pairing_id")
+    val pairingId: String,
+    @ColumnInfo(name = "local_node_id")
+    val localNodeId: String,
+    @ColumnInfo(name = "remote_node_id")
+    val remoteNodeId: String,
+    @ColumnInfo(name = "remote_display_name")
+    val remoteDisplayName: String,
+    @ColumnInfo(name = "remote_platform")
+    val remotePlatform: String,
+    @ColumnInfo(name = "remote_role")
+    val remoteRole: String,
+    val status: String,
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long,
+    @ColumnInfo(name = "paired_at")
+    val pairedAt: Long?,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long
+)
+
+@Entity(tableName = "pending_pairing_offers")
+data class PendingPairingOfferEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "pairing_id")
+    val pairingId: String,
+    @ColumnInfo(name = "offer_json")
+    val offerJson: String,
+    @ColumnInfo(name = "local_node_id")
+    val localNodeId: String,
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long
+)

@@ -6,7 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import kotlinx.coroutines.launch
+import org.daovibe.android.core.connection.ConnectionRepository
 import org.daovibe.android.core.mycelium.LocalMyceliumRepository
+import org.daovibe.android.core.pairing.PairingRepository
 import org.daovibe.android.core.storage.DaoVibeDatabase
 import org.daovibe.android.ui.DaoVibeApp
 
@@ -20,15 +22,25 @@ class MainActivity : ComponentActivity() {
             applicationContext,
             DaoVibeDatabase::class.java,
             "daovibe_local.db"
-        ).build()
+        )
+            .addMigrations(DaoVibeDatabase.MIGRATION_1_2)
+            .addMigrations(DaoVibeDatabase.MIGRATION_2_3)
+            .addMigrations(DaoVibeDatabase.MIGRATION_3_4)
+            .build()
         val repository = LocalMyceliumRepository(database)
+        val pairingRepository = PairingRepository(database)
+        val connectionRepository = ConnectionRepository(database)
 
         lifecycleScope.launch {
             repository.ensureDeviceIdentity()
         }
 
         setContent {
-            DaoVibeApp(repository)
+            DaoVibeApp(
+                repository = repository,
+                pairingRepository = pairingRepository,
+                connectionRepository = connectionRepository
+            )
         }
     }
 
@@ -39,4 +51,3 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
-

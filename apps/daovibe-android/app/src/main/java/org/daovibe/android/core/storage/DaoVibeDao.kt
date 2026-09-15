@@ -32,6 +32,31 @@ interface DaoVibeDao {
     @Query("SELECT * FROM packets ORDER BY received_at ASC, packet_id ASC")
     suspend fun listPacketsInLedgerOrder(): List<PacketEntity>
 
+    @Query(
+        """
+        SELECT * FROM packets
+        WHERE
+          received_at > :receivedAt
+          OR (
+            received_at = :receivedAt
+            AND packet_id > :packetId
+          )
+        ORDER BY received_at ASC, packet_id ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun listPacketsAfterCursor(
+        receivedAt: Long,
+        packetId: String,
+        limit: Int
+    ): List<PacketEntity>
+
+    @Query("SELECT * FROM packets WHERE packet_id IN (:packetIds)")
+    suspend fun listPacketsByIds(packetIds: List<String>): List<PacketEntity>
+
+    @Query("SELECT * FROM packets ORDER BY received_at ASC, packet_id ASC")
+    fun observePacketsInLedgerOrder(): Flow<List<PacketEntity>>
+
     @Query("SELECT * FROM packets ORDER BY created_at ASC, packet_id ASC")
     suspend fun listPacketsForReplay(): List<PacketEntity>
 
@@ -104,4 +129,57 @@ interface DaoVibeDao {
 
     @Query("DELETE FROM votes")
     suspend fun clearVotes()
+
+    @Query(
+        "SELECT * FROM peer_sync_state " +
+            "WHERE remote_node_id = :remoteNodeId LIMIT 1"
+    )
+    suspend fun getPeerSyncState(remoteNodeId: String): PeerSyncStateEntity?
+
+    @Query(
+        "SELECT * FROM peer_sync_state " +
+            "ORDER BY updated_at DESC, remote_node_id ASC"
+    )
+    suspend fun listPeerSyncStates(): List<PeerSyncStateEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPeerSyncState(state: PeerSyncStateEntity)
+
+    @Query(
+        "SELECT * FROM paired_devices " +
+            "ORDER BY updated_at DESC, pairing_id ASC"
+    )
+    fun observePairingRecords(): Flow<List<PairingRecordEntity>>
+
+    @Query(
+        "SELECT * FROM paired_devices " +
+            "ORDER BY updated_at DESC, pairing_id ASC"
+    )
+    suspend fun listPairingRecords(): List<PairingRecordEntity>
+
+    @Query("SELECT * FROM paired_devices WHERE pairing_id = :pairingId LIMIT 1")
+    suspend fun getPairingRecord(pairingId: String): PairingRecordEntity?
+
+    @Query(
+        """
+        SELECT * FROM paired_devices
+        WHERE local_node_id = :localNodeId
+          AND remote_node_id = :remoteNodeId
+        ORDER BY updated_at DESC, pairing_id ASC
+        LIMIT 1
+        """
+    )
+    suspend fun getPairingRecordForRemote(
+        localNodeId: String,
+        remoteNodeId: String
+    ): PairingRecordEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPairingRecord(record: PairingRecordEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPendingPairingOffer(offer: PendingPairingOfferEntity)
+
+    @Query("SELECT * FROM pending_pairing_offers WHERE pairing_id = :pairingId LIMIT 1")
+    suspend fun getPendingPairingOffer(pairingId: String): PendingPairingOfferEntity?
 }

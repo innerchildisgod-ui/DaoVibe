@@ -61,7 +61,8 @@ data class MyceliumState(
 data class LocalMyceliumSnapshot(
     val identity: DeviceIdentity?,
     val state: MyceliumState,
-    val recentPackets: List<PacketEntity>
+    val recentPackets: List<PacketEntity>,
+    val ledgerPackets: List<PacketEntity> = recentPackets
 )
 
 enum class PacketReceiveDecision {
@@ -77,4 +78,3 @@ data class PacketReceiveResult(
     val packetId: String?,
     val errors: List<String> = emptyList()
 )
-

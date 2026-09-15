@@ -17,3 +17,10 @@ npm-debug.log*
 .daovibe/status/*.tmp
 .daovibe/status/codex-prompt-*.md
 .daovibe/handoff/latest.md
+apps/daovibe-android/.idea/
+.daovibe/tools/
+apps/daovibe-desktop-node/target/
+apps/daovibe-desktop-node/physical-pairing-offer.json
+apps/daovibe-desktop-node/physical-pairing-approval.json
+apps/daovibe-android/gradle/gradle-daemon-jvm.properties
+daovibe_launcher_icon.zip
