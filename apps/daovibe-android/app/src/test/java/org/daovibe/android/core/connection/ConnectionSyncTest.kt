@@ -1,4 +1,4 @@
-package org.daovibe.android.core.connection
+﻿package org.daovibe.android.core.connection
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -70,10 +70,10 @@ class ConnectionSyncTest {
         val endpoint = listener.start(0)
         val serverJob = async(Dispatchers.IO) {
             val transport = listener.accept()
-            SyncResponder(
-                database = serverDatabase,
-                nowSeconds = { NOW }
-            ).serveOnce(transport)
+            serveLoopbackBidirectionalSync(
+                transport = transport,
+                clientNodeId = clientPairing.localNodeId
+            )
         }
         val clientRepository = ConnectionRepository(
             database = clientDatabase,
@@ -142,10 +142,10 @@ class ConnectionSyncTest {
         val endpoint = listener.start(0)
         val serverJob = async(Dispatchers.IO) {
             val transport = listener.accept()
-            SyncResponder(
-                database = serverDatabase,
-                nowSeconds = { NOW }
-            ).serveOnce(transport)
+            serveLoopbackBidirectionalSync(
+                transport = transport,
+                clientNodeId = clientPairing.localNodeId
+            )
         }
         val clientRepository = ConnectionRepository(
             database = clientDatabase,
@@ -362,11 +362,41 @@ class ConnectionSyncTest {
         val identityBefore = clientPairing.localNodeId
         val pairingsBefore = clientDatabase.daoVibeDao().listPairingRecords()
         var factoryCalls = 0
-        val successfulTransport = SyncScriptedPeerTransport { messages ->
+        lateinit var successfulTransport: SyncScriptedPeerTransport
+        var reverseRequestQueued = false
+
+        successfulTransport = SyncScriptedPeerTransport { messages ->
             if (messages.size == 1) {
                 acceptForHello(messages.single())
             } else {
-                val request = SyncJsonCodec.decodeRequest(messages.last())
+                val request =
+                    SyncJsonCodec.decodeRequest(messages.last())
+
+                if (!reverseRequestQueued) {
+                    val hello =
+                        ConnectionJsonCodec.decodeHello(
+                            messages.first()
+                        )
+
+                    successfulTransport.enqueueIncoming(
+                        SyncJsonCodec.encode(
+                            org.daovibe.android.core.sync.SyncRequest(
+                                protocolVersion =
+                                    org.daovibe.android.core.sync
+                                        .SYNC_PROTOCOL_VERSION,
+                                sessionId = request.sessionId,
+                                sourceNodeId = SERVER_NODE,
+                                targetNodeId = hello.sourceNodeId,
+                                pairingId = request.pairingId,
+                                cursor = "0:",
+                                limit = 50
+                            )
+                        )
+                    )
+
+                    reverseRequestQueued = true
+                }
+
                 SyncJsonCodec.encode(
                     SyncProtocol.createBatch(
                         request = request,
@@ -456,6 +486,93 @@ class ConnectionSyncTest {
         assertTrue(transport.closed)
     }
 
+    private suspend fun serveLoopbackBidirectionalSync(
+        transport: PeerTransport,
+        clientNodeId: String
+    ): SyncResponderResult {
+        val sessionTransport =
+            CloseDeferringPeerTransport(transport)
+
+        return try {
+            val result = SyncResponder(
+                database = serverDatabase,
+                nowSeconds = { NOW }
+            ).serveOnce(sessionTransport)
+
+            if (result is SyncResponderResult.Completed) {
+                var cursor = "0:"
+                var reverseWindows = 0
+
+                while (true) {
+                    if (reverseWindows >= MAX_SYNC_WINDOWS_PER_RUN) {
+                        error(
+                            "Reverse loopback test exceeded maximum sync windows"
+                        )
+                    }
+
+                    val reverseRequest =
+                        org.daovibe.android.core.sync.SyncRequest(
+                            protocolVersion =
+                                org.daovibe.android.core.sync
+                                    .SYNC_PROTOCOL_VERSION,
+                            sessionId = SESSION_ID,
+                            sourceNodeId = SERVER_NODE,
+                            targetNodeId = clientNodeId,
+                            pairingId = PAIRING_ID,
+                            cursor = cursor,
+                            limit = 50
+                        )
+
+                    sessionTransport.send(
+                        SyncJsonCodec.encode(reverseRequest)
+                    )
+
+                    val reverseResponse =
+                        SyncJsonCodec.decode(
+                            sessionTransport.receive()
+                        )
+
+                    assertTrue(reverseResponse is SyncBatch)
+
+                    val reverseBatch =
+                        reverseResponse as SyncBatch
+
+                    assertEquals(
+                        clientNodeId,
+                        reverseBatch.sourceNodeId
+                    )
+                    assertEquals(
+                        SERVER_NODE,
+                        reverseBatch.targetNodeId
+                    )
+                    assertEquals(
+                        PAIRING_ID,
+                        reverseBatch.pairingId
+                    )
+                    assertEquals(
+                        cursor,
+                        reverseBatch.requestCursor
+                    )
+
+                    reverseWindows += 1
+
+                    if (!reverseBatch.hasMore) {
+                        break
+                    } else {
+                        assertTrue(
+                            reverseBatch.nextCursor != cursor
+                        )
+
+                        cursor = reverseBatch.nextCursor
+                    }
+                }
+            }
+
+            result
+        } finally {
+            sessionTransport.finish()
+        }
+    }
     private suspend fun installClientPairing(): PairingRecord {
         val identity = DeviceIdentityRepository(
             clientDatabase.daoVibeDao(),
@@ -584,12 +701,48 @@ class ConnectionSyncTest {
     }
 }
 
+private class CloseDeferringPeerTransport(
+    private val delegate: PeerTransport
+) : PeerTransport {
+    private var finished = false
+
+    override suspend fun connect(endpoint: PeerEndpoint) {
+        delegate.connect(endpoint)
+    }
+
+    override suspend fun send(canonicalMessageJson: String) {
+        delegate.send(canonicalMessageJson)
+    }
+
+    override suspend fun receive(): String =
+        delegate.receive()
+
+    override suspend fun close() {
+        // Intentionally deferred for the bidirectional
+        // loopback test. finish() performs the real close.
+    }
+
+    suspend fun finish() {
+        if (!finished) {
+            finished = true
+            delegate.close()
+        }
+    }
+}
 private class SyncScriptedPeerTransport(
     private val responseFactory: (List<String>) -> String
 ) : PeerTransport {
     val sentMessages = mutableListOf<String>()
+
+    private val incomingMessages =
+        java.util.ArrayDeque<String>()
+
     var closed = false
         private set
+
+    fun enqueueIncoming(canonicalMessageJson: String) {
+        incomingMessages.addLast(canonicalMessageJson)
+    }
 
     override suspend fun connect(endpoint: PeerEndpoint) = Unit
 
@@ -598,7 +751,11 @@ private class SyncScriptedPeerTransport(
     }
 
     override suspend fun receive(): String =
-        responseFactory(sentMessages)
+        if (incomingMessages.isNotEmpty()) {
+            incomingMessages.removeFirst()
+        } else {
+            responseFactory(sentMessages)
+        }
 
     override suspend fun close() {
         closed = true

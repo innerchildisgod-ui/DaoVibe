@@ -1,4 +1,4 @@
-package org.daovibe.android.core.connection
+﻿package org.daovibe.android.core.connection
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -40,7 +40,6 @@ sealed interface ConnectionHandshakeResult {
         override val session: ConnectionSession
     ) : ConnectionHandshakeResult
 }
-
 class ConnectionRepository(
     private val database: DaoVibeDatabase,
     private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
@@ -535,6 +534,10 @@ class ConnectionRepository(
                     windowsProcessed += 1
 
                     if (!syncResponse.hasMore) {
+                        serveReverseSyncSession(
+                            transport = transport,
+                            session = session
+                        )
                         return SyncRunResult.Completed(
                             session = session,
                             importedPackets = importedPackets,
@@ -579,6 +582,77 @@ class ConnectionRepository(
         }
     }
 
+    private suspend fun serveReverseSyncSession(
+        transport: PeerTransport,
+        session: ConnectionSession
+    ) {
+        var windowsProcessed = 0
+
+        while (true) {
+            val message = SyncJsonCodec.decode(transport.receive())
+
+            if (message !is org.daovibe.android.core.sync.SyncRequest) {
+                throw SyncProtocolException(
+                    reason =
+                        org.daovibe.android.core.sync.SyncRejectReason
+                            .INVALID_MESSAGE,
+                    message = "Expected reverse SYNC_REQUEST from remote peer"
+                )
+            }
+
+            try {
+                SyncProtocol.validateRequestForResponder(
+                    request = message,
+                    session = session
+                )
+            } catch (error: SyncProtocolException) {
+                val reject = SyncProtocol.createRejectForRequest(
+                    request = message,
+                    reason = error.reason
+                )
+                transport.send(SyncJsonCodec.encode(reject))
+                throw error
+            }
+
+            if (windowsProcessed >= MAX_SYNC_WINDOWS_PER_RUN) {
+                val reject = SyncProtocol.createRejectForRequest(
+                    request = message,
+                    reason =
+                        org.daovibe.android.core.sync.SyncRejectReason
+                            .MAX_WINDOWS_EXCEEDED
+                )
+                transport.send(SyncJsonCodec.encode(reject))
+
+                throw SyncProtocolException(
+                    reason =
+                        org.daovibe.android.core.sync.SyncRejectReason
+                            .MAX_WINDOWS_EXCEEDED,
+                    message =
+                        "Reverse sync stopped after " +
+                            "$MAX_SYNC_WINDOWS_PER_RUN windows"
+                )
+            }
+
+            val batch =
+                try {
+                    packetSyncRepository.exportWindow(message)
+                } catch (error: SyncProtocolException) {
+                    val reject = SyncProtocol.createRejectForRequest(
+                        request = message,
+                        reason = error.reason
+                    )
+                    transport.send(SyncJsonCodec.encode(reject))
+                    throw error
+                }
+
+            transport.send(SyncJsonCodec.encode(batch))
+            windowsProcessed += 1
+
+            if (!batch.hasMore) {
+                return
+            }
+        }
+    }
     suspend fun handleHello(
         hello: ConnectionHello,
         acceptedAt: Long = nowSeconds()

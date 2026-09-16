@@ -320,11 +320,7 @@ impl Packet {
         }
         let expected_signature =
             format!("{DEV_SIGNATURE_PREFIX}:{}:{}", self.author, self.packet_id);
-        if self
-            .signature
-            .starts_with(&format!("{DEV_SIGNATURE_PREFIX}:"))
-            && self.signature != expected_signature
-        {
+        if self.signature != expected_signature {
             return Err(PacketError::Invalid("invalid dev signature".to_owned()));
         }
         Ok(())

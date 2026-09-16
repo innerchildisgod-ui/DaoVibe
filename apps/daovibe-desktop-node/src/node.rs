@@ -254,12 +254,14 @@ impl DesktopNode {
         for window in 0..MAX_SYNC_WINDOWS {
             let message_json = transport::read_frame(stream)?;
             let value: serde_json::Value = serde_json::from_str(&message_json)?;
+
             let request = match protocol::decode_sync(&value)? {
                 SyncMessage::Request(value) => value,
                 SyncMessage::Batch(_) | SyncMessage::Reject(_) => {
                     return Err(NodeError::Invalid("expected SYNC_REQUEST".to_owned()))
                 }
             };
+
             if let Err(error) = self.validate_request(identity, hello, &request) {
                 let reject = SyncReject {
                     protocol_version: SYNC_VERSION.to_owned(),
@@ -269,23 +271,145 @@ impl DesktopNode {
                     pairing_id: request.pairing_id.clone(),
                     reason_code: error,
                 };
+
                 transport::write_frame(stream, &reject.canonical_json())?;
                 return Ok(());
             }
+
             let batch = self.export_window(&request)?;
             let more = batch.has_more;
+
             transport::write_frame(stream, &batch.canonical_json())?;
+
             if !more {
-                return Ok(());
+                return self.pull_from_remote(stream, identity, hello);
             }
+
             if window + 1 == MAX_SYNC_WINDOWS {
                 return Err(NodeError::Invalid(
                     "maximum sync windows exceeded".to_owned(),
                 ));
             }
         }
+
         Err(NodeError::Invalid(
             "maximum sync windows exceeded".to_owned(),
+        ))
+    }
+
+    fn pull_from_remote(
+        &self,
+        stream: &mut TcpStream,
+        identity: &DeviceIdentity,
+        hello: &Hello,
+    ) -> Result<(), NodeError> {
+        let mut cursor = self
+            .store
+            .cursor_or_start_for_pairing(&hello.source_node_id, &hello.pairing_id)?;
+
+        let mut imported_packets = 0usize;
+        let mut duplicate_packets = 0usize;
+
+        for window in 0..MAX_SYNC_WINDOWS {
+            let request = SyncRequest {
+                protocol_version: SYNC_VERSION.to_owned(),
+                session_id: hello.session_id.clone(),
+                source_node_id: identity.node_id.clone(),
+                target_node_id: hello.source_node_id.clone(),
+                pairing_id: hello.pairing_id.clone(),
+                cursor: cursor.clone(),
+                limit: MAX_PACKETS_PER_BATCH,
+            };
+
+            request.validate()?;
+            transport::write_frame(stream, &request.canonical_json())?;
+
+            let response_json = transport::read_frame(stream)?;
+            let value: serde_json::Value = serde_json::from_str(&response_json)?;
+
+            match protocol::decode_sync(&value)? {
+                SyncMessage::Batch(batch) => {
+                    if batch.session_id != hello.session_id {
+                        return Err(NodeError::Invalid(
+                            "reverse sync session mismatch".to_owned(),
+                        ));
+                    }
+
+                    if batch.source_node_id != hello.source_node_id {
+                        return Err(NodeError::Invalid(
+                            "reverse sync source node mismatch".to_owned(),
+                        ));
+                    }
+
+                    if batch.target_node_id != identity.node_id {
+                        return Err(NodeError::Invalid(
+                            "reverse sync target node mismatch".to_owned(),
+                        ));
+                    }
+
+                    if batch.pairing_id != hello.pairing_id {
+                        return Err(NodeError::Invalid(
+                            "reverse sync pairing mismatch".to_owned(),
+                        ));
+                    }
+
+                    if batch.request_cursor != cursor {
+                        return Err(NodeError::Invalid(
+                            "reverse sync cursor mismatch".to_owned(),
+                        ));
+                    }
+
+                    if batch.has_more && batch.next_cursor == cursor {
+                        return Err(NodeError::Invalid("reverse sync cursor stalled".to_owned()));
+                    }
+
+                    let next_cursor = batch.next_cursor.clone();
+                    let has_more = batch.has_more;
+
+                    let (inserted, duplicates) = self.store.import_sync_batch_atomically(
+                        &batch,
+                        &hello.source_node_id,
+                        &hello.pairing_id,
+                        now(),
+                    )?;
+
+                    imported_packets += inserted;
+                    duplicate_packets += duplicates;
+                    cursor = next_cursor;
+
+                    if !has_more {
+                        println!(
+                            "Reverse sync complete: {} new packet(s), {} duplicate(s), cursor {}",
+                            imported_packets, duplicate_packets, cursor
+                        );
+
+                        return Ok(());
+                    }
+                }
+
+                SyncMessage::Reject(reject) => {
+                    return Err(NodeError::Invalid(format!(
+                        "remote reverse sync rejected: {}",
+                        reject.reason_code
+                    )));
+                }
+
+                SyncMessage::Request(_) => {
+                    return Err(NodeError::Invalid(
+                        "expected SYNC_BATCH or SYNC_REJECT".to_owned(),
+                    ));
+                }
+            }
+
+            if window + 1 == MAX_SYNC_WINDOWS {
+                return Err(NodeError::Invalid(
+                    "maximum reverse sync windows exceeded".to_owned(),
+                ));
+            }
+        }
+
+        Err(NodeError::Invalid(
+            "maximum reverse sync windows exceeded".to_owned(),
         ))
     }
     fn validate_request(
@@ -480,6 +604,33 @@ mod tests {
             serde_json::from_str(&transport::read_frame(&mut stream).unwrap()).unwrap();
         assert_eq!(batch["message_type"], "sync_batch");
         assert_eq!(batch["has_more"], false);
+
+        let reverse_request_json = transport::read_frame(&mut stream).unwrap();
+        let reverse_request_value: serde_json::Value =
+            serde_json::from_str(&reverse_request_json).unwrap();
+
+        let reverse_request = match protocol::decode_sync(&reverse_request_value).unwrap() {
+            SyncMessage::Request(value) => value,
+            _ => panic!("expected reverse sync request"),
+        };
+
+        assert_eq!(reverse_request.source_node_id, identity.node_id);
+        assert_eq!(reverse_request.target_node_id, "mycelium_node_phone");
+
+        let reverse_batch = SyncBatch {
+            protocol_version: SYNC_VERSION.to_owned(),
+            session_id: reverse_request.session_id.clone(),
+            source_node_id: reverse_request.target_node_id.clone(),
+            target_node_id: reverse_request.source_node_id.clone(),
+            pairing_id: reverse_request.pairing_id.clone(),
+            request_cursor: reverse_request.cursor.clone(),
+            next_cursor: reverse_request.cursor.clone(),
+            has_more: false,
+            packets: Vec::new(),
+        };
+
+        transport::write_frame(&mut stream, &reverse_batch.canonical_json()).unwrap();
+
         worker.join().unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
