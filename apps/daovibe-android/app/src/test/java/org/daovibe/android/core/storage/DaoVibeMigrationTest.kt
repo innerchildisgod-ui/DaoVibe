@@ -65,6 +65,8 @@ class DaoVibeMigrationTest {
             .addMigrations(DaoVibeDatabase.MIGRATION_1_2)
             .addMigrations(DaoVibeDatabase.MIGRATION_2_3)
             .addMigrations(DaoVibeDatabase.MIGRATION_3_4)
+            .addMigrations(DaoVibeDatabase.MIGRATION_4_5)
+            .addMigrations(DaoVibeDatabase.MIGRATION_5_6)
             .allowMainThreadQueries()
             .build()
 
@@ -79,6 +81,7 @@ class DaoVibeMigrationTest {
             assertEquals(packet.author, storedPacket.author)
             assertEquals(packet.packetJson(), storedPacket.packetJson)
             assertEquals(emptyList<PairingRecordEntity>(), dao.listPairingRecords())
+            assertEquals(emptyList<KnownPeerEntity>(), dao.listKnownPeers())
         } finally {
             migrated.close()
         }

@@ -11,6 +11,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import org.daovibe.android.core.connection.ConnectionRepository
+import org.daovibe.android.core.connection.PeerRegistryRepository
+import org.daovibe.android.core.connection.PeerSyncCoordinator
 import org.daovibe.android.core.mycelium.LocalMyceliumRepository
 import org.daovibe.android.core.mycelium.LocalMyceliumSnapshot
 import org.daovibe.android.core.mycelium.MyceliumState
@@ -21,6 +23,8 @@ fun DaoVibeApp(
     repository: LocalMyceliumRepository,
     pairingRepository: PairingRepository,
     connectionRepository: ConnectionRepository
+    ,peerRegistryRepository: PeerRegistryRepository
+    ,peerSyncCoordinator: PeerSyncCoordinator
 ) {
     val snapshot by repository.observeSnapshot().collectAsState(
         initial = LocalMyceliumSnapshot(
@@ -62,7 +66,7 @@ fun DaoVibeApp(
                             repository = repository,
                             pairingRepository = pairingRepository
                         )
-                        DaoVibeDestination.Network -> NetworkScreen(connectionRepository)
+                        DaoVibeDestination.Network -> NetworkScreen(connectionRepository, peerRegistryRepository, peerSyncCoordinator)
                         DaoVibeDestination.Settings -> SettingsScreen(repository)
                     }
                 }

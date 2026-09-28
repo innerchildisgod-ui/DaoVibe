@@ -11,7 +11,31 @@ data class MeaningState(
     val confirms: Double,
     val rejects: Double,
     val score: Double,
-    val totalVotes: Double
+    val totalVotes: Double,
+    val corrections: List<CorrectionState> = emptyList(),
+    val effectiveCorrectionId: String? = null,
+    val effectiveReferenceMeaning: String = referenceMeaning,
+    val effectiveContext: String? = context
+)
+
+data class CorrectionState(
+    val correctionId: String, val referenceMeaning: String, val context: String?, val confidence: Double,
+    val confirms: Double, val rejects: Double, val totalVotes: Double, val score: Double,
+    val tombstoned: Boolean = false,
+    val effectiveTombstoneId: String? = null,
+    val tombstones: List<CorrectionTombstoneState> = emptyList()
+)
+
+data class CorrectionTombstoneState(
+    val tombstoneId: String,
+    val correctionId: String,
+    val reason: String,
+    val confidence: Double,
+    val confirms: Double,
+    val rejects: Double,
+    val totalVotes: Double,
+    val score: Double,
+    val effective: Boolean
 )
 
 data class PhraseState(
@@ -42,13 +66,16 @@ data class MyceliumState(
 
     fun bestMeaning(phraseId: String): BestMeaning? {
         val phrase = findPhrase(phraseId) ?: return null
-        val meaning = phrase.meanings.maxWithOrNull(compareBy<MeaningState> { it.score })
+        val meaning = phrase.meanings.maxWithOrNull(
+            compareBy<MeaningState> { it.score }
+                .thenByDescending { it.meaningId }
+        )
             ?: return null
 
         return BestMeaning(
             phraseId = phrase.phraseId,
             meaningId = meaning.meaningId,
-            referenceMeaning = meaning.referenceMeaning,
+            referenceMeaning = meaning.effectiveReferenceMeaning,
             confidence = meaning.confidence,
             confirms = meaning.confirms,
             rejects = meaning.rejects,

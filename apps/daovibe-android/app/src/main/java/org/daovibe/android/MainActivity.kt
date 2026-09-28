@@ -7,6 +7,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import kotlinx.coroutines.launch
 import org.daovibe.android.core.connection.ConnectionRepository
+import org.daovibe.android.core.connection.PeerRegistryRepository
+import org.daovibe.android.core.connection.PeerSyncCoordinator
 import org.daovibe.android.core.mycelium.LocalMyceliumRepository
 import org.daovibe.android.core.pairing.PairingRepository
 import org.daovibe.android.core.storage.DaoVibeDatabase
@@ -26,10 +28,14 @@ class MainActivity : ComponentActivity() {
             .addMigrations(DaoVibeDatabase.MIGRATION_1_2)
             .addMigrations(DaoVibeDatabase.MIGRATION_2_3)
             .addMigrations(DaoVibeDatabase.MIGRATION_3_4)
+            .addMigrations(DaoVibeDatabase.MIGRATION_4_5)
+            .addMigrations(DaoVibeDatabase.MIGRATION_5_6)
             .build()
         val repository = LocalMyceliumRepository(database)
         val pairingRepository = PairingRepository(database)
         val connectionRepository = ConnectionRepository(database)
+        val peerRegistryRepository = PeerRegistryRepository(database)
+        val peerSyncCoordinator = PeerSyncCoordinator(peerRegistryRepository, connectionRepository)
 
         lifecycleScope.launch {
             repository.ensureDeviceIdentity()
@@ -40,6 +46,8 @@ class MainActivity : ComponentActivity() {
                 repository = repository,
                 pairingRepository = pairingRepository,
                 connectionRepository = connectionRepository
+                ,peerRegistryRepository = peerRegistryRepository
+                ,peerSyncCoordinator = peerSyncCoordinator
             )
         }
     }

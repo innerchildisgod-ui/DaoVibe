@@ -1,5 +1,10 @@
 use clap::{Args, Parser, Subcommand};
-use daovibe_desktop_node::{node::DesktopNode, protocol::PairingOffer};
+use daovibe_desktop_node::{
+    invite::PeerInvite,
+    mycelium::MyceliumStateSnapshot,
+    node::{peer_health, DesktopNode},
+    protocol::PairingOffer,
+};
 use std::io::{self, Read};
 use std::path::PathBuf;
 
@@ -35,7 +40,56 @@ enum Command {
         #[command(subcommand)]
         command: LedgerCommand,
     },
+    State,
+    StateHash,
     SyncStatus,
+    Peer {
+        #[command(subcommand)]
+        command: PeerCommand,
+    },
+}
+#[derive(Subcommand, Debug)]
+enum PeerCommand {
+    List,
+    Add(PeerAddArgs),
+    Remove {
+        node_id: String,
+    },
+    Sync {
+        node_id: String,
+    },
+    SyncAll,
+    Invite {
+        #[command(subcommand)]
+        command: InviteCommand,
+    },
+}
+#[derive(Subcommand, Debug)]
+enum InviteCommand {
+    Create(InviteCreateArgs),
+    Parse { payload: String },
+    Import { payload: String },
+}
+#[derive(Args, Debug)]
+struct InviteCreateArgs {
+    host: String,
+    port: u16,
+    pairing_id: String,
+    #[arg(long)]
+    expires_at: Option<i64>,
+    #[arg(long, default_value_t = 86_400)]
+    ttl_seconds: i64,
+    #[arg(long)]
+    note: Option<String>,
+}
+#[derive(Args, Debug)]
+struct PeerAddArgs {
+    node_id: String,
+    host: String,
+    port: u16,
+    pairing_id: String,
+    #[arg(long)]
+    name: Option<String>,
 }
 #[derive(Subcommand, Debug)]
 enum PairingCommand {
@@ -138,6 +192,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "Packets in authoritative ledger: {}",
             node.store.packet_count()?
         ),
+        Command::State => {
+            let snapshot = MyceliumStateSnapshot::from_store(&node.store)?;
+            println!("{}", snapshot.canonical_json());
+        }
+        Command::StateHash => {
+            let snapshot = MyceliumStateSnapshot::from_store(&node.store)?;
+            println!("{}", snapshot.fingerprint());
+        }
         Command::SyncStatus => {
             let states = node.store.sync_states()?;
             if states.is_empty() {
@@ -151,8 +213,97 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        Command::Peer { command } => match command {
+            PeerCommand::List => {
+                for peer in node.store.peers()? {
+                    println!(
+                        "{} {}:{} pairing={} health={}{}",
+                        peer.remote_node_id,
+                        peer.host,
+                        peer.port,
+                        peer.pairing_id,
+                        peer_health(&peer, unix_now()),
+                        peer.last_error
+                            .as_deref()
+                            .map(|v| format!(" error={v}"))
+                            .unwrap_or_default()
+                    );
+                }
+            }
+            PeerCommand::Add(args) => {
+                let remote = args.node_id.trim().to_owned();
+                node.add_peer(&remote, &args.host, args.port, &args.pairing_id, args.name)?;
+                println!("Peer configuration saved for {remote}");
+            }
+            PeerCommand::Remove { node_id } => {
+                node.store.remove_peer(&node_id)?;
+                println!("Peer configuration removed: {node_id}");
+            }
+            PeerCommand::Sync { node_id } => {
+                let result = node.sync_peer_result(&node_id);
+                println!("{}", format_peer_result(&result));
+            }
+            PeerCommand::SyncAll => {
+                for peer in node.store.peers()? {
+                    println!(
+                        "{}",
+                        format_peer_result(&node.sync_peer_result(&peer.remote_node_id))
+                    );
+                }
+            }
+            PeerCommand::Invite { command } => match command {
+                InviteCommand::Create(args) => {
+                    let created_at = unix_now();
+                    let expires_at = args.expires_at.unwrap_or(created_at + args.ttl_seconds);
+                    let invite = node.create_peer_invite(
+                        &args.host,
+                        args.port,
+                        &args.pairing_id,
+                        expires_at,
+                        args.note,
+                    )?;
+                    println!("canonical_json={}", invite.canonical_json()?);
+                    println!("payload={}", invite.payload()?);
+                    println!("invite_id={}", invite.invite_id()?);
+                }
+                InviteCommand::Parse { payload } => {
+                    let invite = parse_invite(&payload)?;
+                    println!("canonical_json={}", invite.canonical_json()?);
+                    println!("invite_id={}", invite.invite_id()?);
+                    println!(
+                        "source={} endpoint={}:{} expires_at={}",
+                        invite.source_node_id, invite.host, invite.port, invite.expires_at
+                    );
+                }
+                InviteCommand::Import { payload } => {
+                    let invite = parse_invite(&payload)?;
+                    node.import_peer_invite(&invite)?;
+                    println!(
+                        "Peer metadata imported for {} (no connection started)",
+                        invite.source_node_id
+                    );
+                }
+            },
+        },
     }
     Ok(())
+}
+fn format_peer_result(result: &daovibe_desktop_node::node::PeerSyncResult) -> String {
+    format!("remote={} outcome={:?} stage={} category={} attempts={} imported={} duplicates={} cursor={} message={}", result.remote_node_id, result.outcome, result.stage, result.error_category.as_ref().map(ToString::to_string).unwrap_or_else(|| "none".to_owned()), result.attempts, result.imported_packets, result.duplicate_packets, result.cursor.as_deref().unwrap_or("none"), result.message.as_deref().unwrap_or("none"))
+}
+fn parse_invite(payload: &str) -> Result<PeerInvite, Box<dyn std::error::Error>> {
+    let now = unix_now();
+    if payload.trim_start().starts_with('{') {
+        Ok(PeerInvite::decode_canonical(payload.trim(), now)?)
+    } else {
+        Ok(PeerInvite::decode_payload(payload.trim(), now)?)
+    }
+}
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 fn pairing_offer(node: &DesktopNode, args: OfferArgs) -> Result<(), Box<dyn std::error::Error>> {
     let json = read_input(&args.input)?;

@@ -1,0 +1,239 @@
+{
+  "fixture_version": 1,
+  "description": "Deterministic Mycelium derived-state convergence fixture",
+  "expected_snapshot_canonical_json": "{\"phrases\":[{\"best_meaning_id\":\"meaning_𐀀\",\"language_hint\":\"en\",\"meanings\":[{\"confidence\":0.4,\"confirms\":1,\"context\":null,\"meaning_id\":\"meaning_𐀀\",\"reference_meaning\":\"first tie meaning\",\"rejects\":1,\"score\":0.4,\"total_votes\":2},{\"confidence\":0.4,\"confirms\":0,\"context\":null,\"meaning_id\":\"meaning_\",\"reference_meaning\":\"second tie meaning\",\"rejects\":0,\"score\":0.4,\"total_votes\":0},{\"confidence\":0.1,\"confirms\":1,\"context\":null,\"meaning_id\":\"shared_global\",\"reference_meaning\":\"first global owner\",\"rejects\":0,\"score\":0.26666666666666666,\"total_votes\":1}],\"phonetic_hint\":null,\"phrase_id\":\"phrase_𐀀\",\"safety_label\":\"normal\",\"surface_text\":\"Alpha\"},{\"best_meaning_id\":\"beta_only\",\"language_hint\":null,\"meanings\":[{\"confidence\":0.3,\"confirms\":0,\"context\":null,\"meaning_id\":\"beta_only\",\"reference_meaning\":\"beta meaning\",\"rejects\":0,\"score\":0.3,\"total_votes\":0}],\"phonetic_hint\":\"bay-ta\",\"phrase_id\":\"phrase_\",\"safety_label\":\"dangerous\",\"surface_text\":\"Beta\"}]}",
+  "packets": [
+    {
+      "version": "lmp/0.1",
+      "packet_type": "phrase_observed",
+      "created_at": 1701000000,
+      "zone": "determinism_fixture",
+      "author": "observer_a",
+      "payload_hash": "fa5c0789ebbf02c3385f4434f9915fc5b516ae9d691d59d74fa3f60f700eb151",
+      "payload": {
+        "phrase_id": "phrase_𐀀",
+        "surface_text": "Alpha",
+        "language_hint": "en",
+        "input_type": "text"
+      },
+      "packet_id": "abb66999eb39d8cc8864940a40042c63ce0101d873907363cb6212b75892a947",
+      "signature": "dev_signature:observer_a:abb66999eb39d8cc8864940a40042c63ce0101d873907363cb6212b75892a947"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "phrase_observed",
+      "created_at": 1701000000,
+      "zone": "determinism_fixture",
+      "author": "observer_b",
+      "payload_hash": "30f7c8aec6407f2726dd43217134095288913dd8c9c5bd8287d798d8466fe922",
+      "payload": {
+        "phrase_id": "phrase_",
+        "surface_text": "Beta",
+        "input_type": "text"
+      },
+      "packet_id": "09042cccb8f0e43786bfe4e8baa7331a9d05cebf4e043c0498c88644bc29419b",
+      "signature": "dev_signature:observer_b:09042cccb8f0e43786bfe4e8baa7331a9d05cebf4e043c0498c88644bc29419b"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_proposal",
+      "created_at": 1701000001,
+      "zone": "determinism_fixture",
+      "author": "proposer_a",
+      "payload_hash": "6aa39c1aaf2007d70e35a592fb10bc5c96c3d9f23b7f549ee162b90165b6be65",
+      "payload": {
+        "phrase_id": "phrase_𐀀",
+        "meaning_id": "meaning_𐀀",
+        "reference_meaning": "first tie meaning",
+        "confidence": 0.4
+      },
+      "parent": "abb66999eb39d8cc8864940a40042c63ce0101d873907363cb6212b75892a947",
+      "packet_id": "c59dfed4c5f6d9c6162666577855db5ba7a0db328772da2fc7f199a8e0d08381",
+      "signature": "dev_signature:proposer_a:c59dfed4c5f6d9c6162666577855db5ba7a0db328772da2fc7f199a8e0d08381"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_proposal",
+      "created_at": 1701000001,
+      "zone": "determinism_fixture",
+      "author": "proposer_b",
+      "payload_hash": "666d01f8030ff2107a8038c8eb5930312e4c6fc710386e052e9414ea42e94a30",
+      "payload": {
+        "phrase_id": "phrase_𐀀",
+        "meaning_id": "meaning_",
+        "reference_meaning": "second tie meaning",
+        "confidence": 0.4
+      },
+      "parent": "abb66999eb39d8cc8864940a40042c63ce0101d873907363cb6212b75892a947",
+      "packet_id": "4f43c241f04c08c1367cd8e1337da55b604a2f23d54c8291a3d944a22af0d4e0",
+      "signature": "dev_signature:proposer_b:4f43c241f04c08c1367cd8e1337da55b604a2f23d54c8291a3d944a22af0d4e0"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_proposal",
+      "created_at": 1701000002,
+      "zone": "determinism_fixture",
+      "author": "proposer_a",
+      "payload_hash": "2eb40b8edd3a99c3812cf9ab66b1e5f35fe254a1a713f3104c0a57b354bcfae9",
+      "payload": {
+        "phrase_id": "phrase_𐀀",
+        "meaning_id": "shared_global",
+        "reference_meaning": "first global owner",
+        "confidence": 0.1
+      },
+      "parent": "abb66999eb39d8cc8864940a40042c63ce0101d873907363cb6212b75892a947",
+      "packet_id": "72b3679ce5b97d4071f324ac40f109ee497338466d408e1a435c5156b31447c7",
+      "signature": "dev_signature:proposer_a:72b3679ce5b97d4071f324ac40f109ee497338466d408e1a435c5156b31447c7"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_proposal",
+      "created_at": 1701000003,
+      "zone": "determinism_fixture",
+      "author": "proposer_b",
+      "payload_hash": "7e7cdb281e5a313fd0b81f46bca08de229043c63a93c1e26d3ffc6556015741c",
+      "payload": {
+        "phrase_id": "phrase_",
+        "meaning_id": "shared_global",
+        "reference_meaning": "must be ignored",
+        "confidence": 0.95
+      },
+      "parent": "09042cccb8f0e43786bfe4e8baa7331a9d05cebf4e043c0498c88644bc29419b",
+      "packet_id": "6e4be8127258e11ccf9d5f74893314b56b3783d4d44eec38b54c19c7edb6a9be",
+      "signature": "dev_signature:proposer_b:6e4be8127258e11ccf9d5f74893314b56b3783d4d44eec38b54c19c7edb6a9be"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_proposal",
+      "created_at": 1701000004,
+      "zone": "determinism_fixture",
+      "author": "proposer_b",
+      "payload_hash": "b589c2e3f5308528e71c1bdac70698b52ef8a9dc9c33116269b09b712a011457",
+      "payload": {
+        "phrase_id": "phrase_",
+        "meaning_id": "beta_only",
+        "reference_meaning": "beta meaning",
+        "confidence": 0.3
+      },
+      "parent": "09042cccb8f0e43786bfe4e8baa7331a9d05cebf4e043c0498c88644bc29419b",
+      "packet_id": "94dbfb6ff323846e4229e178c1a2868e0888bc40f4b80a897716e1a3ba65bd8c",
+      "signature": "dev_signature:proposer_b:94dbfb6ff323846e4229e178c1a2868e0888bc40f4b80a897716e1a3ba65bd8c"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_vote",
+      "created_at": 1701000005,
+      "zone": "determinism_fixture",
+      "author": "voter_same",
+      "payload_hash": "a384c5a9be094cfc1e12682beb022ce98be4ee8983581820d63636a3dfdc0e4f",
+      "payload": {
+        "phrase_id": "phrase_𐀀",
+        "meaning_id": "meaning_𐀀",
+        "vote": "confirm",
+        "confidence": 1.0
+      },
+      "parent": "c59dfed4c5f6d9c6162666577855db5ba7a0db328772da2fc7f199a8e0d08381",
+      "packet_id": "c2f14d946bfdb0b2bc7bb5379d39db61f38421d5e0ccaa76bf9a2b1de95e333a",
+      "signature": "dev_signature:voter_same:c2f14d946bfdb0b2bc7bb5379d39db61f38421d5e0ccaa76bf9a2b1de95e333a"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_vote",
+      "created_at": 1701000006,
+      "zone": "determinism_fixture",
+      "author": "voter_same",
+      "payload_hash": "fd4337ee6e93ef54a9a0440d67f149a7fe65737b7056ca0b51bd3cd7b547d049",
+      "payload": {
+        "phrase_id": "phrase_𐀀",
+        "meaning_id": "meaning_𐀀",
+        "vote": "reject",
+        "confidence": 1.0
+      },
+      "parent": "c59dfed4c5f6d9c6162666577855db5ba7a0db328772da2fc7f199a8e0d08381",
+      "packet_id": "bb9a5204805a4c222fb69345535884a79d11eb4079b20e9bd26c374dda255733",
+      "signature": "dev_signature:voter_same:bb9a5204805a4c222fb69345535884a79d11eb4079b20e9bd26c374dda255733"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_vote",
+      "created_at": 1701000007,
+      "zone": "determinism_fixture",
+      "author": "voter_other",
+      "payload_hash": "8c9457a02d12acc0cb3906acb385c884558aa77d92a03bde95ecaf91bc98b658",
+      "payload": {
+        "phrase_id": "phrase_𐀀",
+        "meaning_id": "meaning_𐀀",
+        "vote": "confirm",
+        "confidence": 0.2
+      },
+      "parent": "c59dfed4c5f6d9c6162666577855db5ba7a0db328772da2fc7f199a8e0d08381",
+      "packet_id": "8c83a6fb0477375bfd1d569c5e51f2a5488e6b7c2cd7411e900b2e71a92ead37",
+      "signature": "dev_signature:voter_other:8c83a6fb0477375bfd1d569c5e51f2a5488e6b7c2cd7411e900b2e71a92ead37"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_vote",
+      "created_at": 1701000008,
+      "zone": "determinism_fixture",
+      "author": "voter_unsure",
+      "payload_hash": "e0ebc1fe2871c547fbf179e859b85c884b2457f470fa3be39129fd0b00aaab0c",
+      "payload": {
+        "phrase_id": "phrase_𐀀",
+        "meaning_id": "meaning_𐀀",
+        "vote": "unsure",
+        "confidence": 1.0
+      },
+      "parent": "c59dfed4c5f6d9c6162666577855db5ba7a0db328772da2fc7f199a8e0d08381",
+      "packet_id": "885ff934a6dda271dcc3ea4745cb09fa0511a64f390c465c8d94577e5ae699e5",
+      "signature": "dev_signature:voter_unsure:885ff934a6dda271dcc3ea4745cb09fa0511a64f390c465c8d94577e5ae699e5"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "meaning_vote",
+      "created_at": 1701000009,
+      "zone": "determinism_fixture",
+      "author": "voter_shared",
+      "payload_hash": "a890542d8cf5bf7a25742ff75ed31fc7576a1efb4cea3bd7b01fdfa5af44ed86",
+      "payload": {
+        "phrase_id": "phrase_",
+        "meaning_id": "shared_global",
+        "vote": "confirm",
+        "confidence": 1.0
+      },
+      "parent": "72b3679ce5b97d4071f324ac40f109ee497338466d408e1a435c5156b31447c7",
+      "packet_id": "0d9c17f874a0858e8e268d7583d7cf0d6c81457f99d54c146213d0c273e6ee8a",
+      "signature": "dev_signature:voter_shared:0d9c17f874a0858e8e268d7583d7cf0d6c81457f99d54c146213d0c273e6ee8a"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "safety_label",
+      "created_at": 1701000010,
+      "zone": "determinism_fixture",
+      "author": "safety_reviewer",
+      "payload_hash": "4862126f5f38492c6fe2cf9bc39bde7dc60bd1e725237767a89f9f88f7f10367",
+      "payload": {
+        "phrase_id": "phrase_",
+        "label": "dangerous",
+        "reason": "fixture"
+      },
+      "parent": "09042cccb8f0e43786bfe4e8baa7331a9d05cebf4e043c0498c88644bc29419b",
+      "packet_id": "a2cb27ae05583087394d5e2ffdfb8c8a9b496a0cd61b50408a4b5f82d321b7f1",
+      "signature": "dev_signature:safety_reviewer:a2cb27ae05583087394d5e2ffdfb8c8a9b496a0cd61b50408a4b5f82d321b7f1"
+    },
+    {
+      "version": "lmp/0.1",
+      "packet_type": "phrase_observed",
+      "created_at": 1701000011,
+      "zone": "determinism_fixture",
+      "author": "observer_b",
+      "payload_hash": "38e2c2f9fe5fa998b39d3df2e10c4d402a5a9cc93b5f95b37aa0bf3c2c6bf8d3",
+      "payload": {
+        "phrase_id": "phrase_",
+        "phonetic_hint": "bay-ta",
+        "input_type": "text"
+      },
+      "packet_id": "20976f5ecdaaf479901060c9d78e5a54e9b7aab3d22256df0c6378c060975a9c",
+      "signature": "dev_signature:observer_b:20976f5ecdaaf479901060c9d78e5a54e9b7aab3d22256df0c6378c060975a9c"
+    }
+  ]
+}

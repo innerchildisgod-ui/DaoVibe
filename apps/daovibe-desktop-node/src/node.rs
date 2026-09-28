@@ -1,10 +1,11 @@
+use crate::invite::{InviteError, PeerInvite};
 use crate::models::{sha256, DeviceIdentity};
 use crate::protocol::{
     self, Accept, Hello, PairingApproval, PairingOffer, ProtocolError, SyncBatch, SyncMessage,
     SyncReject, SyncRequest, CONNECTION_VERSION, MAX_PACKETS_PER_BATCH, MAX_SYNC_WINDOWS,
     SYNC_VERSION,
 };
-use crate::storage::{PairingRecord, StorageError, Store};
+use crate::storage::{PairingRecord, PeerRecord, StorageError, Store};
 use crate::transport::{self, TransportError};
 use std::io;
 use std::net::TcpStream;
@@ -15,6 +16,177 @@ use thiserror::Error;
 pub const DESKTOP_PLATFORM: &str = "windows";
 pub const DESKTOP_ROLE: &str = "computer";
 pub const DESKTOP_CAPABILITIES: &[&str] = &["mycelium", "packet_ledger", "persistent_storage"];
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PeerSyncOutcome {
+    Success,
+    Failed,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PeerSyncStage {
+    Connect,
+    Hello,
+    Accept,
+    Pull,
+    Import,
+    ReverseSync,
+    Complete,
+}
+impl std::fmt::Display for PeerSyncStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Connect => "connect",
+                Self::Hello => "hello",
+                Self::Accept => "accept",
+                Self::Pull => "pull",
+                Self::Import => "import",
+                Self::ReverseSync => "reverse_sync",
+                Self::Complete => "complete",
+            }
+        )
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PeerSyncErrorCategory {
+    InvalidPeerConfig,
+    Unreachable,
+    Timeout,
+    PairingMismatch,
+    ProtocolMismatch,
+    RemoteRejected,
+    MalformedFrame,
+    ValidationFailed,
+    ImportFailed,
+    Io,
+    Unknown,
+}
+impl std::fmt::Display for PeerSyncErrorCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::InvalidPeerConfig => "invalid_peer_config",
+                Self::Unreachable => "unreachable",
+                Self::Timeout => "timeout",
+                Self::PairingMismatch => "pairing_mismatch",
+                Self::ProtocolMismatch => "protocol_mismatch",
+                Self::RemoteRejected => "remote_rejected",
+                Self::MalformedFrame => "malformed_frame",
+                Self::ValidationFailed => "validation_failed",
+                Self::ImportFailed => "import_failed",
+                Self::Io => "io",
+                Self::Unknown => "unknown",
+            }
+        )
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PeerSyncResult {
+    pub remote_node_id: String,
+    pub outcome: PeerSyncOutcome,
+    pub stage: PeerSyncStage,
+    pub error_category: Option<PeerSyncErrorCategory>,
+    pub attempts: u8,
+    pub imported_packets: usize,
+    pub duplicate_packets: usize,
+    pub exported_packets: Option<usize>,
+    pub started_at: i64,
+    pub finished_at: i64,
+    pub message: Option<String>,
+    pub cursor: Option<String>,
+}
+
+pub fn peer_health(peer: &PeerRecord, now_seconds: i64) -> &'static str {
+    match (peer.last_successful_contact_at, peer.last_failure_at) {
+        (None, None) => "never_contacted",
+        (None, Some(_)) => "error",
+        (Some(success), Some(failure)) if failure > success => "error",
+        (Some(success), _) if now_seconds - success > 86_400 => "stale",
+        (Some(_), _) => "healthy",
+    }
+}
+
+fn classify_error(error: &NodeError) -> (PeerSyncStage, PeerSyncErrorCategory) {
+    match error {
+        NodeError::Transport(TransportError::Io(io_error)) => {
+            let category = match io_error.kind() {
+                io::ErrorKind::TimedOut => PeerSyncErrorCategory::Timeout,
+                io::ErrorKind::ConnectionRefused
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::NotFound
+                | io::ErrorKind::AddrNotAvailable => PeerSyncErrorCategory::Unreachable,
+                _ => PeerSyncErrorCategory::Io,
+            };
+            (PeerSyncStage::Connect, category)
+        }
+        NodeError::Transport(TransportError::Malformed(_)) => {
+            (PeerSyncStage::Hello, PeerSyncErrorCategory::MalformedFrame)
+        }
+        NodeError::Protocol(protocol_error) => match protocol_error {
+            ProtocolError::Json(_) => (PeerSyncStage::Hello, PeerSyncErrorCategory::MalformedFrame),
+            ProtocolError::Packet(_) => (
+                PeerSyncStage::Import,
+                PeerSyncErrorCategory::ValidationFailed,
+            ),
+            ProtocolError::Invalid(message) => classify_invalid_message(message),
+        },
+        NodeError::Storage(storage_error) => match storage_error {
+            StorageError::Packet(_) | StorageError::Protocol(_) => (
+                PeerSyncStage::Import,
+                PeerSyncErrorCategory::ValidationFailed,
+            ),
+            StorageError::Sql(_) => (PeerSyncStage::Import, PeerSyncErrorCategory::Io),
+        },
+        NodeError::Io(io_error) => {
+            let category = if io_error.kind() == io::ErrorKind::TimedOut {
+                PeerSyncErrorCategory::Timeout
+            } else {
+                PeerSyncErrorCategory::Io
+            };
+            (PeerSyncStage::Connect, category)
+        }
+        NodeError::Invalid(message) => classify_invalid_message(message),
+        NodeError::Json(_) => (PeerSyncStage::Hello, PeerSyncErrorCategory::MalformedFrame),
+        NodeError::Invite(_) => (
+            PeerSyncStage::Accept,
+            PeerSyncErrorCategory::InvalidPeerConfig,
+        ),
+    }
+}
+
+fn classify_invalid_message(message: &str) -> (PeerSyncStage, PeerSyncErrorCategory) {
+    let normalized = message.to_ascii_lowercase();
+    if normalized.contains("remote rejected") {
+        return (PeerSyncStage::Accept, PeerSyncErrorCategory::RemoteRejected);
+    }
+    if normalized.contains("pairing") {
+        return (
+            PeerSyncStage::Accept,
+            PeerSyncErrorCategory::PairingMismatch,
+        );
+    }
+    if normalized.contains("incompatible_") || normalized.contains("unsupported") {
+        return (
+            PeerSyncStage::Hello,
+            PeerSyncErrorCategory::ProtocolMismatch,
+        );
+    }
+    if normalized.contains("cursor")
+        || normalized.contains("packet")
+        || normalized.contains("import")
+    {
+        return (
+            PeerSyncStage::Import,
+            PeerSyncErrorCategory::ValidationFailed,
+        );
+    }
+    (PeerSyncStage::Hello, PeerSyncErrorCategory::Unknown)
+}
 
 #[derive(Debug, Error)]
 pub enum NodeError {
@@ -30,6 +202,8 @@ pub enum NodeError {
     Io(#[from] io::Error),
     #[error("invalid operation: {0}")]
     Invalid(String),
+    #[error("invite: {0}")]
+    Invite(#[from] InviteError),
 }
 
 pub struct DesktopNode {
@@ -81,6 +255,335 @@ impl DesktopNode {
         self.store
             .identity()?
             .ok_or_else(|| NodeError::Invalid("identity is missing".to_owned()))
+    }
+    pub fn add_peer(
+        &self,
+        remote_node_id: &str,
+        host: &str,
+        port: u16,
+        pairing_id: &str,
+        display_name: Option<String>,
+    ) -> Result<(), NodeError> {
+        let identity = self.ensure_identity()?;
+        if remote_node_id.trim().is_empty() || remote_node_id == identity.node_id {
+            return Err(NodeError::Invalid(
+                "peer node ID must be non-empty and must not be local node".to_owned(),
+            ));
+        }
+        if host.trim().is_empty() || port == 0 {
+            return Err(NodeError::Invalid(
+                "peer host must be non-empty and port must be 1..65535".to_owned(),
+            ));
+        }
+        if pairing_id.trim().is_empty() {
+            return Err(NodeError::Invalid(
+                "pairing ID must be non-empty".to_owned(),
+            ));
+        }
+        self.store
+            .upsert_peer(&PeerRecord {
+                remote_node_id: remote_node_id.trim().to_owned(),
+                display_name,
+                host: host.trim().to_owned(),
+                port,
+                pairing_id: pairing_id.trim().to_owned(),
+                last_successful_contact_at: None,
+                last_error: None,
+                updated_at: now(),
+                last_failure_at: None,
+                last_outcome: None,
+                last_stage: None,
+                last_error_category: None,
+                last_attempts: None,
+                last_imported_packets: None,
+                last_duplicate_packets: None,
+                last_exported_packets: None,
+                last_sync_started_at: None,
+                last_sync_finished_at: None,
+                last_cursor: None,
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn create_peer_invite(
+        &self,
+        host: &str,
+        port: u16,
+        pairing_id: &str,
+        expires_at: i64,
+        note: Option<String>,
+    ) -> Result<PeerInvite, NodeError> {
+        let identity = self.ensure_identity()?;
+        let pairing = self
+            .store
+            .pairing(pairing_id.trim())?
+            .ok_or_else(|| NodeError::Invalid("approved pairing is missing".to_owned()))?;
+        if pairing.status != "approved"
+            || pairing.local_node_id != identity.node_id
+            || pairing.pairing_id != pairing_id.trim()
+        {
+            return Err(NodeError::Invalid(
+                "pairing is not an approved relationship for this local node".to_owned(),
+            ));
+        }
+        let invite = PeerInvite {
+            invite_version: crate::invite::INVITE_VERSION,
+            source_node_id: identity.node_id,
+            source_display_name: Some(identity.display_name),
+            host: host.trim().to_owned(),
+            port,
+            pairing_id: pairing_id.trim().to_owned(),
+            created_at: now(),
+            expires_at,
+            connection_version: crate::invite::CONNECTION_VERSION.to_owned(),
+            packet_protocol_version: crate::models::LMP_VERSION.to_owned(),
+            capabilities: Some(
+                DESKTOP_CAPABILITIES
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
+            ),
+            note,
+        };
+        invite.validate(now())?;
+        Ok(invite)
+    }
+
+    pub fn import_peer_invite(&self, invite: &PeerInvite) -> Result<(), NodeError> {
+        invite.validate(now())?;
+        let identity = self.ensure_identity()?;
+        if invite.source_node_id == identity.node_id {
+            return Err(NodeError::Invalid(
+                "local node invite cannot be imported".to_owned(),
+            ));
+        }
+        self.add_peer(
+            &invite.source_node_id,
+            &invite.host,
+            invite.port,
+            &invite.pairing_id,
+            invite.source_display_name.clone(),
+        )
+    }
+    pub fn sync_peer(&self, remote_node_id: &str) -> Result<(usize, usize), NodeError> {
+        let peer = self
+            .store
+            .peer(remote_node_id)?
+            .ok_or_else(|| NodeError::Invalid("known peer configuration is missing".to_owned()))?;
+        let identity = self.ensure_identity()?;
+        let pairing = self
+            .store
+            .active_pairing_for_remote(&identity.node_id, remote_node_id)?
+            .ok_or_else(|| NodeError::Invalid("approved pairing is missing".to_owned()))?;
+        if pairing.pairing_id != peer.pairing_id {
+            return Err(NodeError::Invalid(
+                "peer pairing ID does not match approved pairing".to_owned(),
+            ));
+        }
+        let mut stream = TcpStream::connect((&*peer.host, peer.port))?;
+        transport::configure_stream(&stream)?;
+        let session_id = format!(
+            "session_{}",
+            &sha256(&format!("{}:{}", now(), std::process::id()))[..32]
+        );
+        let hello = Hello {
+            protocol_version: CONNECTION_VERSION.to_owned(),
+            session_id: session_id.clone(),
+            source_node_id: identity.node_id.clone(),
+            target_node_id: remote_node_id.to_owned(),
+            source_platform: identity.platform.clone(),
+            source_role: identity.role.clone(),
+            pairing_id: peer.pairing_id.clone(),
+            created_at: now(),
+            supported_connection_versions: vec![CONNECTION_VERSION.to_owned()],
+            supported_packet_protocol_versions: vec![crate::models::LMP_VERSION.to_owned()],
+            capabilities: DESKTOP_CAPABILITIES
+                .iter()
+                .map(|v| (*v).to_owned())
+                .collect(),
+        };
+        transport::write_frame(&mut stream, &hello.canonical_json())?;
+        let response: serde_json::Value =
+            serde_json::from_str(&transport::read_frame(&mut stream)?)?;
+        match protocol::decode_connection(&response)? {
+            protocol::ConnectionMessage::Accept(_) => {}
+            protocol::ConnectionMessage::Reject(reject) => {
+                return Err(NodeError::Invalid(format!(
+                    "remote rejected sync: {}",
+                    reject.reason_code
+                )))
+            }
+            protocol::ConnectionMessage::Hello(_) => {
+                return Err(NodeError::Invalid("unexpected connection hello".to_owned()))
+            }
+        }
+        let mut cursor = self
+            .store
+            .cursor_or_start_for_pairing(remote_node_id, &peer.pairing_id)?;
+        let mut inserted = 0;
+        let mut duplicates = 0;
+        for _ in 0..MAX_SYNC_WINDOWS {
+            let request = SyncRequest {
+                protocol_version: SYNC_VERSION.to_owned(),
+                session_id: session_id.clone(),
+                source_node_id: identity.node_id.clone(),
+                target_node_id: remote_node_id.to_owned(),
+                pairing_id: peer.pairing_id.clone(),
+                cursor: cursor.clone(),
+                limit: MAX_PACKETS_PER_BATCH,
+            };
+            transport::write_frame(&mut stream, &request.canonical_json())?;
+            let value: serde_json::Value =
+                serde_json::from_str(&transport::read_frame(&mut stream)?)?;
+            let batch = match protocol::decode_sync(&value)? {
+                SyncMessage::Batch(batch) => batch,
+                SyncMessage::Reject(reject) => {
+                    return Err(NodeError::Invalid(format!(
+                        "remote rejected sync: {}",
+                        reject.reason_code
+                    )))
+                }
+                SyncMessage::Request(_) => {
+                    return Err(NodeError::Invalid("unexpected sync request".to_owned()))
+                }
+            };
+            if batch.request_cursor != cursor {
+                return Err(NodeError::Invalid("sync cursor mismatch".to_owned()));
+            }
+            let next = batch.next_cursor.clone();
+            let more = batch.has_more;
+            let (new_count, duplicate_count) = self.store.import_sync_batch_atomically(
+                &batch,
+                remote_node_id,
+                &peer.pairing_id,
+                now(),
+            )?;
+            inserted += new_count;
+            duplicates += duplicate_count;
+            cursor = next;
+            if !more {
+                break;
+            }
+        }
+        // The responder now owns the reverse direction. Once our pull is
+        // complete it sends SYNC_REQUEST frames and this side exports its
+        // ordinary ledger packets in response. A second client pull would
+        // only re-request the responder's ledger and could never propagate
+        // A -> B -> C packets in the opposite direction.
+        for window in 0..MAX_SYNC_WINDOWS {
+            let value: serde_json::Value =
+                serde_json::from_str(&transport::read_frame(&mut stream)?)?;
+            let request = match protocol::decode_sync(&value)? {
+                SyncMessage::Request(request) => request,
+                SyncMessage::Reject(reject) => {
+                    return Err(NodeError::Invalid(format!(
+                        "remote rejected reverse sync: {}",
+                        reject.reason_code
+                    )))
+                }
+                SyncMessage::Batch(_) => {
+                    return Err(NodeError::Invalid(
+                        "expected reverse sync request".to_owned(),
+                    ))
+                }
+            };
+            if request.session_id != session_id
+                || request.source_node_id != remote_node_id
+                || request.target_node_id != identity.node_id
+                || request.pairing_id != peer.pairing_id
+            {
+                return Err(NodeError::Invalid(
+                    "invalid reverse sync request".to_owned(),
+                ));
+            }
+            let batch = self.export_window(&request)?;
+            let more = batch.has_more;
+            transport::write_frame(&mut stream, &batch.canonical_json())?;
+            if !more {
+                break;
+            }
+            if window + 1 == MAX_SYNC_WINDOWS {
+                return Err(NodeError::Invalid(
+                    "maximum reverse sync windows exceeded".to_owned(),
+                ));
+            }
+        }
+        self.store.mark_peer_success(remote_node_id, now())?;
+        Ok((inserted, duplicates))
+    }
+
+    pub fn sync_peer_bounded(&self, remote_node_id: &str) -> Result<(usize, usize), NodeError> {
+        let mut last_error = None;
+        for attempt in 0..2 {
+            match self.sync_peer(remote_node_id) {
+                Ok(result) => return Ok(result),
+                Err(error) => {
+                    self.store
+                        .mark_peer_failure(remote_node_id, now(), &error.to_string())?;
+                    last_error = Some(error);
+                    if attempt == 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(150));
+                    }
+                }
+            }
+        }
+        Err(last_error.expect("bounded sync attempts always run"))
+    }
+
+    pub fn sync_peer_result(&self, remote_node_id: &str) -> PeerSyncResult {
+        let started_at = now();
+        let mut final_result: Option<PeerSyncResult> = None;
+        for attempt in 1..=2u8 {
+            match self.sync_peer(remote_node_id) {
+                Ok((inserted, duplicates)) => {
+                    let cursor = self.store.sync_states().ok().and_then(|states| {
+                        states
+                            .into_iter()
+                            .find(|(peer, _, _, _)| peer == remote_node_id)
+                            .map(|(_, _, cursor, _)| cursor)
+                    });
+                    let result = PeerSyncResult {
+                        remote_node_id: remote_node_id.to_owned(),
+                        outcome: PeerSyncOutcome::Success,
+                        stage: PeerSyncStage::Complete,
+                        error_category: None,
+                        attempts: attempt,
+                        imported_packets: inserted,
+                        duplicate_packets: duplicates,
+                        exported_packets: None,
+                        started_at,
+                        finished_at: now(),
+                        message: None,
+                        cursor,
+                    };
+                    let _ = self.store.record_peer_success(&result);
+                    return result;
+                }
+                Err(error) => {
+                    let (stage, category) = classify_error(&error);
+                    let result = PeerSyncResult {
+                        remote_node_id: remote_node_id.to_owned(),
+                        outcome: PeerSyncOutcome::Failed,
+                        stage,
+                        error_category: Some(category),
+                        attempts: attempt,
+                        imported_packets: 0,
+                        duplicate_packets: 0,
+                        exported_packets: None,
+                        started_at,
+                        finished_at: now(),
+                        message: Some(error.to_string().chars().take(500).collect()),
+                        cursor: None,
+                    };
+                    let _ = self.store.record_peer_failure(&result);
+                    final_result = Some(result);
+                    if attempt == 1 {
+                        std::thread::sleep(std::time::Duration::from_millis(150));
+                    }
+                }
+            }
+        }
+        final_result.expect("bounded sync attempts always run")
     }
     pub fn create_approval(
         &self,
@@ -501,9 +1004,112 @@ fn now() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::canonical;
     use crate::models::{Packet, PacketPayload, PacketType};
+    use crate::mycelium::MyceliumStateSnapshot;
     use std::fs;
     use std::net::{TcpListener, TcpStream};
+    use std::path::Path;
+
+    fn invite_for(source_node_id: String, pairing_id: &str) -> PeerInvite {
+        PeerInvite {
+            invite_version: crate::invite::INVITE_VERSION,
+            source_node_id,
+            source_display_name: Some("Remote".into()),
+            host: "127.0.0.1".into(),
+            port: 4242,
+            pairing_id: pairing_id.into(),
+            created_at: now(),
+            expires_at: now() + 3600,
+            connection_version: crate::invite::CONNECTION_VERSION.into(),
+            packet_protocol_version: crate::models::LMP_VERSION.into(),
+            capabilities: None,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn create_peer_invite_requires_approved_local_pairing() {
+        let store = Store::open_in_memory().unwrap();
+        let node = DesktopNode {
+            data_dir: PathBuf::new(),
+            store,
+        };
+        let identity = node.ensure_identity().unwrap();
+        assert!(node
+            .create_peer_invite("127.0.0.1", 4242, "unknown", now() + 3600, None)
+            .is_err());
+        node.store
+            .upsert_pairing(&PairingRecord {
+                pairing_id: "inactive".into(),
+                local_node_id: identity.node_id.clone(),
+                remote_node_id: "remote".into(),
+                remote_display_name: "Remote".into(),
+                remote_platform: "android".into(),
+                remote_role: "phone".into(),
+                status: "rejected".into(),
+                created_at: now(),
+                paired_at: None,
+            })
+            .unwrap();
+        assert!(node
+            .create_peer_invite("127.0.0.1", 4242, "inactive", now() + 3600, None)
+            .is_err());
+        node.store
+            .upsert_pairing(&PairingRecord {
+                pairing_id: "approved".into(),
+                local_node_id: identity.node_id.clone(),
+                remote_node_id: "remote".into(),
+                remote_display_name: "Remote".into(),
+                remote_platform: "android".into(),
+                remote_role: "phone".into(),
+                status: "approved".into(),
+                created_at: now(),
+                paired_at: Some(now()),
+            })
+            .unwrap();
+        assert!(node
+            .create_peer_invite("127.0.0.1", 4242, "approved", now() + 3600, None)
+            .is_ok());
+        node.store
+            .upsert_pairing(&PairingRecord {
+                pairing_id: "wrong-local".into(),
+                local_node_id: "other-local".into(),
+                remote_node_id: "remote".into(),
+                remote_display_name: "Remote".into(),
+                remote_platform: "android".into(),
+                remote_role: "phone".into(),
+                status: "approved".into(),
+                created_at: now(),
+                paired_at: Some(now()),
+            })
+            .unwrap();
+        assert!(node
+            .create_peer_invite("127.0.0.1", 4242, "wrong-local", now() + 3600, None)
+            .is_err());
+    }
+
+    #[test]
+    fn importing_peer_invite_leaves_ledger_and_semantic_fingerprint_unchanged() {
+        let node = DesktopNode {
+            data_dir: PathBuf::new(),
+            store: Store::open_in_memory().unwrap(),
+        };
+        node.ensure_identity().unwrap();
+        let before = MyceliumStateSnapshot::from_store(&node.store)
+            .unwrap()
+            .fingerprint();
+        node.import_peer_invite(&invite_for("remote".into(), "pair"))
+            .unwrap();
+        let after = MyceliumStateSnapshot::from_store(&node.store)
+            .unwrap()
+            .fingerprint();
+        assert_eq!(before, after);
+        assert!(node.store.packets_for_replay().unwrap().is_empty());
+        node.import_peer_invite(&invite_for("remote".into(), "pair"))
+            .unwrap();
+        assert_eq!(node.store.peers().unwrap().len(), 1);
+    }
     #[test]
     fn identity_is_persistent_and_name_does_not_change_id() {
         let dir = std::env::temp_dir().join(format!("daovibe-test-{}", std::process::id()));
@@ -633,5 +1239,200 @@ mod tests {
 
         worker.join().unwrap();
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn three_node_production_sync_converges_bidirectionally_without_direct_a_c_pairing() {
+        let root =
+            std::env::temp_dir().join(format!("daovibe-three-node-sync-{}", uuid::Uuid::new_v4()));
+        let a_dir = root.join("a");
+        let b_dir = root.join("b");
+        let c_dir = root.join("c");
+        let a = DesktopNode::open(&a_dir).unwrap();
+        // The development identity generator includes creation seconds; keep
+        // the independent test stores on distinct identity timestamps.
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let b = DesktopNode::open(&b_dir).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let c = DesktopNode::open(&c_dir).unwrap();
+        let a_identity = a.ensure_identity().unwrap();
+        let b_identity = b.ensure_identity().unwrap();
+        let c_identity = c.ensure_identity().unwrap();
+        let ab_pairing = pair_nodes(&a, &a_identity, &b, 1_700_100_000);
+        let bc_pairing = pair_nodes(&b, &b_identity, &c, 1_700_100_001);
+
+        let packet_from_a = phrase_packet(&a_identity.node_id, "phrase_from_a", 1_700_100_001);
+        assert!(a
+            .store
+            .insert_packet(&packet_from_a, 1_700_100_001)
+            .unwrap());
+
+        sync_once(&a, &b_identity.node_id, &ab_pairing, &b_dir);
+        assert_original_packet(&b, &packet_from_a, 1);
+        sync_once(&b, &c_identity.node_id, &bc_pairing, &c_dir);
+        assert_original_packet(&c, &packet_from_a, 1);
+
+        // Repeating the same A -> B -> C propagation must not add a wrapper
+        // packet or duplicate the ordinary ledger entry.
+        sync_once(&a, &b_identity.node_id, &ab_pairing, &b_dir);
+        sync_once(&b, &c_identity.node_id, &bc_pairing, &c_dir);
+        assert_original_packet(&b, &packet_from_a, 1);
+        assert_original_packet(&c, &packet_from_a, 1);
+
+        let packet_from_c = phrase_packet(&c_identity.node_id, "phrase_from_c", 1_700_100_002);
+        let b_c_cursor = b
+            .store
+            .cursor_or_start_for_pairing(&c_identity.node_id, &bc_pairing)
+            .unwrap();
+        let (b_c_received_at, _) = protocol::parse_cursor(&b_c_cursor).unwrap();
+        let c_packet_received_at = b_c_received_at + 1;
+        assert!(c
+            .store
+            .insert_packet(&packet_from_c, c_packet_received_at)
+            .unwrap());
+        assert!(c_packet_received_at > b_c_received_at);
+
+        let a_b_cursor = a
+            .store
+            .cursor_or_start_for_pairing(&b_identity.node_id, &ab_pairing)
+            .unwrap();
+        let (a_b_received_at, _) = protocol::parse_cursor(&a_b_cursor).unwrap();
+        for _ in 0..40 {
+            if now() > a_b_received_at {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(now() > a_b_received_at);
+        sync_once(&c, &b_identity.node_id, &bc_pairing, &b_dir);
+        assert_original_packet(&b, &packet_from_c, 2);
+        sync_once(&b, &a_identity.node_id, &ab_pairing, &a_dir);
+        assert_original_packet(&a, &packet_from_c, 2);
+
+        // The reverse C -> B -> A propagation is likewise idempotent.
+        sync_once(&c, &b_identity.node_id, &bc_pairing, &b_dir);
+        sync_once(&b, &a_identity.node_id, &ab_pairing, &a_dir);
+        assert_original_packet(&a, &packet_from_a, 2);
+        assert_original_packet(&a, &packet_from_c, 2);
+        assert_original_packet(&b, &packet_from_a, 2);
+        assert_original_packet(&b, &packet_from_c, 2);
+        assert_original_packet(&c, &packet_from_a, 2);
+        assert_original_packet(&c, &packet_from_c, 2);
+
+        let a_fingerprint = MyceliumStateSnapshot::from_store(&a.store)
+            .unwrap()
+            .fingerprint();
+        let b_fingerprint = MyceliumStateSnapshot::from_store(&b.store)
+            .unwrap()
+            .fingerprint();
+        let c_fingerprint = MyceliumStateSnapshot::from_store(&c.store)
+            .unwrap()
+            .fingerprint();
+        assert_eq!(a_fingerprint, b_fingerprint);
+        assert_eq!(a_fingerprint, c_fingerprint);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    fn pair_nodes(
+        initiator: &DesktopNode,
+        initiator_identity: &DeviceIdentity,
+        accepter: &DesktopNode,
+        created_at: i64,
+    ) -> String {
+        let pairing_id =
+            crate::models::pairing_id_for(&initiator_identity.node_id, created_at, None);
+        let offer = PairingOffer {
+            protocol_version: protocol::PAIRING_VERSION.to_owned(),
+            pairing_id: pairing_id.clone(),
+            source_node_id: initiator_identity.node_id.clone(),
+            source_display_name: initiator_identity.display_name.clone(),
+            source_platform: initiator_identity.platform.clone(),
+            source_role: initiator_identity.role.clone(),
+            created_at,
+            challenge: None,
+        };
+        let approval = accepter.create_approval(&offer, true).unwrap();
+        initiator
+            .store
+            .upsert_pairing(&PairingRecord::from(&approval))
+            .unwrap();
+        pairing_id
+    }
+
+    fn sync_once(client: &DesktopNode, remote_node_id: &str, pairing_id: &str, server_dir: &Path) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        client
+            .add_peer(
+                remote_node_id,
+                "127.0.0.1",
+                endpoint.port(),
+                pairing_id,
+                Some("three-node test peer".to_owned()),
+            )
+            .unwrap();
+        let server_dir = server_dir.to_owned();
+        let worker = std::thread::spawn(move || {
+            let server = DesktopNode::open(server_dir).unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            transport::configure_stream(&stream).unwrap();
+            server.serve_stream(&mut stream).unwrap();
+        });
+        client.sync_peer(remote_node_id).unwrap();
+        worker.join().unwrap();
+    }
+
+    fn assert_original_packet(node: &DesktopNode, original: &Packet, expected_count: i64) {
+        let packets = node.store.packets_for_replay().unwrap();
+        assert_eq!(packets.len() as i64, expected_count);
+        let replicated = packets
+            .into_iter()
+            .find(|packet| packet.packet_id == original.packet_id)
+            .expect("original packet must be present");
+        assert_eq!(replicated.packet_id, original.packet_id);
+        assert_eq!(replicated.author, original.author);
+        assert_eq!(replicated.canonical_json(), original.canonical_json());
+    }
+
+    fn phrase_packet(author: &str, phrase_id: &str, created_at: i64) -> Packet {
+        let payload = PacketPayload::PhraseObserved {
+            phrase_id: phrase_id.to_owned(),
+            surface_text: Some(format!("ordinary packet from {author}")),
+            phonetic_hint: None,
+            language_hint: Some("en".to_owned()),
+            input_type: "text".to_owned(),
+        };
+        let payload_hash = sha256(&canonical::stringify(&payload.to_value()));
+        let hash_input = serde_json::json!({
+            "version": crate::models::LMP_VERSION,
+            "packet_type": PacketType::PhraseObserved.wire(),
+            "created_at": created_at,
+            "zone": "three_node_sync_test",
+            "author": author,
+            "payload_hash": payload_hash,
+            "payload": payload.to_value(),
+        });
+        let packet_id = sha256(&canonical::stringify(&hash_input));
+        let packet = Packet {
+            version: crate::models::LMP_VERSION.to_owned(),
+            packet_id: packet_id.clone(),
+            packet_type: PacketType::PhraseObserved,
+            created_at,
+            expires_at: None,
+            zone: "three_node_sync_test".to_owned(),
+            author: author.to_owned(),
+            parent: None,
+            payload_hash,
+            payload,
+            signature: format!(
+                "{}:{}:{}",
+                crate::models::DEV_SIGNATURE_PREFIX,
+                author,
+                packet_id
+            ),
+        };
+        packet.validate().unwrap();
+        packet
     }
 }

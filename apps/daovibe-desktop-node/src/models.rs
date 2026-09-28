@@ -35,6 +35,10 @@ pub enum PacketType {
     PhraseObserved,
     MeaningProposal,
     MeaningVote,
+    CorrectionProposed,
+    CorrectionVote,
+    CorrectionTombstoneProposed,
+    CorrectionTombstoneVote,
     SafetyLabel,
 }
 
@@ -44,6 +48,10 @@ impl PacketType {
             Self::PhraseObserved => "phrase_observed",
             Self::MeaningProposal => "meaning_proposal",
             Self::MeaningVote => "meaning_vote",
+            Self::CorrectionProposed => "correction_proposed",
+            Self::CorrectionVote => "correction_vote",
+            Self::CorrectionTombstoneProposed => "correction_tombstone_proposed",
+            Self::CorrectionTombstoneVote => "correction_tombstone_vote",
             Self::SafetyLabel => "safety_label",
         }
     }
@@ -52,6 +60,10 @@ impl PacketType {
             "phrase_observed" => Ok(Self::PhraseObserved),
             "meaning_proposal" => Ok(Self::MeaningProposal),
             "meaning_vote" => Ok(Self::MeaningVote),
+            "correction_proposed" => Ok(Self::CorrectionProposed),
+            "correction_vote" => Ok(Self::CorrectionVote),
+            "correction_tombstone_proposed" => Ok(Self::CorrectionTombstoneProposed),
+            "correction_tombstone_vote" => Ok(Self::CorrectionTombstoneVote),
             "safety_label" => Ok(Self::SafetyLabel),
             other => Err(PacketError::PacketType(other.to_owned())),
         }
@@ -80,6 +92,37 @@ pub enum PacketPayload {
         vote: String,
         confidence: f64,
     },
+    CorrectionProposed {
+        correction_id: String,
+        phrase_id: String,
+        meaning_id: String,
+        reference_meaning: String,
+        context: Option<String>,
+        confidence: f64,
+    },
+    CorrectionVote {
+        correction_id: String,
+        phrase_id: String,
+        meaning_id: String,
+        vote: String,
+        confidence: f64,
+    },
+    CorrectionTombstoneProposed {
+        tombstone_id: String,
+        phrase_id: String,
+        meaning_id: String,
+        correction_id: String,
+        reason: String,
+        confidence: f64,
+    },
+    CorrectionTombstoneVote {
+        tombstone_id: String,
+        phrase_id: String,
+        meaning_id: String,
+        correction_id: String,
+        vote: String,
+        confidence: f64,
+    },
     SafetyLabel {
         phrase_id: String,
         label: String,
@@ -93,6 +136,10 @@ impl PacketPayload {
             Self::PhraseObserved { .. } => PacketType::PhraseObserved,
             Self::MeaningProposal { .. } => PacketType::MeaningProposal,
             Self::MeaningVote { .. } => PacketType::MeaningVote,
+            Self::CorrectionProposed { .. } => PacketType::CorrectionProposed,
+            Self::CorrectionVote { .. } => PacketType::CorrectionVote,
+            Self::CorrectionTombstoneProposed { .. } => PacketType::CorrectionTombstoneProposed,
+            Self::CorrectionTombstoneVote { .. } => PacketType::CorrectionTombstoneVote,
             Self::SafetyLabel { .. } => PacketType::SafetyLabel,
         }
     }
@@ -138,6 +185,64 @@ impl PacketPayload {
             } => {
                 put(&mut map, "phrase_id", Some(phrase_id));
                 put(&mut map, "meaning_id", Some(meaning_id));
+                put(&mut map, "vote", Some(vote));
+                map.insert("confidence".to_owned(), json!(confidence));
+            }
+            Self::CorrectionProposed {
+                correction_id,
+                phrase_id,
+                meaning_id,
+                reference_meaning,
+                context,
+                confidence,
+            } => {
+                put(&mut map, "correction_id", Some(correction_id));
+                put(&mut map, "phrase_id", Some(phrase_id));
+                put(&mut map, "meaning_id", Some(meaning_id));
+                put(&mut map, "reference_meaning", Some(reference_meaning));
+                put(&mut map, "context", context.as_deref());
+                map.insert("confidence".to_owned(), json!(confidence));
+            }
+            Self::CorrectionVote {
+                correction_id,
+                phrase_id,
+                meaning_id,
+                vote,
+                confidence,
+            } => {
+                put(&mut map, "correction_id", Some(correction_id));
+                put(&mut map, "phrase_id", Some(phrase_id));
+                put(&mut map, "meaning_id", Some(meaning_id));
+                put(&mut map, "vote", Some(vote));
+                map.insert("confidence".to_owned(), json!(confidence));
+            }
+            Self::CorrectionTombstoneProposed {
+                tombstone_id,
+                phrase_id,
+                meaning_id,
+                correction_id,
+                reason,
+                confidence,
+            } => {
+                put(&mut map, "tombstone_id", Some(tombstone_id));
+                put(&mut map, "phrase_id", Some(phrase_id));
+                put(&mut map, "meaning_id", Some(meaning_id));
+                put(&mut map, "correction_id", Some(correction_id));
+                put(&mut map, "reason", Some(reason));
+                map.insert("confidence".to_owned(), json!(confidence));
+            }
+            Self::CorrectionTombstoneVote {
+                tombstone_id,
+                phrase_id,
+                meaning_id,
+                correction_id,
+                vote,
+                confidence,
+            } => {
+                put(&mut map, "tombstone_id", Some(tombstone_id));
+                put(&mut map, "phrase_id", Some(phrase_id));
+                put(&mut map, "meaning_id", Some(meaning_id));
+                put(&mut map, "correction_id", Some(correction_id));
                 put(&mut map, "vote", Some(vote));
                 map.insert("confidence".to_owned(), json!(confidence));
             }
@@ -251,6 +356,49 @@ impl Packet {
                     .and_then(Value::as_f64)
                     .ok_or_else(|| PacketError::Payload("confidence".to_owned()))?,
             },
+            PacketType::CorrectionProposed => PacketPayload::CorrectionProposed {
+                correction_id: payload_text("correction_id")?,
+                phrase_id: payload_text("phrase_id")?,
+                meaning_id: payload_text("meaning_id")?,
+                reference_meaning: payload_text("reference_meaning")?,
+                context: optional_text(payload_value, "context"),
+                confidence: payload_value
+                    .get("confidence")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| PacketError::Payload("confidence".to_owned()))?,
+            },
+            PacketType::CorrectionVote => PacketPayload::CorrectionVote {
+                correction_id: payload_text("correction_id")?,
+                phrase_id: payload_text("phrase_id")?,
+                meaning_id: payload_text("meaning_id")?,
+                vote: payload_text("vote")?,
+                confidence: payload_value
+                    .get("confidence")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| PacketError::Payload("confidence".to_owned()))?,
+            },
+            PacketType::CorrectionTombstoneProposed => PacketPayload::CorrectionTombstoneProposed {
+                tombstone_id: payload_text("tombstone_id")?,
+                phrase_id: payload_text("phrase_id")?,
+                meaning_id: payload_text("meaning_id")?,
+                correction_id: payload_text("correction_id")?,
+                reason: payload_text("reason")?,
+                confidence: payload_value
+                    .get("confidence")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| PacketError::Payload("confidence".to_owned()))?,
+            },
+            PacketType::CorrectionTombstoneVote => PacketPayload::CorrectionTombstoneVote {
+                tombstone_id: payload_text("tombstone_id")?,
+                phrase_id: payload_text("phrase_id")?,
+                meaning_id: payload_text("meaning_id")?,
+                correction_id: payload_text("correction_id")?,
+                vote: payload_text("vote")?,
+                confidence: payload_value
+                    .get("confidence")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| PacketError::Payload("confidence".to_owned()))?,
+            },
             PacketType::SafetyLabel => PacketPayload::SafetyLabel {
                 phrase_id: payload_text("phrase_id")?,
                 label: payload_text("label")?,
@@ -306,9 +454,97 @@ impl Packet {
         if self.expires_at.is_some_and(|value| value <= 0) {
             return Err(PacketError::Invalid("invalid expires_at".to_owned()));
         }
-        if matches!(self.payload, PacketPayload::MeaningProposal { confidence, .. } | PacketPayload::MeaningVote { confidence, .. } if !confidence.is_finite())
+        if matches!(self.payload, PacketPayload::MeaningProposal { confidence, .. } | PacketPayload::MeaningVote { confidence, .. } | PacketPayload::CorrectionProposed { confidence, .. } | PacketPayload::CorrectionVote { confidence, .. } | PacketPayload::CorrectionTombstoneProposed { confidence, .. } | PacketPayload::CorrectionTombstoneVote { confidence, .. } if !confidence.is_finite())
         {
             return Err(PacketError::Invalid("invalid confidence".to_owned()));
+        }
+        match &self.payload {
+            PacketPayload::PhraseObserved { phrase_id, .. }
+            | PacketPayload::SafetyLabel { phrase_id, .. }
+            | PacketPayload::MeaningProposal { phrase_id, .. }
+            | PacketPayload::MeaningVote { phrase_id, .. } => {
+                if phrase_id.trim().is_empty() {
+                    return Err(PacketError::Invalid("missing phrase_id".to_owned()));
+                }
+            }
+            PacketPayload::CorrectionProposed {
+                correction_id,
+                phrase_id,
+                meaning_id,
+                reference_meaning,
+                ..
+            } => {
+                if correction_id.trim().is_empty()
+                    || phrase_id.trim().is_empty()
+                    || meaning_id.trim().is_empty()
+                    || reference_meaning.trim().is_empty()
+                {
+                    return Err(PacketError::Invalid(
+                        "missing correction proposal field".to_owned(),
+                    ));
+                }
+            }
+            PacketPayload::CorrectionVote {
+                correction_id,
+                phrase_id,
+                meaning_id,
+                vote,
+                ..
+            } => {
+                if correction_id.trim().is_empty()
+                    || phrase_id.trim().is_empty()
+                    || meaning_id.trim().is_empty()
+                {
+                    return Err(PacketError::Invalid(
+                        "missing correction vote field".to_owned(),
+                    ));
+                }
+                if vote != "confirm" && vote != "reject" {
+                    return Err(PacketError::Invalid("invalid correction vote".to_owned()));
+                }
+            }
+            PacketPayload::CorrectionTombstoneProposed {
+                tombstone_id,
+                phrase_id,
+                meaning_id,
+                correction_id,
+                reason,
+                confidence,
+            } => {
+                if tombstone_id.trim().is_empty()
+                    || phrase_id.trim().is_empty()
+                    || meaning_id.trim().is_empty()
+                    || correction_id.trim().is_empty()
+                    || reason.trim().is_empty()
+                    || !confidence.is_finite()
+                    || !(0.0..=1.0).contains(confidence)
+                {
+                    return Err(PacketError::Invalid(
+                        "invalid correction tombstone proposal".to_owned(),
+                    ));
+                }
+            }
+            PacketPayload::CorrectionTombstoneVote {
+                tombstone_id,
+                phrase_id,
+                meaning_id,
+                correction_id,
+                vote,
+                confidence,
+            } => {
+                if tombstone_id.trim().is_empty()
+                    || phrase_id.trim().is_empty()
+                    || meaning_id.trim().is_empty()
+                    || correction_id.trim().is_empty()
+                    || (vote != "confirm" && vote != "reject")
+                    || !confidence.is_finite()
+                    || !(0.0..=1.0).contains(confidence)
+                {
+                    return Err(PacketError::Invalid(
+                        "invalid correction tombstone vote".to_owned(),
+                    ));
+                }
+            }
         }
         let payload_hash = sha256(&canonical::stringify(&self.payload.to_value()));
         if self.payload_hash != payload_hash {

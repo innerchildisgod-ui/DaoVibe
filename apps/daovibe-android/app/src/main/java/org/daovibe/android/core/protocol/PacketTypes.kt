@@ -4,6 +4,10 @@ enum class PacketType(val wireValue: String) {
     PHRASE_OBSERVED("phrase_observed"),
     MEANING_PROPOSAL("meaning_proposal"),
     MEANING_VOTE("meaning_vote"),
+    CORRECTION_PROPOSED("correction_proposed"),
+    CORRECTION_VOTE("correction_vote"),
+    CORRECTION_TOMBSTONE_PROPOSED("correction_tombstone_proposed"),
+    CORRECTION_TOMBSTONE_VOTE("correction_tombstone_vote"),
     SAFETY_LABEL("safety_label");
 
     companion object {

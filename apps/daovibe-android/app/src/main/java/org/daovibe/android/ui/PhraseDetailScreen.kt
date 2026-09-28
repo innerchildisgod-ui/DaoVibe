@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import org.daovibe.android.core.mycelium.LocalMyceliumRepository
 import org.daovibe.android.core.mycelium.MeaningState
 import org.daovibe.android.core.mycelium.PhraseState
+import org.daovibe.android.core.mycelium.CorrectionState
 import org.daovibe.android.core.protocol.VoteValue
 
 @Composable
@@ -42,6 +43,7 @@ internal fun PhraseDetailScreen(
     }
     var isSubmittingMeaning by remember { mutableStateOf(false) }
     var activeVoteMeaningId by remember { mutableStateOf<String?>(null) }
+    var activeCorrectionMeaningId by remember { mutableStateOf<String?>(null) }
 
     TextButton(onClick = onBack) {
         Text("Back to recent phrases")
@@ -126,6 +128,7 @@ internal fun PhraseDetailScreen(
             MeaningProposalCard(
                 meaning = meaning,
                 enabled = activeVoteMeaningId == null,
+                correctionEnabled = activeCorrectionMeaningId == null,
                 onVote = { vote ->
                     scope.launch {
                         activeVoteMeaningId = meaning.meaningId
@@ -142,6 +145,54 @@ internal fun PhraseDetailScreen(
                         }
                         activeVoteMeaningId = null
                     }
+                },
+                onProposeCorrection = { reference, context ->
+                    scope.launch {
+                        activeCorrectionMeaningId = meaning.meaningId
+                        runCatching {
+                            repository.proposeCorrection(phrase.phraseId, meaning.meaningId, reference, context)
+                        }.onSuccess { result ->
+                            message = voteResultMessage(result)
+                        }.onFailure {
+                            message = "That correction could not be added on this device."
+                        }
+                        activeCorrectionMeaningId = null
+                    }
+                },
+                onVoteCorrection = { correction, vote ->
+                    scope.launch {
+                        activeCorrectionMeaningId = meaning.meaningId
+                        runCatching {
+                            repository.voteCorrection(phrase.phraseId, meaning.meaningId, correction.correctionId, vote)
+                        }.onSuccess { result -> message = voteResultMessage(result) }
+                            .onFailure { message = "That correction judgement could not be added on this device." }
+                        activeCorrectionMeaningId = null
+                    }
+                },
+                onProposeTombstone = { correction, reason, confidence ->
+                    scope.launch {
+                        activeCorrectionMeaningId = meaning.meaningId
+                        runCatching {
+                            repository.proposeCorrectionTombstone(
+                                phrase.phraseId, meaning.meaningId, correction.correctionId, reason, confidence
+                            )
+                        }.onSuccess { result -> message = voteResultMessage(result) }
+                            .onFailure { message = "That tombstone proposal could not be added on this device." }
+                        activeCorrectionMeaningId = null
+                    }
+                },
+                onVoteTombstone = { tombstone, vote ->
+                    scope.launch {
+                        activeCorrectionMeaningId = meaning.meaningId
+                        runCatching {
+                            repository.voteCorrectionTombstone(
+                                phrase.phraseId, meaning.meaningId,
+                                tombstone.correctionId, tombstone.tombstoneId, vote
+                            )
+                        }.onSuccess { result -> message = voteResultMessage(result) }
+                            .onFailure { message = "That tombstone judgement could not be added on this device." }
+                        activeCorrectionMeaningId = null
+                    }
                 }
             )
         }
@@ -152,8 +203,17 @@ internal fun PhraseDetailScreen(
 private fun MeaningProposalCard(
     meaning: MeaningState,
     enabled: Boolean,
-    onVote: (VoteValue) -> Unit
+    correctionEnabled: Boolean,
+    onVote: (VoteValue) -> Unit,
+    onProposeCorrection: (String, String?) -> Unit,
+    onVoteCorrection: (CorrectionState, VoteValue) -> Unit,
+    onProposeTombstone: (CorrectionState, String, Double) -> Unit,
+    onVoteTombstone: (org.daovibe.android.core.mycelium.CorrectionTombstoneState, VoteValue) -> Unit
 ) {
+    var correctionInput by remember(meaning.meaningId) { mutableStateOf("") }
+    var correctionContext by remember(meaning.meaningId) { mutableStateOf("") }
+    var tombstoneReason by remember(meaning.meaningId) { mutableStateOf("") }
+    var tombstoneConfidence by remember(meaning.meaningId) { mutableStateOf("0.25") }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -166,16 +226,16 @@ private fun MeaningProposalCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = meaning.referenceMeaning,
+                text = "Original: ${meaning.referenceMeaning}",
                 style = MaterialTheme.typography.titleMedium
             )
-            meaning.context?.takeIf { it.isNotBlank() }?.let { context ->
-                Text(
-                    text = context,
+            Text("Effective: ${meaning.effectiveReferenceMeaning}${if (meaning.effectiveCorrectionId != null) " (corrected)" else ""}", style = MaterialTheme.typography.titleMedium, color = DaoVibeColors.Cyan)
+            Text("Effective context: ${meaning.effectiveContext ?: "(none)"}", style = MaterialTheme.typography.bodyMedium, color = DaoVibeColors.TextSecondary)
+            Text(
+                text = "Original context: ${meaning.context ?: "(none)"}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = DaoVibeColors.TextSecondary
-                )
-            }
+            )
             Text(
                 text = "Confidence ${formatPercent(meaning.confidence)}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -186,6 +246,64 @@ private fun MeaningProposalCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = DaoVibeColors.TextSecondary
             )
+            OutlinedTextField(value = correctionInput, onValueChange = { correctionInput = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Corrected reference meaning") }, enabled = correctionEnabled, minLines = 1, maxLines = 3)
+            OutlinedTextField(value = correctionContext, onValueChange = { correctionContext = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Correction context (optional)") }, enabled = correctionEnabled, minLines = 1, maxLines = 3)
+            Button(onClick = { onProposeCorrection(correctionInput, correctionContext.trim().takeIf { it.isNotEmpty() }); correctionInput = ""; correctionContext = "" }, enabled = correctionEnabled && correctionInput.trim().isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Propose correction") }
+            if (meaning.corrections.isNotEmpty()) {
+                Text("Correction candidates", style = MaterialTheme.typography.titleSmall)
+                meaning.corrections.forEach { correction ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(correction.referenceMeaning, style = MaterialTheme.typography.bodyLarge)
+                        Text("Context: ${correction.context ?: "(none)"} · confidence ${formatPercent(correction.confidence)} · ${formatCount(correction.confirms)} confirms · ${formatCount(correction.rejects)} rejects · score ${"%.2f".format(correction.score)}${if (correction.correctionId == meaning.effectiveCorrectionId) " · EFFECTIVE" else ""}${if (correction.tombstoned) " · TOMBSTONED" else " · ACTIVE"}", style = MaterialTheme.typography.labelMedium, color = DaoVibeColors.TextSecondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            JudgementButton("Confirm", correctionEnabled, Modifier.weight(1f)) { onVoteCorrection(correction, VoteValue.CONFIRM) }
+                            JudgementButton("Reject", correctionEnabled, Modifier.weight(1f)) { onVoteCorrection(correction, VoteValue.REJECT) }
+                        }
+                        OutlinedTextField(
+                            value = tombstoneReason,
+                            onValueChange = { tombstoneReason = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Tombstone reason") },
+                            enabled = correctionEnabled,
+                            minLines = 1,
+                            maxLines = 3
+                        )
+                        OutlinedTextField(
+                            value = tombstoneConfidence,
+                            onValueChange = { tombstoneConfidence = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Tombstone confidence (0–1)") },
+                            enabled = correctionEnabled,
+                            singleLine = true
+                        )
+                        val parsedTombstoneConfidence = tombstoneConfidence.toDoubleOrNull()
+                        Button(
+                            onClick = {
+                                onProposeTombstone(correction, tombstoneReason, parsedTombstoneConfidence ?: 0.25)
+                                tombstoneReason = ""
+                            },
+                            enabled = correctionEnabled && tombstoneReason.trim().isNotEmpty() &&
+                                parsedTombstoneConfidence?.isFinite() == true && parsedTombstoneConfidence in 0.0..1.0,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Propose tombstone") }
+                        correction.tombstones.forEach { tombstone ->
+                            Text(
+                                "Tombstone ${tombstone.tombstoneId}: ${tombstone.reason} · ${formatCount(tombstone.confirms)} confirms · ${formatCount(tombstone.rejects)} rejects · score ${"%.2f".format(tombstone.score)}${if (tombstone.effective) " · EFFECTIVE TOMBSTONE" else ""}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = DaoVibeColors.TextSecondary
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                JudgementButton("Confirm", correctionEnabled, Modifier.weight(1f)) {
+                                    onVoteTombstone(tombstone, VoteValue.CONFIRM)
+                                }
+                                JudgementButton("Reject", correctionEnabled, Modifier.weight(1f)) {
+                                    onVoteTombstone(tombstone, VoteValue.REJECT)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)

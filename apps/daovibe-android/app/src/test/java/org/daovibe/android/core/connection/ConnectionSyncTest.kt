@@ -86,7 +86,7 @@ class ConnectionSyncTest {
                 remoteNodeId = SERVER_NODE,
                 endpoint = endpoint
             )
-            val serverResult = withTimeout(5_000) { serverJob.await() }
+            val serverResult = serverJob.await()
 
             assertTrue(clientResult is SyncRunResult.Completed)
             assertEquals(1, (clientResult as SyncRunResult.Completed).importedPackets)
@@ -159,7 +159,7 @@ class ConnectionSyncTest {
                 endpoint = endpoint,
                 batchLimit = 10
             )
-            val serverResult = withTimeout(5_000) { serverJob.await() }
+            val serverResult = serverJob.await()
 
             assertTrue(clientResult is SyncRunResult.Completed)
             val completed = clientResult as SyncRunResult.Completed
@@ -490,88 +490,11 @@ class ConnectionSyncTest {
         transport: PeerTransport,
         clientNodeId: String
     ): SyncResponderResult {
-        val sessionTransport =
-            CloseDeferringPeerTransport(transport)
-
-        return try {
-            val result = SyncResponder(
-                database = serverDatabase,
-                nowSeconds = { NOW }
-            ).serveOnce(sessionTransport)
-
-            if (result is SyncResponderResult.Completed) {
-                var cursor = "0:"
-                var reverseWindows = 0
-
-                while (true) {
-                    if (reverseWindows >= MAX_SYNC_WINDOWS_PER_RUN) {
-                        error(
-                            "Reverse loopback test exceeded maximum sync windows"
-                        )
-                    }
-
-                    val reverseRequest =
-                        org.daovibe.android.core.sync.SyncRequest(
-                            protocolVersion =
-                                org.daovibe.android.core.sync
-                                    .SYNC_PROTOCOL_VERSION,
-                            sessionId = SESSION_ID,
-                            sourceNodeId = SERVER_NODE,
-                            targetNodeId = clientNodeId,
-                            pairingId = PAIRING_ID,
-                            cursor = cursor,
-                            limit = 50
-                        )
-
-                    sessionTransport.send(
-                        SyncJsonCodec.encode(reverseRequest)
-                    )
-
-                    val reverseResponse =
-                        SyncJsonCodec.decode(
-                            sessionTransport.receive()
-                        )
-
-                    assertTrue(reverseResponse is SyncBatch)
-
-                    val reverseBatch =
-                        reverseResponse as SyncBatch
-
-                    assertEquals(
-                        clientNodeId,
-                        reverseBatch.sourceNodeId
-                    )
-                    assertEquals(
-                        SERVER_NODE,
-                        reverseBatch.targetNodeId
-                    )
-                    assertEquals(
-                        PAIRING_ID,
-                        reverseBatch.pairingId
-                    )
-                    assertEquals(
-                        cursor,
-                        reverseBatch.requestCursor
-                    )
-
-                    reverseWindows += 1
-
-                    if (!reverseBatch.hasMore) {
-                        break
-                    } else {
-                        assertTrue(
-                            reverseBatch.nextCursor != cursor
-                        )
-
-                        cursor = reverseBatch.nextCursor
-                    }
-                }
-            }
-
-            result
-        } finally {
-            sessionTransport.finish()
-        }
+        val result = SyncResponder(
+            database = serverDatabase,
+            nowSeconds = { NOW }
+        ).serveOnce(transport)
+        return result
     }
     private suspend fun installClientPairing(): PairingRecord {
         val identity = DeviceIdentityRepository(

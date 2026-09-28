@@ -12,7 +12,7 @@ import org.daovibe.android.core.storage.DaoVibeDatabase
 
 class SyncResponder(
     database: DaoVibeDatabase,
-    nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
+    private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
     localCapabilities: Set<org.daovibe.android.core.connection.ConnectionCapability> =
         org.daovibe.android.core.connection.DEFAULT_ANDROID_CONNECTION_CAPABILITIES,
     supportedConnectionVersions: Set<String> =
@@ -163,9 +163,72 @@ class SyncResponder(
             windowsProcessed += 1
 
             if (!batch.hasMore) {
+                pullFromRemote(transport, session)
                 return SyncResponderResult.Completed(
                     session = session,
                     windowsProcessed = windowsProcessed
+                )
+            }
+        }
+    }
+
+    /** Pull the initiator's ledger after serving our export. The packets are
+     * imported through the normal ledger path, so a later peer can export
+     * them unchanged (including original author and packet ID). */
+    private suspend fun pullFromRemote(
+        transport: PeerTransport,
+        session: ConnectionSession
+    ) {
+        var cursor = packetSyncRepository.loadInboundCursor(
+            remoteNodeId = session.remoteNodeId,
+            pairingId = session.pairingId
+        )
+        var windows = 0
+        while (true) {
+            if (windows >= MAX_SYNC_WINDOWS_PER_RUN) {
+                throw SyncProtocolException(
+                    reason = SyncRejectReason.MAX_WINDOWS_EXCEEDED,
+                    message = "Reverse sync exceeded $MAX_SYNC_WINDOWS_PER_RUN windows"
+                )
+            }
+            val request = SyncProtocol.createRequest(
+                session = session,
+                cursor = cursor,
+                limit = DEFAULT_SYNC_BATCH_LIMIT
+            )
+            transport.send(SyncJsonCodec.encode(request))
+            when (val response = SyncJsonCodec.decode(transport.receive())) {
+                is SyncBatch -> {
+                    SyncProtocol.validateBatchForClient(response, session)
+                    if (response.requestCursor != cursor) {
+                        throw SyncProtocolException(
+                            reason = SyncRejectReason.CURSOR_MISMATCH,
+                            message = "Reverse sync cursor mismatch"
+                        )
+                    }
+                    packetSyncRepository.importBatch(
+                        batch = response,
+                        remoteNodeId = session.remoteNodeId,
+                        pairingId = session.pairingId,
+                        importedAt = nowSeconds()
+                    )
+                    windows += 1
+                    if (!response.hasMore) return
+                    if (response.nextCursor == cursor) {
+                        throw SyncProtocolException(
+                            reason = SyncRejectReason.CURSOR_STALLED,
+                            message = "Reverse sync responder returned a stalled cursor"
+                        )
+                    }
+                    cursor = response.nextCursor
+                }
+                is SyncReject -> throw SyncProtocolException(
+                    reason = SyncRejectReason.INVALID_MESSAGE,
+                    message = "Remote reverse sync rejected: ${response.reasonCode.wireValue}"
+                )
+                is SyncRequest -> throw SyncProtocolException(
+                    reason = SyncRejectReason.INVALID_MESSAGE,
+                    message = "Expected reverse SYNC_BATCH response"
                 )
             }
         }

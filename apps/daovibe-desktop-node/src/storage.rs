@@ -27,6 +27,28 @@ pub struct PairingRecord {
     pub created_at: i64,
     pub paired_at: Option<i64>,
 }
+#[derive(Clone, Debug, PartialEq)]
+pub struct PeerRecord {
+    pub remote_node_id: String,
+    pub display_name: Option<String>,
+    pub host: String,
+    pub port: u16,
+    pub pairing_id: String,
+    pub last_successful_contact_at: Option<i64>,
+    pub last_error: Option<String>,
+    pub updated_at: i64,
+    pub last_failure_at: Option<i64>,
+    pub last_outcome: Option<String>,
+    pub last_stage: Option<String>,
+    pub last_error_category: Option<String>,
+    pub last_attempts: Option<i64>,
+    pub last_imported_packets: Option<i64>,
+    pub last_duplicate_packets: Option<i64>,
+    pub last_exported_packets: Option<i64>,
+    pub last_sync_started_at: Option<i64>,
+    pub last_sync_finished_at: Option<i64>,
+    pub last_cursor: Option<String>,
+}
 #[derive(Clone, Debug)]
 pub struct StoredPacket {
     pub packet: Packet,
@@ -50,7 +72,62 @@ impl Store {
         Ok(store)
     }
     fn initialize(&self) -> Result<(), StorageError> {
-        self.connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; CREATE TABLE IF NOT EXISTS device_identity (id INTEGER PRIMARY KEY CHECK (id = 1), node_id TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, created_at INTEGER NOT NULL, platform TEXT NOT NULL, role TEXT NOT NULL); CREATE TABLE IF NOT EXISTS packets (packet_id TEXT PRIMARY KEY, packet_type TEXT NOT NULL, created_at INTEGER NOT NULL, received_at INTEGER NOT NULL, packet_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS packets_ledger_order ON packets(received_at ASC, packet_id ASC); CREATE TABLE IF NOT EXISTS paired_devices (pairing_id TEXT PRIMARY KEY, local_node_id TEXT NOT NULL, remote_node_id TEXT NOT NULL, remote_display_name TEXT NOT NULL, remote_platform TEXT NOT NULL, remote_role TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, paired_at INTEGER); CREATE UNIQUE INDEX IF NOT EXISTS paired_devices_remote_active ON paired_devices(local_node_id, remote_node_id) WHERE status = 'approved'; CREATE TABLE IF NOT EXISTS peer_sync_state (remote_node_id TEXT PRIMARY KEY, pairing_id TEXT NOT NULL, inbound_cursor TEXT NOT NULL DEFAULT '0:', updated_at INTEGER NOT NULL);")?;
+        self.connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; CREATE TABLE IF NOT EXISTS device_identity (id INTEGER PRIMARY KEY CHECK (id = 1), node_id TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, created_at INTEGER NOT NULL, platform TEXT NOT NULL, role TEXT NOT NULL); CREATE TABLE IF NOT EXISTS packets (packet_id TEXT PRIMARY KEY, packet_type TEXT NOT NULL, created_at INTEGER NOT NULL, received_at INTEGER NOT NULL, packet_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS packets_ledger_order ON packets(received_at ASC, packet_id ASC); CREATE TABLE IF NOT EXISTS paired_devices (pairing_id TEXT PRIMARY KEY, local_node_id TEXT NOT NULL, remote_node_id TEXT NOT NULL, remote_display_name TEXT NOT NULL, remote_platform TEXT NOT NULL, remote_role TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, paired_at INTEGER); CREATE UNIQUE INDEX IF NOT EXISTS paired_devices_remote_active ON paired_devices(local_node_id, remote_node_id) WHERE status = 'approved'; CREATE TABLE IF NOT EXISTS peer_sync_state (remote_node_id TEXT PRIMARY KEY, pairing_id TEXT NOT NULL, inbound_cursor TEXT NOT NULL DEFAULT '0:', updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS known_peers (remote_node_id TEXT PRIMARY KEY, display_name TEXT, host TEXT NOT NULL, port INTEGER NOT NULL, pairing_id TEXT NOT NULL, last_successful_contact_at INTEGER, last_error TEXT, updated_at INTEGER NOT NULL);")?;
+        for (name, sql) in [
+            (
+                "last_failure_at",
+                "ALTER TABLE known_peers ADD COLUMN last_failure_at INTEGER",
+            ),
+            (
+                "last_outcome",
+                "ALTER TABLE known_peers ADD COLUMN last_outcome TEXT",
+            ),
+            (
+                "last_stage",
+                "ALTER TABLE known_peers ADD COLUMN last_stage TEXT",
+            ),
+            (
+                "last_error_category",
+                "ALTER TABLE known_peers ADD COLUMN last_error_category TEXT",
+            ),
+            (
+                "last_attempts",
+                "ALTER TABLE known_peers ADD COLUMN last_attempts INTEGER",
+            ),
+            (
+                "last_imported_packets",
+                "ALTER TABLE known_peers ADD COLUMN last_imported_packets INTEGER",
+            ),
+            (
+                "last_duplicate_packets",
+                "ALTER TABLE known_peers ADD COLUMN last_duplicate_packets INTEGER",
+            ),
+            (
+                "last_exported_packets",
+                "ALTER TABLE known_peers ADD COLUMN last_exported_packets INTEGER",
+            ),
+            (
+                "last_sync_started_at",
+                "ALTER TABLE known_peers ADD COLUMN last_sync_started_at INTEGER",
+            ),
+            (
+                "last_sync_finished_at",
+                "ALTER TABLE known_peers ADD COLUMN last_sync_finished_at INTEGER",
+            ),
+            (
+                "last_cursor",
+                "ALTER TABLE known_peers ADD COLUMN last_cursor TEXT",
+            ),
+        ] {
+            let exists: bool = self.connection.query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('known_peers') WHERE name=?1",
+                [name],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                self.connection.execute(sql, [])?;
+            }
+        }
         Ok(())
     }
     pub fn identity(&self) -> Result<Option<DeviceIdentity>, StorageError> {
@@ -88,6 +165,58 @@ impl Store {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(result)
     }
+    pub fn upsert_peer(&self, peer: &PeerRecord) -> Result<(), StorageError> {
+        self.connection.execute("INSERT INTO known_peers(remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19) ON CONFLICT(remote_node_id) DO UPDATE SET display_name=excluded.display_name,host=excluded.host,port=excluded.port,pairing_id=excluded.pairing_id,last_successful_contact_at=known_peers.last_successful_contact_at,last_error=known_peers.last_error,last_failure_at=known_peers.last_failure_at,last_outcome=known_peers.last_outcome,last_stage=known_peers.last_stage,last_error_category=known_peers.last_error_category,last_attempts=known_peers.last_attempts,last_imported_packets=known_peers.last_imported_packets,last_duplicate_packets=known_peers.last_duplicate_packets,last_exported_packets=known_peers.last_exported_packets,last_sync_started_at=known_peers.last_sync_started_at,last_sync_finished_at=known_peers.last_sync_finished_at,last_cursor=known_peers.last_cursor,updated_at=excluded.updated_at", params![peer.remote_node_id, peer.display_name, peer.host, peer.port, peer.pairing_id, peer.last_successful_contact_at, peer.last_error, peer.updated_at, peer.last_failure_at, peer.last_outcome, peer.last_stage, peer.last_error_category, peer.last_attempts, peer.last_imported_packets, peer.last_duplicate_packets, peer.last_exported_packets, peer.last_sync_started_at, peer.last_sync_finished_at, peer.last_cursor])?;
+        Ok(())
+    }
+    pub fn peer(&self, remote_node_id: &str) -> Result<Option<PeerRecord>, StorageError> {
+        self.connection.query_row("SELECT remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor FROM known_peers WHERE remote_node_id=?1", [remote_node_id], row_peer).optional().map_err(Into::into)
+    }
+    pub fn peers(&self) -> Result<Vec<PeerRecord>, StorageError> {
+        let mut statement = self.connection.prepare("SELECT remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor FROM known_peers ORDER BY remote_node_id ASC")?;
+        let peers = statement
+            .query_map([], row_peer)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(peers)
+    }
+    pub fn remove_peer(&self, remote_node_id: &str) -> Result<(), StorageError> {
+        self.connection.execute(
+            "DELETE FROM known_peers WHERE remote_node_id=?1",
+            [remote_node_id],
+        )?;
+        Ok(())
+    }
+    pub fn mark_peer_success(&self, remote_node_id: &str, at: i64) -> Result<(), StorageError> {
+        self.connection.execute("UPDATE known_peers SET last_successful_contact_at=?1,updated_at=?1 WHERE remote_node_id=?2", params![at, remote_node_id])?;
+        Ok(())
+    }
+
+    pub fn record_peer_success(
+        &self,
+        result: &crate::node::PeerSyncResult,
+    ) -> Result<(), StorageError> {
+        self.connection.execute("UPDATE known_peers SET last_successful_contact_at=?1,last_outcome='success',last_stage=?2,last_attempts=?3,last_imported_packets=?4,last_duplicate_packets=?5,last_exported_packets=?6,last_sync_started_at=?7,last_sync_finished_at=?1,last_cursor=?8,updated_at=?1 WHERE remote_node_id=?9", params![result.finished_at, result.stage.to_string(), result.attempts as i64, result.imported_packets as i64, result.duplicate_packets as i64, result.exported_packets.map(|v| v as i64), result.started_at, result.cursor, result.remote_node_id])?;
+        Ok(())
+    }
+    pub fn record_peer_failure(
+        &self,
+        result: &crate::node::PeerSyncResult,
+    ) -> Result<(), StorageError> {
+        self.connection.execute("UPDATE known_peers SET last_failure_at=?1,last_error=?2,last_outcome='failed',last_stage=?3,last_error_category=?4,last_attempts=?5,last_imported_packets=?6,last_duplicate_packets=?7,last_exported_packets=?8,last_sync_started_at=?9,last_sync_finished_at=?1,last_cursor=?10,updated_at=?1 WHERE remote_node_id=?11", params![result.finished_at, result.message.as_deref().unwrap_or("sync failed"), result.stage.to_string(), result.error_category.as_ref().map(ToString::to_string), result.attempts as i64, result.imported_packets as i64, result.duplicate_packets as i64, result.exported_packets.map(|v| v as i64), result.started_at, result.cursor, result.remote_node_id])?;
+        Ok(())
+    }
+    pub fn mark_peer_failure(
+        &self,
+        remote_node_id: &str,
+        at: i64,
+        error: &str,
+    ) -> Result<(), StorageError> {
+        self.connection.execute(
+            "UPDATE known_peers SET last_error=?1,updated_at=?2 WHERE remote_node_id=?3",
+            params![error, at, remote_node_id],
+        )?;
+        Ok(())
+    }
     pub fn insert_packet(&self, packet: &Packet, received_at: i64) -> Result<bool, StorageError> {
         let inserted=self.connection.execute("INSERT OR IGNORE INTO packets(packet_id,packet_type,created_at,received_at,packet_json) VALUES(?1,?2,?3,?4,?5)",params![packet.packet_id,packet.packet_type.wire(),packet.created_at,received_at,packet.canonical_json()])?;
         Ok(inserted == 1)
@@ -117,6 +246,22 @@ impl Store {
             Ok(StoredPacket {
                 packet,
                 received_at: at,
+            })
+        })?;
+        Ok(values.collect::<Result<Vec<_>, _>>()?)
+    }
+    pub fn packets_for_replay(&self) -> Result<Vec<Packet>, StorageError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT packet_json FROM packets ORDER BY created_at ASC,packet_id ASC")?;
+        let values = statement.query_map([], |row| {
+            let json: String = row.get(0)?;
+            Packet::from_json(&json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
             })
         })?;
         Ok(values.collect::<Result<Vec<_>, _>>()?)
@@ -247,8 +392,11 @@ impl Store {
             .into());
         }
 
-        let mut phrase_ids = HashSet::new();
-        let mut meaning_ids = HashSet::new();
+        let mut existing_phrase_ids = HashSet::new();
+        let mut existing_meaning_ids = HashSet::new();
+        let mut existing_meaning_proposals = HashMap::new();
+        let mut existing_correction_proposals = HashMap::new();
+        let mut existing_tombstone_proposals = HashMap::new();
         let mut packet_json_by_id = HashMap::new();
         {
             let mut statement = transaction.prepare("SELECT packet_json FROM packets")?;
@@ -256,11 +404,18 @@ impl Store {
 
             for row in rows {
                 let packet = Packet::from_json(&row?)?;
-                remember_dependency(&packet, &mut phrase_ids, &mut meaning_ids);
+                remember_dependency(&packet, &mut existing_phrase_ids, &mut existing_meaning_ids);
+                remember_correction_dependency(
+                    &packet,
+                    &mut existing_meaning_proposals,
+                    &mut existing_correction_proposals,
+                    &mut existing_tombstone_proposals,
+                );
             }
         }
 
         let mut unique_packets = HashMap::new();
+        let mut ordered_unique_packets = Vec::new();
         for packet in &batch.packets {
             packet.validate()?;
             if packet.is_expired(imported_at) {
@@ -279,10 +434,36 @@ impl Store {
                     .into());
                 }
             } else {
-                require_dependencies(packet, &phrase_ids, &meaning_ids)?;
                 unique_packets.insert(packet.packet_id.clone(), canonical_json);
-                remember_dependency(packet, &mut phrase_ids, &mut meaning_ids);
+                ordered_unique_packets.push(packet.clone());
             }
+        }
+
+        let mut available_phrase_ids = existing_phrase_ids;
+        let mut available_meaning_ids = existing_meaning_ids;
+        let mut meaning_proposals = existing_meaning_proposals;
+        let mut correction_proposals = existing_correction_proposals;
+        let mut tombstone_proposals = existing_tombstone_proposals;
+        for packet in &ordered_unique_packets {
+            require_dependencies(
+                packet,
+                &available_phrase_ids,
+                &available_meaning_ids,
+                &meaning_proposals,
+                &correction_proposals,
+                &tombstone_proposals,
+            )?;
+            remember_dependency(
+                packet,
+                &mut available_phrase_ids,
+                &mut available_meaning_ids,
+            );
+            remember_correction_dependency(
+                packet,
+                &mut meaning_proposals,
+                &mut correction_proposals,
+                &mut tombstone_proposals,
+            );
         }
 
         for (packet_id, canonical_json) in &unique_packets {
@@ -382,6 +563,10 @@ fn remember_dependency(
             meaning_ids.insert(meaning_id.clone());
         }
         crate::models::PacketPayload::MeaningVote { .. }
+        | crate::models::PacketPayload::CorrectionProposed { .. }
+        | crate::models::PacketPayload::CorrectionVote { .. }
+        | crate::models::PacketPayload::CorrectionTombstoneProposed { .. }
+        | crate::models::PacketPayload::CorrectionTombstoneVote { .. }
         | crate::models::PacketPayload::SafetyLabel { .. } => {}
     }
 }
@@ -390,6 +575,9 @@ fn require_dependencies(
     packet: &Packet,
     phrase_ids: &HashSet<String>,
     meaning_ids: &HashSet<String>,
+    meaning_proposals: &HashMap<(String, String), String>,
+    correction_proposals: &HashMap<(String, String, String), String>,
+    tombstone_proposals: &HashMap<(String, String, String, String), String>,
 ) -> Result<(), StorageError> {
     match &packet.payload {
         crate::models::PacketPayload::PhraseObserved { .. } => Ok(()),
@@ -411,6 +599,135 @@ fn require_dependencies(
                 )
             }
         }
+        crate::models::PacketPayload::CorrectionProposed {
+            phrase_id,
+            meaning_id,
+            ..
+        } => {
+            if meaning_ids.contains(meaning_id)
+                && meaning_proposals.get(&(phrase_id.clone(), meaning_id.clone()))
+                    == packet.parent.as_ref()
+            {
+                Ok(())
+            } else {
+                Err(PacketError::Invalid(format!(
+                    "invalid correction meaning parent: {meaning_id}"
+                ))
+                .into())
+            }
+        }
+        crate::models::PacketPayload::CorrectionVote {
+            phrase_id,
+            meaning_id,
+            correction_id,
+            ..
+        } => {
+            if meaning_ids.contains(meaning_id)
+                && correction_proposals.get(&(
+                    phrase_id.clone(),
+                    meaning_id.clone(),
+                    correction_id.clone(),
+                )) == packet.parent.as_ref()
+            {
+                Ok(())
+            } else {
+                Err(PacketError::Invalid(format!(
+                    "invalid correction vote parent: {correction_id}"
+                ))
+                .into())
+            }
+        }
+        crate::models::PacketPayload::CorrectionTombstoneProposed {
+            phrase_id,
+            meaning_id,
+            correction_id,
+            ..
+        } => {
+            if correction_proposals.get(&(
+                phrase_id.clone(),
+                meaning_id.clone(),
+                correction_id.clone(),
+            )) == packet.parent.as_ref()
+            {
+                Ok(())
+            } else {
+                Err(PacketError::Invalid(format!(
+                    "invalid correction tombstone parent: {correction_id}"
+                ))
+                .into())
+            }
+        }
+        crate::models::PacketPayload::CorrectionTombstoneVote {
+            phrase_id,
+            meaning_id,
+            correction_id,
+            tombstone_id,
+            ..
+        } => {
+            if tombstone_proposals.get(&(
+                phrase_id.clone(),
+                meaning_id.clone(),
+                correction_id.clone(),
+                tombstone_id.clone(),
+            )) == packet.parent.as_ref()
+            {
+                Ok(())
+            } else {
+                Err(PacketError::Invalid(format!(
+                    "invalid correction tombstone vote parent: {tombstone_id}"
+                ))
+                .into())
+            }
+        }
+    }
+}
+
+fn remember_correction_dependency(
+    packet: &Packet,
+    meaning_proposals: &mut HashMap<(String, String), String>,
+    correction_proposals: &mut HashMap<(String, String, String), String>,
+    tombstone_proposals: &mut HashMap<(String, String, String, String), String>,
+) {
+    match &packet.payload {
+        crate::models::PacketPayload::MeaningProposal {
+            phrase_id,
+            meaning_id,
+            ..
+        } => {
+            meaning_proposals.insert(
+                (phrase_id.clone(), meaning_id.clone()),
+                packet.packet_id.clone(),
+            );
+        }
+        crate::models::PacketPayload::CorrectionProposed {
+            phrase_id,
+            meaning_id,
+            correction_id,
+            ..
+        } => {
+            correction_proposals.insert(
+                (phrase_id.clone(), meaning_id.clone(), correction_id.clone()),
+                packet.packet_id.clone(),
+            );
+        }
+        crate::models::PacketPayload::CorrectionTombstoneProposed {
+            phrase_id,
+            meaning_id,
+            correction_id,
+            tombstone_id,
+            ..
+        } => {
+            tombstone_proposals.insert(
+                (
+                    phrase_id.clone(),
+                    meaning_id.clone(),
+                    correction_id.clone(),
+                    tombstone_id.clone(),
+                ),
+                packet.packet_id.clone(),
+            );
+        }
+        _ => {}
     }
 }
 fn row_pairing(row: &rusqlite::Row<'_>) -> rusqlite::Result<PairingRecord> {
@@ -424,6 +741,29 @@ fn row_pairing(row: &rusqlite::Row<'_>) -> rusqlite::Result<PairingRecord> {
         status: row.get(6)?,
         created_at: row.get(7)?,
         paired_at: row.get(8)?,
+    })
+}
+fn row_peer(row: &rusqlite::Row<'_>) -> rusqlite::Result<PeerRecord> {
+    Ok(PeerRecord {
+        remote_node_id: row.get(0)?,
+        display_name: row.get(1)?,
+        host: row.get(2)?,
+        port: row.get::<_, i64>(3)? as u16,
+        pairing_id: row.get(4)?,
+        last_successful_contact_at: row.get(5)?,
+        last_error: row.get(6)?,
+        updated_at: row.get(7)?,
+        last_failure_at: row.get(8)?,
+        last_outcome: row.get(9)?,
+        last_stage: row.get(10)?,
+        last_error_category: row.get(11)?,
+        last_attempts: row.get(12)?,
+        last_imported_packets: row.get(13)?,
+        last_duplicate_packets: row.get(14)?,
+        last_exported_packets: row.get(15)?,
+        last_sync_started_at: row.get(16)?,
+        last_sync_finished_at: row.get(17)?,
+        last_cursor: row.get(18)?,
     })
 }
 
@@ -725,6 +1065,42 @@ mod tests {
         assert_ne!(stored[0].packet.author, REMOTE_NODE);
     }
 
+    #[test]
+    fn correction_vote_requires_exact_proposal_parent_during_sync_import() {
+        let store = test_store();
+        let packets = correction_fixture_packets();
+        store.seed_packet(&packets[0], 1).unwrap();
+        store.seed_packet(&packets[1], 1).unwrap();
+        store
+            .import_sync_batch_atomically(
+                &test_batch(vec![packets[2].clone()], "1:correction"),
+                REMOTE_NODE,
+                PAIRING_ID,
+                IMPORTED_AT,
+            )
+            .unwrap();
+
+        let mut wrong_parent = packets[5].clone();
+        wrong_parent.parent = Some(packets[1].packet_id.clone());
+        rehash_packet(&mut wrong_parent);
+        let mut wrong_batch = test_batch(vec![wrong_parent], "2:wrong-parent");
+        wrong_batch.request_cursor = "1:correction".to_owned();
+        assert!(store
+            .import_sync_batch_atomically(&wrong_batch, REMOTE_NODE, PAIRING_ID, IMPORTED_AT,)
+            .is_err());
+        assert_eq!(store.packet_count().unwrap(), 3);
+
+        let mut missing_parent = packets[5].clone();
+        missing_parent.parent = None;
+        rehash_packet(&mut missing_parent);
+        let mut missing_batch = test_batch(vec![missing_parent], "2:missing-parent");
+        missing_batch.request_cursor = "1:correction".to_owned();
+        assert!(store
+            .import_sync_batch_atomically(&missing_batch, REMOTE_NODE, PAIRING_ID, IMPORTED_AT,)
+            .is_err());
+        assert_eq!(store.packet_count().unwrap(), 3);
+    }
+
     fn test_store() -> Store {
         let store = Store::open_in_memory().unwrap();
         store
@@ -788,6 +1164,30 @@ mod tests {
             "../../../protocol-fixtures/meaning_proposal.json"
         ))
         .unwrap()
+    }
+
+    fn correction_fixture_packets() -> Vec<Packet> {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../daovibe-android/app/src/test/resources/fixtures/mycelium_state_correction.json"
+        ))
+        .unwrap();
+        fixture["packets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(Packet::from_value)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    }
+
+    fn rehash_packet(packet: &mut Packet) {
+        packet.payload_hash = sha256(&canonical::stringify(&packet.payload.to_value()));
+        let mut hash_input = packet.to_value();
+        let object = hash_input.as_object_mut().unwrap();
+        object.remove("packet_id");
+        object.remove("signature");
+        packet.packet_id = sha256(&canonical::stringify(&hash_input));
+        packet.signature = format!("dev_signature:{}:{}", packet.author, packet.packet_id);
     }
 
     fn packet_with_expiry(expires_at: i64) -> Packet {

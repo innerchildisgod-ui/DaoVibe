@@ -56,6 +56,34 @@ object PacketJsonCodec {
                     ?: error("Invalid payload.vote"),
                 confidence = payload.getDouble("confidence")
             )
+            PacketType.CORRECTION_PROPOSED -> CorrectionProposedPayload(
+                correctionId = payload.getString("correction_id"), phraseId = payload.getString("phrase_id"),
+                meaningId = payload.getString("meaning_id"), referenceMeaning = payload.getString("reference_meaning"),
+                context = optionalString(payload, "context"), confidence = payload.getDouble("confidence")
+            )
+            PacketType.CORRECTION_VOTE -> CorrectionVotePayload(
+                correctionId = payload.getString("correction_id"), phraseId = payload.getString("phrase_id"),
+                meaningId = payload.getString("meaning_id"),
+                vote = VoteValue.fromWireValue(payload.getString("vote")) ?: error("Invalid payload.vote"),
+                confidence = payload.getDouble("confidence")
+            )
+            PacketType.CORRECTION_TOMBSTONE_PROPOSED -> CorrectionTombstoneProposedPayload(
+                tombstoneId = payload.getString("tombstone_id"),
+                phraseId = payload.getString("phrase_id"),
+                meaningId = payload.getString("meaning_id"),
+                correctionId = payload.getString("correction_id"),
+                reason = payload.getString("reason"),
+                confidence = payload.getDouble("confidence")
+            )
+            PacketType.CORRECTION_TOMBSTONE_VOTE -> CorrectionTombstoneVotePayload(
+                tombstoneId = payload.getString("tombstone_id"),
+                phraseId = payload.getString("phrase_id"),
+                meaningId = payload.getString("meaning_id"),
+                correctionId = payload.getString("correction_id"),
+                vote = VoteValue.fromWireValue(payload.getString("vote"))
+                    ?: error("Invalid payload.vote"),
+                confidence = payload.getDouble("confidence")
+            )
             PacketType.SAFETY_LABEL -> SafetyLabelPayload(
                 phraseId = payload.getString("phrase_id"),
                 label = SafetyLabel.fromWireValue(payload.getString("label"))
@@ -71,4 +99,3 @@ object PacketJsonCodec {
     private fun optionalLong(json: JSONObject, name: String): Long? =
         if (json.has(name) && !json.isNull(name)) json.getLong(name) else null
 }
-

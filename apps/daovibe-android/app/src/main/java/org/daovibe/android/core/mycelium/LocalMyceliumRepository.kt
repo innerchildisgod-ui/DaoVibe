@@ -9,6 +9,10 @@ import org.daovibe.android.core.protocol.InputType
 import org.daovibe.android.core.protocol.LmpPacket
 import org.daovibe.android.core.protocol.MeaningProposalPayload
 import org.daovibe.android.core.protocol.MeaningVotePayload
+import org.daovibe.android.core.protocol.CorrectionProposedPayload
+import org.daovibe.android.core.protocol.CorrectionVotePayload
+import org.daovibe.android.core.protocol.CorrectionTombstoneProposedPayload
+import org.daovibe.android.core.protocol.CorrectionTombstoneVotePayload
 import org.daovibe.android.core.protocol.PacketFactory
 import org.daovibe.android.core.protocol.PacketJsonCodec
 import org.daovibe.android.core.protocol.PacketPayload
@@ -78,7 +82,7 @@ class LocalMyceliumRepository(
         ) { identity, phrases, meanings, votes, packets ->
             LocalMyceliumSnapshot(
                 identity = identity,
-                state = MyceliumReducer.fromStorageRows(phrases, meanings, votes),
+                state = MyceliumReducer.reduce(packets.second.map { PacketJsonCodec.decode(it.packetJson) }),
                 recentPackets = packets.first,
                 ledgerPackets = packets.second
             )
@@ -161,6 +165,117 @@ class LocalMyceliumRepository(
             )
         )
     }
+
+    suspend fun proposeCorrection(phraseId: String, meaningId: String, referenceMeaning: String, context: String? = null, confidence: Double = 0.25): PacketReceiveResult {
+        val identity = identityRepository.getOrCreate()
+        val trimmedPhraseId = phraseId.trim()
+        val trimmedMeaningId = meaningId.trim()
+        val text = referenceMeaning.trim()
+        require(trimmedPhraseId.isNotEmpty()) { "phraseId must be a non-empty string" }
+        require(trimmedMeaningId.isNotEmpty()) { "meaningId must be a non-empty string" }
+        require(text.isNotEmpty()) { "referenceMeaning must be a non-empty string" }
+        val parent = meaningProposalPacketId(trimmedPhraseId, trimmedMeaningId)
+            ?: error("Meaning proposal not found: $trimmedMeaningId")
+        val normalizedContext = context?.trim()?.takeIf { it.isNotEmpty() }
+        val correctionId = correctionIdFor(trimmedPhraseId, trimmedMeaningId, text, normalizedContext, confidence)
+        return receivePacket(packetFactory.create(PacketType.CORRECTION_PROPOSED, zone, identity.nodeId, parent = parent, payload = CorrectionProposedPayload(correctionId, trimmedPhraseId, trimmedMeaningId, text, normalizedContext, confidence)))
+    }
+
+    suspend fun voteCorrection(phraseId: String, meaningId: String, correctionId: String, vote: VoteValue, confidence: Double = 1.0): PacketReceiveResult {
+        val identity = identityRepository.getOrCreate()
+        val parent = correctionProposalPacketId(phraseId.trim(), meaningId.trim(), correctionId.trim())
+            ?: error("Correction proposal not found: ${correctionId.trim()}")
+        return receivePacket(packetFactory.create(PacketType.CORRECTION_VOTE, zone, identity.nodeId, parent = parent, payload = CorrectionVotePayload(correctionId.trim(), phraseId.trim(), meaningId.trim(), vote, confidence)))
+    }
+
+    suspend fun proposeCorrectionTombstone(
+        phraseId: String,
+        meaningId: String,
+        correctionId: String,
+        reason: String,
+        confidence: Double = 0.25
+    ): PacketReceiveResult {
+        val identity = identityRepository.getOrCreate()
+        val normalizedPhraseId = phraseId.trim()
+        val normalizedMeaningId = meaningId.trim()
+        val normalizedCorrectionId = correctionId.trim()
+        val normalizedReason = reason.trim()
+        require(normalizedPhraseId.isNotEmpty()) { "phraseId must be a non-empty string" }
+        require(normalizedMeaningId.isNotEmpty()) { "meaningId must be a non-empty string" }
+        require(normalizedCorrectionId.isNotEmpty()) { "correctionId must be a non-empty string" }
+        require(normalizedReason.isNotEmpty()) { "reason must be a non-empty string" }
+        require(confidence.isFinite() && confidence in 0.0..1.0) { "confidence must be finite and in [0,1]" }
+        val parent = correctionProposalPacketId(normalizedPhraseId, normalizedMeaningId, normalizedCorrectionId)
+            ?: error("Correction proposal not found: $normalizedCorrectionId")
+        val tombstoneId = tombstoneIdFor(
+            normalizedPhraseId, normalizedMeaningId, normalizedCorrectionId,
+            normalizedReason, confidence
+        )
+        return receivePacket(
+            packetFactory.create(
+                PacketType.CORRECTION_TOMBSTONE_PROPOSED,
+                zone,
+                identity.nodeId,
+                parent = parent,
+                payload = CorrectionTombstoneProposedPayload(
+                    tombstoneId, normalizedPhraseId, normalizedMeaningId,
+                    normalizedCorrectionId, normalizedReason, confidence
+                )
+            )
+        )
+    }
+
+    suspend fun voteCorrectionTombstone(
+        phraseId: String,
+        meaningId: String,
+        correctionId: String,
+        tombstoneId: String,
+        vote: VoteValue,
+        confidence: Double = 1.0
+    ): PacketReceiveResult {
+        val identity = identityRepository.getOrCreate()
+        val normalizedPhraseId = phraseId.trim()
+        val normalizedMeaningId = meaningId.trim()
+        val normalizedCorrectionId = correctionId.trim()
+        val normalizedTombstoneId = tombstoneId.trim()
+        val parent = tombstoneProposalPacketId(
+            normalizedPhraseId, normalizedMeaningId,
+            normalizedCorrectionId, normalizedTombstoneId
+        ) ?: error("Correction tombstone proposal not found: $normalizedTombstoneId")
+        return receivePacket(
+            packetFactory.create(
+                PacketType.CORRECTION_TOMBSTONE_VOTE,
+                zone,
+                identity.nodeId,
+                parent = parent,
+                payload = CorrectionTombstoneVotePayload(
+                    normalizedTombstoneId, normalizedPhraseId, normalizedMeaningId,
+                    normalizedCorrectionId, vote, confidence
+                )
+            )
+        )
+    }
+
+    private suspend fun meaningProposalPacketId(phraseId: String, meaningId: String): String? =
+        dao.listPacketsForReplay().asSequence().map { PacketJsonCodec.decode(it.packetJson) }
+            .firstOrNull { packet -> (packet.payload as? MeaningProposalPayload)?.let { it.phraseId == phraseId && it.meaningId == meaningId } == true }?.packetId
+
+    private suspend fun correctionProposalPacketId(phraseId: String, meaningId: String, correctionId: String): String? =
+        dao.listPacketsForReplay().asSequence().map { PacketJsonCodec.decode(it.packetJson) }
+            .firstOrNull { packet -> (packet.payload as? CorrectionProposedPayload)?.let { it.phraseId == phraseId && it.meaningId == meaningId && it.correctionId == correctionId } == true }?.packetId
+
+    private suspend fun tombstoneProposalPacketId(
+        phraseId: String,
+        meaningId: String,
+        correctionId: String,
+        tombstoneId: String
+    ): String? = dao.listPacketsForReplay().asSequence().map { PacketJsonCodec.decode(it.packetJson) }
+        .firstOrNull { packet ->
+            (packet.payload as? CorrectionTombstoneProposedPayload)?.let {
+                it.phraseId == phraseId && it.meaningId == meaningId &&
+                    it.correctionId == correctionId && it.tombstoneId == tombstoneId
+            } == true
+        }?.packetId
 
     suspend fun applySafetyLabel(
         phraseId: String,
@@ -294,6 +409,14 @@ class LocalMyceliumRepository(
          * transaction. If replay/apply fails, Room rolls the entire import back.
          */
         database.withTransaction {
+            val genuinelyNewPackets = orderedPackets.filterNot {
+                existingPacketsById.containsKey(it.packetId)
+            }
+            requireImportDependencies(
+                packets = genuinelyNewPackets,
+                existingLedger = dao.listPacketsForReplay()
+                    .map { PacketJsonCodec.decode(it.packetJson) }
+            )
             for (packet in orderedPackets) {
                 if (existingPacketsById.containsKey(packet.packetId)) {
                     duplicatePackets += 1
@@ -475,6 +598,19 @@ class LocalMyceliumRepository(
                 existingPacketsById.containsKey(it.packetId)
             }
 
+            try {
+                requireImportDependencies(
+                    packets = genuinelyNewPackets,
+                    existingLedger = dao.listPacketsForReplay()
+                        .map { PacketJsonCodec.decode(it.packetJson) }
+                )
+            } catch (error: IllegalArgumentException) {
+                throw SyncImportException(
+                    reason = SyncRejectReason.INVALID_PACKET,
+                    message = error.message ?: "Invalid packet dependencies"
+                )
+            }
+
             if (cursorComparison == 0 && genuinelyNewPackets.isNotEmpty()) {
                 throw SyncImportException(
                     reason = SyncRejectReason.CURSOR_STALLED,
@@ -560,11 +696,23 @@ class LocalMyceliumRepository(
 
         return try {
             database.withTransaction {
-                if (dao.packetCountById(packet.packetId) > 0) {
+                val existingPacket = dao.getPacketById(packet.packetId)
+                if (existingPacket != null) {
+                    if (canonicalPacketJson(existingPacket.packetJson) != PacketJsonCodec.encode(packet)) {
+                        return@withTransaction PacketReceiveResult(
+                            decision = PacketReceiveDecision.REJECTED_INVALID,
+                            packetId = packet.packetId,
+                            errors = listOf("Conflicting duplicate packet_id: ${packet.packetId}")
+                        )
+                    }
                     return@withTransaction PacketReceiveResult(
                         decision = PacketReceiveDecision.ALREADY_STORED,
                         packetId = packet.packetId
                     )
+                }
+
+                require(receiveDependenciesSatisfied(packet)) {
+                    "Unresolved packet dependencies for ${packet.packetId}"
                 }
 
                 val inserted = dao.insertPacket(packet.toEntity(receivedAt))
@@ -655,11 +803,7 @@ class LocalMyceliumRepository(
             pending = deferred
         }
 
-        return MyceliumReducer.fromStorageRows(
-            phrases = dao.listPhrases(),
-            meanings = dao.listMeanings(),
-            votes = dao.listVotes()
-        )
+        return MyceliumReducer.reduce(packets)
     }
 
     private suspend fun canApplyDuringReplay(
@@ -677,10 +821,166 @@ class LocalMyceliumRepository(
                 val payload = packet.payload as MeaningVotePayload
                 dao.meaningCountById(payload.meaningId) > 0
             }
+            PacketType.CORRECTION_PROPOSED -> {
+                val payload = packet.payload as CorrectionProposedPayload
+                dao.meaningCountById(payload.meaningId) > 0 && dao.phraseCountById(payload.phraseId) > 0 && meaningProposalPacketId(payload.phraseId, payload.meaningId) == packet.parent
+            }
+            PacketType.CORRECTION_VOTE -> {
+                val payload = packet.payload as CorrectionVotePayload
+                dao.meaningCountById(payload.meaningId) > 0 && correctionProposalPacketId(payload.phraseId, payload.meaningId, payload.correctionId) == packet.parent
+            }
+            PacketType.CORRECTION_TOMBSTONE_PROPOSED -> {
+                val payload = packet.payload as CorrectionTombstoneProposedPayload
+                correctionProposalPacketId(payload.phraseId, payload.meaningId, payload.correctionId) == packet.parent
+            }
+            PacketType.CORRECTION_TOMBSTONE_VOTE -> {
+                val payload = packet.payload as CorrectionTombstoneVotePayload
+                tombstoneProposalPacketId(
+                    payload.phraseId, payload.meaningId, payload.correctionId, payload.tombstoneId
+                ) == packet.parent
+            }
 
             PacketType.SAFETY_LABEL -> {
                 val payload = packet.payload as SafetyLabelPayload
                 dao.phraseCountById(payload.phraseId) > 0
+            }
+        }
+    }
+
+    private suspend fun receiveDependenciesSatisfied(packet: LmpPacket<PacketPayload>): Boolean {
+        val ledger = dao.listPacketsForReplay().map { PacketJsonCodec.decode(it.packetJson) }
+        return when (val payload = packet.payload) {
+            is PhraseObservedPayload -> true
+            is MeaningProposalPayload -> dao.phraseCountById(payload.phraseId) > 0
+            is MeaningVotePayload -> dao.meaningCountById(payload.meaningId) > 0
+            is CorrectionProposedPayload ->
+                dao.phraseCountById(payload.phraseId) > 0 &&
+                    ledger.any {
+                        it.packetId == packet.parent &&
+                            (it.payload as? MeaningProposalPayload)?.let { proposal ->
+                                proposal.phraseId == payload.phraseId && proposal.meaningId == payload.meaningId
+                            } == true
+                    }
+            is CorrectionVotePayload ->
+                ledger.any {
+                    it.packetId == packet.parent &&
+                        (it.payload as? CorrectionProposedPayload)?.let { proposal ->
+                            proposal.phraseId == payload.phraseId &&
+                                proposal.meaningId == payload.meaningId &&
+                                proposal.correctionId == payload.correctionId
+                        } == true
+                }
+            is CorrectionTombstoneProposedPayload ->
+                ledger.any {
+                    it.packetId == packet.parent &&
+                        (it.payload as? CorrectionProposedPayload)?.let { proposal ->
+                            proposal.phraseId == payload.phraseId &&
+                                proposal.meaningId == payload.meaningId &&
+                                proposal.correctionId == payload.correctionId
+                        } == true
+                }
+            is CorrectionTombstoneVotePayload ->
+                ledger.any {
+                    it.packetId == packet.parent &&
+                        (it.payload as? CorrectionTombstoneProposedPayload)?.let { proposal ->
+                            proposal.phraseId == payload.phraseId &&
+                                proposal.meaningId == payload.meaningId &&
+                                proposal.correctionId == payload.correctionId &&
+                                proposal.tombstoneId == payload.tombstoneId
+                        } == true
+                }
+            is SafetyLabelPayload -> dao.phraseCountById(payload.phraseId) > 0
+            else -> false
+        }
+    }
+
+    private fun requireImportDependencies(
+        packets: List<LmpPacket<PacketPayload>>,
+        existingLedger: List<LmpPacket<PacketPayload>>
+    ) {
+        val phraseIds = mutableSetOf<String>()
+        val meaningIds = mutableSetOf<String>()
+        val meaningProposals = mutableSetOf<Triple<String, String, String>>()
+        val correctionProposals = mutableSetOf<Pair<CorrectionDependencyKey, String>>()
+        val tombstoneProposals = mutableSetOf<Pair<TombstoneDependencyKey, String>>()
+
+        fun remember(packet: LmpPacket<PacketPayload>) {
+            when (val payload = packet.payload) {
+                is PhraseObservedPayload -> phraseIds += payload.phraseId
+                is MeaningProposalPayload -> {
+                    meaningIds += payload.meaningId
+                    meaningProposals += Triple(payload.phraseId, payload.meaningId, packet.packetId)
+                }
+                is CorrectionProposedPayload -> correctionProposals +=
+                    CorrectionDependencyKey(payload.phraseId, payload.meaningId, payload.correctionId) to packet.packetId
+                is CorrectionTombstoneProposedPayload -> tombstoneProposals +=
+                    TombstoneDependencyKey(
+                        payload.phraseId, payload.meaningId,
+                        payload.correctionId, payload.tombstoneId
+                    ) to packet.packetId
+                else -> Unit
+            }
+        }
+
+        existingLedger.forEach(::remember)
+        packets.forEach { packet ->
+            when (val payload = packet.payload) {
+                is PhraseObservedPayload -> phraseIds += payload.phraseId
+                is MeaningProposalPayload -> meaningIds += payload.meaningId
+                else -> Unit
+            }
+        }
+        for (packet in packets) {
+            when (val payload = packet.payload) {
+                is PhraseObservedPayload -> Unit
+                is MeaningProposalPayload -> require(payload.phraseId in phraseIds) {
+                    "Missing phrase dependency: ${payload.phraseId}"
+                }
+                is MeaningVotePayload -> require(payload.meaningId in meaningIds) {
+                    "Missing meaning dependency: ${payload.meaningId}"
+                }
+                is CorrectionProposedPayload -> require(
+                    payload.phraseId in phraseIds && packet.parent != null &&
+                        Triple(payload.phraseId, payload.meaningId, packet.parent) in meaningProposals
+                ) {
+                    "Invalid correction meaning parent: ${payload.meaningId}"
+                }
+                is CorrectionVotePayload -> require(
+                    payload.meaningId in meaningIds && packet.parent != null &&
+                        (CorrectionDependencyKey(
+                            payload.phraseId,
+                            payload.meaningId,
+                            payload.correctionId
+                        ) to packet.parent) in correctionProposals
+                ) {
+                    "Invalid correction vote parent: ${payload.correctionId}"
+                }
+                is CorrectionTombstoneProposedPayload -> require(
+                    packet.parent != null &&
+                        (CorrectionDependencyKey(
+                            payload.phraseId, payload.meaningId, payload.correctionId
+                        ) to packet.parent) in correctionProposals
+                ) {
+                    "Invalid correction tombstone parent: ${payload.tombstoneId}"
+                }
+                is CorrectionTombstoneVotePayload -> require(
+                    packet.parent != null &&
+                        (TombstoneDependencyKey(
+                            payload.phraseId, payload.meaningId,
+                            payload.correctionId, payload.tombstoneId
+                        ) to packet.parent) in tombstoneProposals
+                ) {
+                    "Invalid correction tombstone vote parent: ${payload.tombstoneId}"
+                }
+                is SafetyLabelPayload -> require(payload.phraseId in phraseIds) {
+                    "Missing phrase dependency: ${payload.phraseId}"
+                }
+                else -> error("Unsupported packet payload")
+            }
+            when (packet.payload) {
+                is MeaningProposalPayload, is CorrectionProposedPayload,
+                is CorrectionTombstoneProposedPayload -> remember(packet)
+                else -> Unit
             }
         }
     }
@@ -747,6 +1047,10 @@ class LocalMyceliumRepository(
                     )
                 )
             }
+            PacketType.CORRECTION_PROPOSED,
+            PacketType.CORRECTION_VOTE,
+            PacketType.CORRECTION_TOMBSTONE_PROPOSED,
+            PacketType.CORRECTION_TOMBSTONE_VOTE -> Unit
             PacketType.SAFETY_LABEL -> {
                 val payload = packet.payload as SafetyLabelPayload
                 require(dao.phraseCountById(payload.phraseId) > 0) {
@@ -766,6 +1070,47 @@ class LocalMyceliumRepository(
 
     private fun meaningIdFor(phraseId: String, referenceMeaning: String): String =
         "meaning_${sha256("${phraseId}:${referenceMeaning.lowercase(Locale.ROOT)}").take(16)}"
+
+    private fun correctionIdFor(
+        phraseId: String,
+        meaningId: String,
+        referenceMeaning: String,
+        context: String?,
+        confidence: Double
+    ): String = "correction_${sha256(StableJson.stringify(linkedMapOf(
+        "phrase_id" to phraseId,
+        "meaning_id" to meaningId,
+        "reference_meaning" to referenceMeaning,
+        "context" to context,
+        "confidence" to confidence
+    ))).take(16)}"
+
+    private fun tombstoneIdFor(
+        phraseId: String,
+        meaningId: String,
+        correctionId: String,
+        reason: String,
+        confidence: Double
+    ): String = "tombstone_${sha256(StableJson.stringify(linkedMapOf(
+        "phrase_id" to phraseId,
+        "meaning_id" to meaningId,
+        "correction_id" to correctionId,
+        "reason" to reason,
+        "confidence" to confidence
+    ))).take(16)}"
+
+    private data class CorrectionDependencyKey(
+        val phraseId: String,
+        val meaningId: String,
+        val correctionId: String
+    )
+
+    private data class TombstoneDependencyKey(
+        val phraseId: String,
+        val meaningId: String,
+        val correctionId: String,
+        val tombstoneId: String
+    )
 
     private fun LmpPacket<PacketPayload>.toEntity(receivedAt: Long): PacketEntity {
         val payloadMap = payload.toStableMap()

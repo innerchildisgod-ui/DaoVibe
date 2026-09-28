@@ -14,10 +14,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         VoteEntity::class,
         SyncCursorEntity::class,
         PeerSyncStateEntity::class,
+        KnownPeerEntity::class,
         PairingRecordEntity::class,
         PendingPairingOfferEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class DaoVibeDatabase : RoomDatabase() {
@@ -91,6 +92,57 @@ abstract class DaoVibeDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `known_peers` (
+                        `remote_node_id` TEXT NOT NULL,
+                        `display_name` TEXT,
+                        `host` TEXT NOT NULL,
+                        `port` INTEGER NOT NULL,
+                        `pairing_id` TEXT NOT NULL,
+                        `last_successful_contact_at` INTEGER,
+                        `last_error` TEXT,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`remote_node_id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `known_peers` (
+                        `remote_node_id` TEXT NOT NULL,
+                        `display_name` TEXT,
+                        `host` TEXT NOT NULL,
+                        `port` INTEGER NOT NULL,
+                        `pairing_id` TEXT NOT NULL,
+                        `last_successful_contact_at` INTEGER,
+                        `last_error` TEXT,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`remote_node_id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_failure_at INTEGER")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_outcome TEXT")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_stage TEXT")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_error_category TEXT")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_attempts INTEGER")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_imported_packets INTEGER")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_duplicate_packets INTEGER")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_exported_packets INTEGER")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_sync_started_at INTEGER")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_sync_finished_at INTEGER")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_cursor TEXT")
             }
         }
     }

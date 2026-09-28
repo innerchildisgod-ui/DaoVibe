@@ -140,6 +140,30 @@ data class PeerSyncStateEntity(
     val updatedAt: Long
 )
 
+/** Local transport configuration. This is deliberately not ledger or semantic state. */
+@Entity(tableName = "known_peers")
+data class KnownPeerEntity(
+    @PrimaryKey @ColumnInfo(name = "remote_node_id") val remoteNodeId: String,
+    @ColumnInfo(name = "display_name") val displayName: String?,
+    val host: String,
+    val port: Int,
+    @ColumnInfo(name = "pairing_id") val pairingId: String,
+    @ColumnInfo(name = "last_successful_contact_at") val lastSuccessfulContactAt: Long?,
+    @ColumnInfo(name = "last_error") val lastError: String?,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    @ColumnInfo(name = "last_failure_at") val lastFailureAt: Long? = null,
+    @ColumnInfo(name = "last_outcome") val lastOutcome: String? = null,
+    @ColumnInfo(name = "last_stage") val lastStage: String? = null,
+    @ColumnInfo(name = "last_error_category") val lastErrorCategory: String? = null,
+    @ColumnInfo(name = "last_attempts") val lastAttempts: Int? = null,
+    @ColumnInfo(name = "last_imported_packets") val lastImportedPackets: Int? = null,
+    @ColumnInfo(name = "last_duplicate_packets") val lastDuplicatePackets: Int? = null,
+    @ColumnInfo(name = "last_exported_packets") val lastExportedPackets: Int? = null,
+    @ColumnInfo(name = "last_sync_started_at") val lastSyncStartedAt: Long? = null,
+    @ColumnInfo(name = "last_sync_finished_at") val lastSyncFinishedAt: Long? = null,
+    @ColumnInfo(name = "last_cursor") val lastCursor: String? = null
+)
+
 @Entity(
     tableName = "paired_devices",
     indices = [

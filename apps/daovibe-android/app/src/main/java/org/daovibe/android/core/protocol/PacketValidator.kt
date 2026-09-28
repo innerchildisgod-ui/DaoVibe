@@ -97,6 +97,33 @@ class PacketValidator {
                 requireNonEmpty(payload.meaningId, "meaning_id", errors)
                 if (!payload.confidence.isFinite()) errors += "Invalid payload.confidence"
             }
+            is CorrectionProposedPayload -> {
+                requireNonEmpty(payload.correctionId, "correction_id", errors); requireNonEmpty(payload.phraseId, "phrase_id", errors)
+                requireNonEmpty(payload.meaningId, "meaning_id", errors); requireNonEmpty(payload.referenceMeaning, "reference_meaning", errors)
+                if (!payload.confidence.isFinite()) errors += "Invalid payload.confidence"
+            }
+            is CorrectionVotePayload -> {
+                requireNonEmpty(payload.correctionId, "correction_id", errors); requireNonEmpty(payload.phraseId, "phrase_id", errors)
+                requireNonEmpty(payload.meaningId, "meaning_id", errors)
+                if (payload.vote !in setOf(VoteValue.CONFIRM, VoteValue.REJECT)) errors += "Invalid payload.vote"
+                if (!payload.confidence.isFinite()) errors += "Invalid payload.confidence"
+            }
+            is CorrectionTombstoneProposedPayload -> {
+                requireNonEmpty(payload.tombstoneId, "tombstone_id", errors)
+                requireNonEmpty(payload.phraseId, "phrase_id", errors)
+                requireNonEmpty(payload.meaningId, "meaning_id", errors)
+                requireNonEmpty(payload.correctionId, "correction_id", errors)
+                requireNonEmpty(payload.reason, "reason", errors)
+                requireUnitConfidence(payload.confidence, errors)
+            }
+            is CorrectionTombstoneVotePayload -> {
+                requireNonEmpty(payload.tombstoneId, "tombstone_id", errors)
+                requireNonEmpty(payload.phraseId, "phrase_id", errors)
+                requireNonEmpty(payload.meaningId, "meaning_id", errors)
+                requireNonEmpty(payload.correctionId, "correction_id", errors)
+                if (payload.vote !in setOf(VoteValue.CONFIRM, VoteValue.REJECT)) errors += "Invalid payload.vote"
+                requireUnitConfidence(payload.confidence, errors)
+            }
             is SafetyLabelPayload -> {
                 requireNonEmpty(payload.phraseId, "phrase_id", errors)
             }
@@ -113,11 +140,21 @@ class PacketValidator {
         }
     }
 
+    private fun requireUnitConfidence(value: Double, errors: MutableList<String>) {
+        if (!value.isFinite() || value !in 0.0..1.0) {
+            errors += "Invalid payload.confidence"
+        }
+    }
+
     companion object {
         private val supportedPacketTypes = setOf(
             PacketType.PHRASE_OBSERVED,
             PacketType.MEANING_PROPOSAL,
             PacketType.MEANING_VOTE,
+            PacketType.CORRECTION_PROPOSED,
+            PacketType.CORRECTION_VOTE,
+            PacketType.CORRECTION_TOMBSTONE_PROPOSED,
+            PacketType.CORRECTION_TOMBSTONE_VOTE,
             PacketType.SAFETY_LABEL
         )
     }

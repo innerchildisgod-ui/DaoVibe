@@ -23,6 +23,9 @@ interface DaoVibeDao {
     @Query("SELECT COUNT(*) FROM packets WHERE packet_id = :packetId")
     suspend fun packetCountById(packetId: String): Int
 
+    @Query("SELECT * FROM packets WHERE packet_id = :packetId LIMIT 1")
+    suspend fun getPacketById(packetId: String): PacketEntity?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPacket(packet: PacketEntity): Long
 
@@ -144,6 +147,65 @@ interface DaoVibeDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertPeerSyncState(state: PeerSyncStateEntity)
+
+    @Query("SELECT * FROM known_peers ORDER BY remote_node_id ASC")
+    fun observeKnownPeers(): Flow<List<KnownPeerEntity>>
+
+    @Query("SELECT * FROM known_peers ORDER BY remote_node_id ASC")
+    suspend fun listKnownPeers(): List<KnownPeerEntity>
+
+    @Query("SELECT * FROM known_peers WHERE remote_node_id = :remoteNodeId LIMIT 1")
+    suspend fun getKnownPeer(remoteNodeId: String): KnownPeerEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertKnownPeer(peer: KnownPeerEntity)
+
+    @Query("DELETE FROM known_peers WHERE remote_node_id = :remoteNodeId")
+    suspend fun deleteKnownPeer(remoteNodeId: String)
+
+    @Query(
+        "UPDATE known_peers SET last_successful_contact_at = :contactAt, " +
+            "last_outcome = 'success', " +
+            "last_stage = :stage, last_attempts = :attempts, " +
+            "last_imported_packets = :importedPackets, last_duplicate_packets = :duplicatePackets, " +
+            "last_exported_packets = :exportedPackets, last_sync_started_at = :startedAt, " +
+            "last_sync_finished_at = :updatedAt, last_cursor = :cursor, updated_at = :updatedAt " +
+            "WHERE remote_node_id = :remoteNodeId"
+    )
+    suspend fun markKnownPeerSuccess(
+        remoteNodeId: String,
+        contactAt: Long,
+        updatedAt: Long,
+        stage: String,
+        attempts: Int,
+        importedPackets: Int,
+        duplicatePackets: Int,
+        exportedPackets: Int?,
+        startedAt: Long,
+        cursor: String?
+    )
+
+    @Query(
+        "UPDATE known_peers SET last_failure_at = :updatedAt, last_error = :error, " +
+            "last_outcome = 'failed', last_stage = :stage, last_error_category = :category, " +
+            "last_attempts = :attempts, last_imported_packets = :importedPackets, " +
+            "last_duplicate_packets = :duplicatePackets, last_exported_packets = :exportedPackets, " +
+            "last_sync_started_at = :startedAt, last_sync_finished_at = :updatedAt, " +
+            "last_cursor = :cursor, updated_at = :updatedAt WHERE remote_node_id = :remoteNodeId"
+    )
+    suspend fun markKnownPeerFailure(
+        remoteNodeId: String,
+        error: String,
+        updatedAt: Long,
+        stage: String,
+        category: String,
+        attempts: Int,
+        importedPackets: Int,
+        duplicatePackets: Int,
+        exportedPackets: Int?,
+        startedAt: Long,
+        cursor: String?
+    )
 
     @Query(
         "SELECT * FROM paired_devices " +

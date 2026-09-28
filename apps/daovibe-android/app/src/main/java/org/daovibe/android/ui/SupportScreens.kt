@@ -3,6 +3,7 @@ package org.daovibe.android.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,10 +28,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import org.daovibe.android.core.mycelium.MyceliumStateDiagnostic
 import org.daovibe.android.core.connection.ConnectionRepository
+import org.daovibe.android.core.connection.KnownPeer
+import org.daovibe.android.core.connection.PeerRegistryRepository
+import org.daovibe.android.core.connection.PeerSyncCoordinator
 import org.daovibe.android.core.connection.ConnectionSession
 import org.daovibe.android.core.connection.ConnectionSessionState
 import org.daovibe.android.core.connection.PeerEndpoint
+import org.daovibe.android.core.connection.PeerInvite
+import org.daovibe.android.core.connection.PeerInviteCodec
+import org.daovibe.android.core.connection.health
+import org.daovibe.android.core.connection.PeerHealth
 import org.daovibe.android.core.mycelium.LocalMyceliumRepository
 import org.daovibe.android.core.mycelium.LocalMyceliumSnapshot
 import org.daovibe.android.core.pairing.PairingJsonCodec
@@ -50,6 +60,16 @@ internal fun DeviceScreen(
         .collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var fingerprint by remember(snapshot.ledgerPackets) { mutableStateOf("Calculating...") }
+    LaunchedEffect(snapshot.ledgerPackets) {
+        fingerprint = try {
+            MyceliumStateDiagnostic.snapshot(context, snapshot.ledgerPackets).fingerprint()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            "Unavailable: ${error.message ?: "Ledger replay failed"}"
+        }
+    }
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
     var displayNameInput by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("This device identity is stored locally.") }
@@ -146,6 +166,16 @@ internal fun DeviceScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Copy Node ID")
+            }
+        }
+
+        InfoSurface {
+            Text(
+                text = "Mycelium state fingerprint",
+                style = MaterialTheme.typography.titleMedium
+            )
+            SelectionContainer {
+                Text(fingerprint, fontFamily = FontFamily.Monospace)
             }
         }
 
@@ -407,12 +437,20 @@ private fun identityStatusAccent(status: String) =
 
 @Composable
 internal fun NetworkScreen(
-    connectionRepository: ConnectionRepository
+    connectionRepository: ConnectionRepository,
+    peerRegistryRepository: PeerRegistryRepository,
+    peerSyncCoordinator: PeerSyncCoordinator
 ) {
     val pairedDevices by connectionRepository.observeActivePairings()
         .collectAsState(initial = emptyList())
     val sessions by connectionRepository.sessions.collectAsState()
+    val knownPeers by peerRegistryRepository.observePeers().collectAsState(initial = emptyList())
+    var localNodeId by remember { mutableStateOf("unknown") }
     val scope = rememberCoroutineScope()
+    var peerNodeId by remember { mutableStateOf("") }
+    var peerHost by remember { mutableStateOf("") }
+    var peerPort by remember { mutableStateOf("") }
+    var peerPairingId by remember { mutableStateOf("") }
     var attemptingPairingId by remember { mutableStateOf<String?>(null) }
     var syncingPairingId by remember { mutableStateOf<String?>(null) }
     var syncMessageByPairingId by remember {
@@ -424,6 +462,17 @@ internal fun NetworkScreen(
                 "firewall/NAT allows the connection."
         )
     }
+    val context = LocalContext.current
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    LaunchedEffect(Unit) {
+        localNodeId = runCatching { peerRegistryRepository.localIdentity().nodeId }.getOrDefault("unknown")
+    }
+    var inviteHost by remember { mutableStateOf("") }
+    var invitePort by remember { mutableStateOf("") }
+    var invitePairingId by remember { mutableStateOf("") }
+    var invitePayload by remember { mutableStateOf("") }
+    var invitePreview by remember { mutableStateOf<PeerInvite?>(null) }
+    var inviteMessage by remember { mutableStateOf("Development correlation only; not secure authentication.") }
     val liveSession = sessions.lastOrNull {
         it.state !in setOf(
             ConnectionSessionState.REJECTED,
@@ -469,6 +518,132 @@ internal fun NetworkScreen(
         }
 
         SectionTitle("Paired nodes available for connection")
+        InfoSurface {
+            Text("Known peers / sync", style = MaterialTheme.typography.titleMedium)
+            Text("Connection metadata is local only; packet history remains in the ledger.", color = DaoVibeColors.TextSecondary)
+            OutlinedTextField(peerNodeId, { peerNodeId = it }, label = { Text("Peer node ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(peerHost, { peerHost = it }, label = { Text("Host") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(peerPort, { peerPort = it }, label = { Text("Port") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(peerPairingId, { peerPairingId = it }, label = { Text("Pairing ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Button(onClick = {
+                scope.launch {
+                    runCatching {
+                        peerRegistryRepository.addOrUpdate(peerNodeId, peerHost, peerPort.toIntOrNull() ?: -1, peerPairingId)
+                    }.onSuccess { peerNodeId = ""; peerHost = ""; peerPort = ""; peerPairingId = "" }
+                }
+            }, enabled = peerNodeId.isNotBlank() && peerHost.isNotBlank() && peerPairingId.isNotBlank()) { Text("Add / update peer") }
+            if (knownPeers.isEmpty()) EmptyState("No manually configured peers.")
+            knownPeers.forEach { entity ->
+                val peer = KnownPeer(entity.remoteNodeId, entity.displayName, entity.host, entity.port, entity.pairingId, entity.lastSuccessfulContactAt, entity.lastError, entity.lastFailureAt, entity.lastOutcome, entity.lastStage, entity.lastErrorCategory, entity.lastAttempts, entity.lastImportedPackets, entity.lastDuplicatePackets, entity.lastExportedPackets, entity.lastSyncStartedAt, entity.lastSyncFinishedAt, entity.lastCursor)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(peer.displayName ?: peer.remoteNodeId)
+                        Text("${peer.remoteNodeId} · ${peer.host}:${peer.port}", color = DaoVibeColors.TextSecondary)
+                        Text("Health: ${entity.health(System.currentTimeMillis() / 1000L).name.lowercase()}", color = DaoVibeColors.Cyan)
+                        entity.lastSuccessfulContactAt?.let { Text("Last success: $it", color = DaoVibeColors.TextSecondary) }
+                        entity.lastFailureAt?.let { Text("Last failure: $it", color = DaoVibeColors.Amber) }
+                        entity.lastStage?.let { stage ->
+                            Text("Last result: ${entity.lastOutcome ?: "unknown"} at $stage" + (entity.lastErrorCategory?.let { "/$it" } ?: ""), color = DaoVibeColors.TextSecondary)
+                        }
+                        peer.lastError?.let { Text("Last error: $it", color = DaoVibeColors.Amber) }
+                    }
+                    Button(onClick = {
+                        scope.launch {
+                            val attempt = peerSyncCoordinator.syncOne(peer.remoteNodeId)
+                            syncMessageByPairingId = syncMessageByPairingId + (peer.remoteNodeId to (attempt.structuredResult?.let(::peerSyncResultMessage) ?: (attempt.error ?: "Sync unavailable")))
+                        }
+                    }) { Text("Sync") }
+                    OutlinedButton(onClick = {
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("DAOVibe peer diagnostics", peerDiagnosticsText(entity, localNodeId)))
+                    }) { Text("Copy diagnostics") }
+                    if (entity.lastOutcome == "failed") {
+                        OutlinedButton(onClick = {
+                            scope.launch {
+                                val attempt = peerSyncCoordinator.syncOne(peer.remoteNodeId)
+                                syncMessageByPairingId = syncMessageByPairingId + (peer.remoteNodeId to (attempt.structuredResult?.let(::peerSyncResultMessage) ?: (attempt.error ?: "Retry unavailable")))
+                            }
+                        }) { Text("Retry") }
+                    }
+                    Button(onClick = { scope.launch { peerRegistryRepository.remove(peer.remoteNodeId) } }) { Text("Remove") }
+                }
+                syncMessageByPairingId[peer.remoteNodeId]?.let { Text(it, color = DaoVibeColors.TextSecondary) }
+            }
+            Button(onClick = { scope.launch { peerSyncCoordinator.syncAll() } }, enabled = knownPeers.isNotEmpty()) { Text("Sync all known peers") }
+        }
+        InfoSurface {
+            Text("Peer invite", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Create or paste a compact invite for an already approved development relationship. " +
+                    "Invites are correlation data, not authentication.",
+                color = DaoVibeColors.TextSecondary
+            )
+            OutlinedTextField(inviteHost, { inviteHost = it }, label = { Text("Invite host") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(invitePort, { invitePort = it }, label = { Text("Invite port") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(invitePairingId, { invitePairingId = it }, label = { Text("Approved pairing ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Button(onClick = {
+                scope.launch {
+                    runCatching {
+                        require(pairedDevices.any { it.pairingId == invitePairingId.trim() && it.status.wireValue == "approved" }) {
+                            "invite pairing ID must refer to an approved local relationship"
+                        }
+                        val identity = peerRegistryRepository.localIdentity()
+                        val now = System.currentTimeMillis() / 1000L
+                        PeerInvite(
+                            sourceNodeId = identity.nodeId,
+                            sourceDisplayName = identity.displayName,
+                            host = inviteHost,
+                            port = invitePort.toIntOrNull() ?: -1,
+                            pairingId = invitePairingId,
+                            createdAt = now,
+                            expiresAt = now + 86_400L
+                        ).also { PeerInviteCodec.validate(it, now) }
+                    }.onSuccess { invite ->
+                        invitePreview = invite
+                        invitePayload = PeerInviteCodec.encodePayload(invite)
+                        inviteMessage = "Invite ready. Share the payload or canonical JSON."
+                    }.onFailure { inviteMessage = it.message ?: "Invite could not be created." }
+                }
+            }, enabled = inviteHost.isNotBlank() && invitePairingId.isNotBlank()) { Text("Create invite") }
+            invitePreview?.let { invite ->
+                Text("Invite ID: ${invite.inviteId()}", fontFamily = FontFamily.Monospace, color = DaoVibeColors.Cyan)
+                Text("${invite.sourceNodeId} · ${invite.host}:${invite.port} · expires ${invite.expiresAt}", color = DaoVibeColors.TextSecondary)
+                SelectionContainer { Text(invite.canonicalJson(), fontFamily = FontFamily.Monospace, color = DaoVibeColors.TextSecondary) }
+                SelectionContainer { Text(invitePayload, fontFamily = FontFamily.Monospace, color = DaoVibeColors.Cyan) }
+                OutlinedButton(onClick = {
+                    clipboard?.setPrimaryClip(ClipData.newPlainText("DAOVibe Peer Invite", invitePayload))
+                    inviteMessage = if (clipboard == null) "Clipboard unavailable." else "Invite copied."
+                }) { Text("Copy invite payload") }
+                OutlinedButton(onClick = {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, invitePayload)
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Share peer invite"))
+                    inviteMessage = "Share sheet opened."
+                }) { Text("Share invite") }
+            }
+            OutlinedTextField(invitePayload, { invitePayload = it }, label = { Text("Paste invite payload or canonical JSON") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+            Button(onClick = {
+                runCatching {
+                    val now = System.currentTimeMillis() / 1000L
+                    if (invitePayload.trimStart().startsWith("{")) PeerInviteCodec.decodeCanonical(invitePayload.trim(), now)
+                    else PeerInviteCodec.decodePayload(invitePayload.trim(), now)
+                }.onSuccess { invite ->
+                    invitePreview = invite
+                    inviteMessage = "Preview parsed. Confirm Add / update to save local peer metadata."
+                }.onFailure { inviteMessage = it.message ?: "Invite rejected." }
+            }, enabled = invitePayload.isNotBlank()) { Text("Preview invite") }
+            invitePreview?.let { invite ->
+                Button(onClick = {
+                    scope.launch {
+                        runCatching { peerRegistryRepository.importInvite(invite) }
+                            .onSuccess { inviteMessage = "Peer metadata added/updated; no connection started." }
+                            .onFailure { inviteMessage = it.message ?: "Invite import rejected." }
+                    }
+                }) { Text("Add / update peer from invite") }
+            }
+            Text(inviteMessage, color = DaoVibeColors.TextSecondary)
+        }
         if (pairedDevices.isEmpty()) {
             EmptyState("No active paired nodes yet.")
         } else {
@@ -512,10 +687,10 @@ internal fun NetworkScreen(
                         scope.launch {
                             syncingPairingId = pairedDevice.pairingId
                             runCatching {
-                                connectionRepository.syncWithPairedNode(
+                                peerSyncCoordinator.syncDirect(
                                     remoteNodeId = pairedDevice.remoteNodeId,
                                     endpoint = endpoint
-                                )
+                                ).result ?: error("Sync failed")
                             }.onSuccess { result ->
                                 syncMessageByPairingId =
                                     syncMessageByPairingId + (
@@ -709,4 +884,30 @@ private fun networkStatusAccent(session: ConnectionSession?) =
         null -> DaoVibeColors.Green
         else -> DaoVibeColors.Amber
     }
+
+private fun peerSyncResultMessage(result: org.daovibe.android.core.connection.PeerSyncResult): String =
+    if (result.outcome == org.daovibe.android.core.connection.PeerSyncOutcome.SUCCESS) {
+        "Success: ${result.importedPackets} imported, ${result.duplicatePackets} duplicate(s), attempts=${result.attempts}, cursor=${result.cursor ?: "n/a"}"
+    } else {
+        "Failed at ${result.stage.name.lowercase()}: ${result.errorCategory?.name?.lowercase() ?: "unknown"} — ${result.message ?: "no detail"}"
+    }
+
+private fun peerDiagnosticsText(peer: org.daovibe.android.core.storage.KnownPeerEntity, localNodeId: String): String = buildString {
+    appendLine("local diagnostics only")
+    appendLine("local_node_id=$localNodeId")
+    appendLine("remote_node_id=${peer.remoteNodeId}")
+    appendLine("endpoint=${peer.host}:${peer.port}")
+    appendLine("health=${peer.health(System.currentTimeMillis() / 1000L).name.lowercase()}")
+    appendLine("last_successful_contact_at=${peer.lastSuccessfulContactAt ?: "none"}")
+    appendLine("last_failure_at=${peer.lastFailureAt ?: "none"}")
+    appendLine("last_stage=${peer.lastStage ?: "none"}")
+    appendLine("last_error_category=${peer.lastErrorCategory ?: "none"}")
+    appendLine("last_outcome=${peer.lastOutcome ?: "none"}")
+    appendLine("attempts=${peer.lastAttempts ?: "none"}")
+    appendLine("imported_packets=${peer.lastImportedPackets ?: "none"}")
+    appendLine("duplicate_packets=${peer.lastDuplicatePackets ?: "none"}")
+    appendLine("exported_packets=${peer.lastExportedPackets ?: "none"}")
+    appendLine("cursor=${peer.lastCursor ?: "none"}")
+    appendLine("message=${peer.lastError ?: "none"}")
+}
 

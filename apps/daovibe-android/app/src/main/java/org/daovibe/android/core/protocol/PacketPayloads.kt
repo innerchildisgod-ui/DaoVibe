@@ -57,6 +57,73 @@ data class MeaningVotePayload(
     )
 }
 
+data class CorrectionProposedPayload(
+    val correctionId: String,
+    val phraseId: String,
+    val meaningId: String,
+    val referenceMeaning: String,
+    val context: String? = null,
+    val confidence: Double
+) : PacketPayload {
+    override val packetType = PacketType.CORRECTION_PROPOSED
+    override fun toStableMap(): Map<String, Any?> = stablePayloadMap(
+        "correction_id" to correctionId, "phrase_id" to phraseId, "meaning_id" to meaningId,
+        "reference_meaning" to referenceMeaning, "context" to context, "confidence" to confidence
+    )
+}
+
+data class CorrectionVotePayload(
+    val correctionId: String,
+    val phraseId: String,
+    val meaningId: String,
+    val vote: VoteValue,
+    val confidence: Double
+) : PacketPayload {
+    override val packetType = PacketType.CORRECTION_VOTE
+    override fun toStableMap(): Map<String, Any?> = stablePayloadMap(
+        "correction_id" to correctionId, "phrase_id" to phraseId, "meaning_id" to meaningId,
+        "vote" to vote.wireValue, "confidence" to confidence
+    )
+}
+
+data class CorrectionTombstoneProposedPayload(
+    val tombstoneId: String,
+    val phraseId: String,
+    val meaningId: String,
+    val correctionId: String,
+    val reason: String,
+    val confidence: Double
+) : PacketPayload {
+    override val packetType = PacketType.CORRECTION_TOMBSTONE_PROPOSED
+    override fun toStableMap(): Map<String, Any?> = stablePayloadMap(
+        "tombstone_id" to tombstoneId,
+        "phrase_id" to phraseId,
+        "meaning_id" to meaningId,
+        "correction_id" to correctionId,
+        "reason" to reason,
+        "confidence" to confidence
+    )
+}
+
+data class CorrectionTombstoneVotePayload(
+    val tombstoneId: String,
+    val phraseId: String,
+    val meaningId: String,
+    val correctionId: String,
+    val vote: VoteValue,
+    val confidence: Double
+) : PacketPayload {
+    override val packetType = PacketType.CORRECTION_TOMBSTONE_VOTE
+    override fun toStableMap(): Map<String, Any?> = stablePayloadMap(
+        "tombstone_id" to tombstoneId,
+        "phrase_id" to phraseId,
+        "meaning_id" to meaningId,
+        "correction_id" to correctionId,
+        "vote" to vote.wireValue,
+        "confidence" to confidence
+    )
+}
+
 data class SafetyLabelPayload(
     val phraseId: String,
     val label: SafetyLabel,
@@ -82,4 +149,3 @@ private fun stablePayloadMap(vararg values: Pair<String, Any?>): Map<String, Any
 
     return map
 }
-
