@@ -48,6 +48,12 @@ pub struct PeerRecord {
     pub last_sync_started_at: Option<i64>,
     pub last_sync_finished_at: Option<i64>,
     pub last_cursor: Option<String>,
+    pub last_diagnostic_at: Option<i64>,
+    pub last_diagnostic_outcome: Option<String>,
+    pub last_diagnostic_stage: Option<String>,
+    pub last_diagnostic_error_category: Option<String>,
+    pub last_diagnostic_message: Option<String>,
+    pub last_diagnostic_latency_ms: Option<i64>,
 }
 #[derive(Clone, Debug)]
 pub struct StoredPacket {
@@ -128,6 +134,41 @@ impl Store {
                 self.connection.execute(sql, [])?;
             }
         }
+        for (name, sql) in [
+            (
+                "last_diagnostic_at",
+                "ALTER TABLE known_peers ADD COLUMN last_diagnostic_at INTEGER",
+            ),
+            (
+                "last_diagnostic_outcome",
+                "ALTER TABLE known_peers ADD COLUMN last_diagnostic_outcome TEXT",
+            ),
+            (
+                "last_diagnostic_stage",
+                "ALTER TABLE known_peers ADD COLUMN last_diagnostic_stage TEXT",
+            ),
+            (
+                "last_diagnostic_error_category",
+                "ALTER TABLE known_peers ADD COLUMN last_diagnostic_error_category TEXT",
+            ),
+            (
+                "last_diagnostic_message",
+                "ALTER TABLE known_peers ADD COLUMN last_diagnostic_message TEXT",
+            ),
+            (
+                "last_diagnostic_latency_ms",
+                "ALTER TABLE known_peers ADD COLUMN last_diagnostic_latency_ms INTEGER",
+            ),
+        ] {
+            let exists: bool = self.connection.query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('known_peers') WHERE name=?1",
+                [name],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                self.connection.execute(sql, [])?;
+            }
+        }
         Ok(())
     }
     pub fn identity(&self) -> Result<Option<DeviceIdentity>, StorageError> {
@@ -166,14 +207,14 @@ impl Store {
         Ok(result)
     }
     pub fn upsert_peer(&self, peer: &PeerRecord) -> Result<(), StorageError> {
-        self.connection.execute("INSERT INTO known_peers(remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19) ON CONFLICT(remote_node_id) DO UPDATE SET display_name=excluded.display_name,host=excluded.host,port=excluded.port,pairing_id=excluded.pairing_id,last_successful_contact_at=known_peers.last_successful_contact_at,last_error=known_peers.last_error,last_failure_at=known_peers.last_failure_at,last_outcome=known_peers.last_outcome,last_stage=known_peers.last_stage,last_error_category=known_peers.last_error_category,last_attempts=known_peers.last_attempts,last_imported_packets=known_peers.last_imported_packets,last_duplicate_packets=known_peers.last_duplicate_packets,last_exported_packets=known_peers.last_exported_packets,last_sync_started_at=known_peers.last_sync_started_at,last_sync_finished_at=known_peers.last_sync_finished_at,last_cursor=known_peers.last_cursor,updated_at=excluded.updated_at", params![peer.remote_node_id, peer.display_name, peer.host, peer.port, peer.pairing_id, peer.last_successful_contact_at, peer.last_error, peer.updated_at, peer.last_failure_at, peer.last_outcome, peer.last_stage, peer.last_error_category, peer.last_attempts, peer.last_imported_packets, peer.last_duplicate_packets, peer.last_exported_packets, peer.last_sync_started_at, peer.last_sync_finished_at, peer.last_cursor])?;
+        self.connection.execute("INSERT INTO known_peers(remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor,last_diagnostic_at,last_diagnostic_outcome,last_diagnostic_stage,last_diagnostic_error_category,last_diagnostic_message,last_diagnostic_latency_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25) ON CONFLICT(remote_node_id) DO UPDATE SET display_name=excluded.display_name,host=excluded.host,port=excluded.port,pairing_id=excluded.pairing_id,last_successful_contact_at=known_peers.last_successful_contact_at,last_error=known_peers.last_error,last_failure_at=known_peers.last_failure_at,last_outcome=known_peers.last_outcome,last_stage=known_peers.last_stage,last_error_category=known_peers.last_error_category,last_attempts=known_peers.last_attempts,last_imported_packets=known_peers.last_imported_packets,last_duplicate_packets=known_peers.last_duplicate_packets,last_exported_packets=known_peers.last_exported_packets,last_sync_started_at=known_peers.last_sync_started_at,last_sync_finished_at=known_peers.last_sync_finished_at,last_cursor=known_peers.last_cursor,last_diagnostic_at=known_peers.last_diagnostic_at,last_diagnostic_outcome=known_peers.last_diagnostic_outcome,last_diagnostic_stage=known_peers.last_diagnostic_stage,last_diagnostic_error_category=known_peers.last_diagnostic_error_category,last_diagnostic_message=known_peers.last_diagnostic_message,last_diagnostic_latency_ms=known_peers.last_diagnostic_latency_ms,updated_at=excluded.updated_at", params![peer.remote_node_id, peer.display_name, peer.host, peer.port, peer.pairing_id, peer.last_successful_contact_at, peer.last_error, peer.updated_at, peer.last_failure_at, peer.last_outcome, peer.last_stage, peer.last_error_category, peer.last_attempts, peer.last_imported_packets, peer.last_duplicate_packets, peer.last_exported_packets, peer.last_sync_started_at, peer.last_sync_finished_at, peer.last_cursor, peer.last_diagnostic_at, peer.last_diagnostic_outcome, peer.last_diagnostic_stage, peer.last_diagnostic_error_category, peer.last_diagnostic_message, peer.last_diagnostic_latency_ms])?;
         Ok(())
     }
     pub fn peer(&self, remote_node_id: &str) -> Result<Option<PeerRecord>, StorageError> {
-        self.connection.query_row("SELECT remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor FROM known_peers WHERE remote_node_id=?1", [remote_node_id], row_peer).optional().map_err(Into::into)
+        self.connection.query_row("SELECT remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor,last_diagnostic_at,last_diagnostic_outcome,last_diagnostic_stage,last_diagnostic_error_category,last_diagnostic_message,last_diagnostic_latency_ms FROM known_peers WHERE remote_node_id=?1", [remote_node_id], row_peer).optional().map_err(Into::into)
     }
     pub fn peers(&self) -> Result<Vec<PeerRecord>, StorageError> {
-        let mut statement = self.connection.prepare("SELECT remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor FROM known_peers ORDER BY remote_node_id ASC")?;
+        let mut statement = self.connection.prepare("SELECT remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor,last_diagnostic_at,last_diagnostic_outcome,last_diagnostic_stage,last_diagnostic_error_category,last_diagnostic_message,last_diagnostic_latency_ms FROM known_peers ORDER BY remote_node_id ASC")?;
         let peers = statement
             .query_map([], row_peer)?
             .collect::<Result<Vec<_>, _>>()?;
@@ -203,6 +244,17 @@ impl Store {
         result: &crate::node::PeerSyncResult,
     ) -> Result<(), StorageError> {
         self.connection.execute("UPDATE known_peers SET last_failure_at=?1,last_error=?2,last_outcome='failed',last_stage=?3,last_error_category=?4,last_attempts=?5,last_imported_packets=?6,last_duplicate_packets=?7,last_exported_packets=?8,last_sync_started_at=?9,last_sync_finished_at=?1,last_cursor=?10,updated_at=?1 WHERE remote_node_id=?11", params![result.finished_at, result.message.as_deref().unwrap_or("sync failed"), result.stage.to_string(), result.error_category.as_ref().map(ToString::to_string), result.attempts as i64, result.imported_packets as i64, result.duplicate_packets as i64, result.exported_packets.map(|v| v as i64), result.started_at, result.cursor, result.remote_node_id])?;
+        Ok(())
+    }
+    pub fn record_peer_diagnose(
+        &self,
+        result: &crate::node::PeerDiagnoseResult,
+    ) -> Result<(), StorageError> {
+        if result.outcome == crate::node::PeerDiagnoseOutcome::Success {
+            self.connection.execute("UPDATE known_peers SET last_diagnostic_at=?1,last_diagnostic_outcome='success',last_diagnostic_stage=?2,last_diagnostic_error_category=NULL,last_diagnostic_message=?3,last_diagnostic_latency_ms=?4,last_successful_contact_at=?1,updated_at=?1 WHERE remote_node_id=?5", params![result.finished_at, result.stage.to_string(), result.message, result.latency_ms, result.remote_node_id])?;
+        } else {
+            self.connection.execute("UPDATE known_peers SET last_diagnostic_at=?1,last_diagnostic_outcome='failed',last_diagnostic_stage=?2,last_diagnostic_error_category=?3,last_diagnostic_message=?4,last_diagnostic_latency_ms=?5,last_failure_at=?1,last_error=?4,updated_at=?1 WHERE remote_node_id=?6", params![result.finished_at, result.stage.to_string(), result.error_category.as_ref().map(ToString::to_string), result.message, result.latency_ms, result.remote_node_id])?;
+        }
         Ok(())
     }
     pub fn mark_peer_failure(
@@ -764,6 +816,12 @@ fn row_peer(row: &rusqlite::Row<'_>) -> rusqlite::Result<PeerRecord> {
         last_sync_started_at: row.get(16)?,
         last_sync_finished_at: row.get(17)?,
         last_cursor: row.get(18)?,
+        last_diagnostic_at: row.get(19)?,
+        last_diagnostic_outcome: row.get(20)?,
+        last_diagnostic_stage: row.get(21)?,
+        last_diagnostic_error_category: row.get(22)?,
+        last_diagnostic_message: row.get(23)?,
+        last_diagnostic_latency_ms: row.get(24)?,
     })
 }
 
@@ -828,6 +886,38 @@ mod tests {
             label: "normal".to_owned(),
             reason: None,
         };
+    }
+
+    #[test]
+    fn old_known_peers_schema_migrates_and_new_diagnose_fields_start_null() {
+        let path = std::env::temp_dir().join(format!(
+            "daovibe-known-peers-migration-{}.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection
+                .execute_batch(
+                    "CREATE TABLE known_peers (remote_node_id TEXT PRIMARY KEY, display_name TEXT, host TEXT NOT NULL, port INTEGER NOT NULL, pairing_id TEXT NOT NULL, last_successful_contact_at INTEGER, last_error TEXT, updated_at INTEGER NOT NULL, last_failure_at INTEGER, last_outcome TEXT, last_stage TEXT, last_error_category TEXT, last_attempts INTEGER, last_imported_packets INTEGER, last_duplicate_packets INTEGER, last_exported_packets INTEGER, last_sync_started_at INTEGER, last_sync_finished_at INTEGER, last_cursor TEXT); INSERT INTO known_peers VALUES ('remote','Remote','127.0.0.1',4242,'pair',10,'old error',11,12,'success','complete','none',2,3,4,5,6,7,'7:cursor');",
+                )
+                .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        let peer = store.peer("remote").unwrap().unwrap();
+        assert_eq!(peer.last_cursor.as_deref(), Some("7:cursor"));
+        assert_eq!(peer.last_attempts, Some(2));
+        assert_eq!(peer.last_imported_packets, Some(3));
+        assert_eq!(peer.last_duplicate_packets, Some(4));
+        assert_eq!(peer.last_exported_packets, Some(5));
+        assert_eq!(peer.last_diagnostic_at, None);
+        assert_eq!(peer.last_diagnostic_outcome, None);
+        assert_eq!(peer.last_diagnostic_stage, None);
+        assert_eq!(peer.last_diagnostic_error_category, None);
+        assert_eq!(peer.last_diagnostic_message, None);
+        assert_eq!(peer.last_diagnostic_latency_ms, None);
+        drop(store);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

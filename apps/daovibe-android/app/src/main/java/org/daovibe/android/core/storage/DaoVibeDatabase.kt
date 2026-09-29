@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PairingRecordEntity::class,
         PendingPairingOfferEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class DaoVibeDatabase : RoomDatabase() {
@@ -143,6 +143,16 @@ abstract class DaoVibeDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE known_peers ADD COLUMN last_sync_started_at INTEGER")
                 db.execSQL("ALTER TABLE known_peers ADD COLUMN last_sync_finished_at INTEGER")
                 db.execSQL("ALTER TABLE known_peers ADD COLUMN last_cursor TEXT")
+            }
+        }
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_diagnostic_at INTEGER")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_diagnostic_outcome TEXT")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_diagnostic_stage TEXT")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_diagnostic_error_category TEXT")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_diagnostic_message TEXT")
+                db.execSQL("ALTER TABLE known_peers ADD COLUMN last_diagnostic_latency_ms INTEGER")
             }
         }
     }

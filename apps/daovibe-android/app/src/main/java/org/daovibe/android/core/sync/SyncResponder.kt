@@ -96,9 +96,18 @@ class SyncResponder(
         session: ConnectionSession
     ): SyncResponderResult {
         var windowsProcessed = 0
+        var firstFrame = true
 
         while (true) {
-            val message = SyncJsonCodec.decode(transport.receive())
+            val message = try {
+                SyncJsonCodec.decode(transport.receive())
+            } catch (error: PeerTransportException) {
+                if (firstFrame && error.code == org.daovibe.android.core.connection.PeerTransportFailureCode.CONNECTION_CLOSED) {
+                    return SyncResponderResult.Completed(session, windowsProcessed = 0)
+                }
+                throw error
+            }
+            firstFrame = false
             if (message !is SyncRequest) {
                 return SyncResponderResult.Failed(
                     session = session,

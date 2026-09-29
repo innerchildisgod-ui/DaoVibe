@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
             .addMigrations(DaoVibeDatabase.MIGRATION_3_4)
             .addMigrations(DaoVibeDatabase.MIGRATION_4_5)
             .addMigrations(DaoVibeDatabase.MIGRATION_5_6)
+            .addMigrations(DaoVibeDatabase.MIGRATION_6_7)
             .build()
         val repository = LocalMyceliumRepository(database)
         val pairingRepository = PairingRepository(database)

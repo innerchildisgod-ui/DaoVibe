@@ -161,7 +161,13 @@ data class KnownPeerEntity(
     @ColumnInfo(name = "last_exported_packets") val lastExportedPackets: Int? = null,
     @ColumnInfo(name = "last_sync_started_at") val lastSyncStartedAt: Long? = null,
     @ColumnInfo(name = "last_sync_finished_at") val lastSyncFinishedAt: Long? = null,
-    @ColumnInfo(name = "last_cursor") val lastCursor: String? = null
+    @ColumnInfo(name = "last_cursor") val lastCursor: String? = null,
+    @ColumnInfo(name = "last_diagnostic_at") val lastDiagnosticAt: Long? = null,
+    @ColumnInfo(name = "last_diagnostic_outcome") val lastDiagnosticOutcome: String? = null,
+    @ColumnInfo(name = "last_diagnostic_stage") val lastDiagnosticStage: String? = null,
+    @ColumnInfo(name = "last_diagnostic_error_category") val lastDiagnosticErrorCategory: String? = null,
+    @ColumnInfo(name = "last_diagnostic_message") val lastDiagnosticMessage: String? = null,
+    @ColumnInfo(name = "last_diagnostic_latency_ms") val lastDiagnosticLatencyMs: Long? = null
 )
 
 @Entity(

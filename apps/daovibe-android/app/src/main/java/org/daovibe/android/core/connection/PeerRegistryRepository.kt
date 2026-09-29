@@ -23,7 +23,13 @@ data class KnownPeer(
     val lastExportedPackets: Int? = null,
     val lastSyncStartedAt: Long? = null,
     val lastSyncFinishedAt: Long? = null,
-    val lastCursor: String? = null
+    val lastCursor: String? = null,
+    val lastDiagnosticAt: Long? = null,
+    val lastDiagnosticOutcome: String? = null,
+    val lastDiagnosticStage: String? = null,
+    val lastDiagnosticErrorCategory: String? = null,
+    val lastDiagnosticMessage: String? = null,
+    val lastDiagnosticLatencyMs: Long? = null
 ) {
     val endpoint: PeerEndpoint get() = PeerEndpoint(host, port)
 }
@@ -100,6 +106,12 @@ class PeerRegistryRepository(
                 lastSyncStartedAt = previous?.lastSyncStartedAt,
                 lastSyncFinishedAt = previous?.lastSyncFinishedAt,
                 lastCursor = previous?.lastCursor
+                ,lastDiagnosticAt = previous?.lastDiagnosticAt
+                ,lastDiagnosticOutcome = previous?.lastDiagnosticOutcome
+                ,lastDiagnosticStage = previous?.lastDiagnosticStage
+                ,lastDiagnosticErrorCategory = previous?.lastDiagnosticErrorCategory
+                ,lastDiagnosticMessage = previous?.lastDiagnosticMessage
+                ,lastDiagnosticLatencyMs = previous?.lastDiagnosticLatencyMs
             )
         )
     }
@@ -118,6 +130,14 @@ class PeerRegistryRepository(
 
     override suspend fun recordFailure(result: PeerSyncResult) {
         dao.markKnownPeerFailure(result.remoteNodeId, result.message?.take(500) ?: "sync failed", result.finishedAt, result.stage.name.lowercase(), result.errorCategory?.name?.lowercase() ?: "unknown", result.attempts, result.importedPackets, result.duplicatePackets, result.exportedPackets, result.startedAt, result.cursor)
+    }
+
+    override suspend fun recordDiagnose(result: PeerDiagnoseResult) {
+        if (result.outcome == PeerDiagnoseOutcome.SUCCESS) {
+            dao.markKnownPeerDiagnoseSuccess(result.remoteNodeId, result.finishedAt, result.stage.name.lowercase(), result.latencyMs, result.message)
+        } else {
+            dao.markKnownPeerDiagnoseFailure(result.remoteNodeId, result.finishedAt, result.stage.name.lowercase(), result.errorCategory?.name?.lowercase() ?: "unknown", result.latencyMs, result.message)
+        }
     }
 
     private fun toModel(value: KnownPeerEntity) = KnownPeer(
@@ -139,5 +159,11 @@ class PeerRegistryRepository(
         lastSyncStartedAt = value.lastSyncStartedAt,
         lastSyncFinishedAt = value.lastSyncFinishedAt,
         lastCursor = value.lastCursor
+        ,lastDiagnosticAt = value.lastDiagnosticAt
+        ,lastDiagnosticOutcome = value.lastDiagnosticOutcome
+        ,lastDiagnosticStage = value.lastDiagnosticStage
+        ,lastDiagnosticErrorCategory = value.lastDiagnosticErrorCategory
+        ,lastDiagnosticMessage = value.lastDiagnosticMessage
+        ,lastDiagnosticLatencyMs = value.lastDiagnosticLatencyMs
     )
 }

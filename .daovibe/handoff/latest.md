@@ -359,4 +359,46 @@ Verification: Android `testDebugUnitTest` PASS, 179 tests/0 failures (including 
 
 `apps/daovibe-android/build.gradle.kts` was not touched during this repair (its pre-existing modification remains). No physical testing, firewall changes, commit, or push occurred. Unresolved issue: true non-mutating Diagnose remains deferred pending an explicit protocol/server design.
 
+---
+
+# Mycelium Handshake-Only Diagnose
+
+- Zero new wire message types were added. Diagnose uses `CONNECTION_HELLO` -> `CONNECTION_ACCEPT` and closes before any `SYNC_REQUEST`.
+- After ACCEPT, a clean EOF before the first sync frame is a graceful handshake-only completion. Partial length/payload, malformed frames, malformed HELLO, rejects, and invalid sync requests remain errors.
+- Android and Rust now expose aligned `PeerDiagnoseResult` models with remote node, outcome, stage, optional evidence-based error category, timestamps, latency, and bounded message.
+- Diagnose is exactly one explicit attempt with no retry, scheduler, WorkManager, discovery, or background probing.
+- Android Room is v7 with exact `MIGRATION_6_7`; Rust adds idempotent nullable `last_diagnostic_at`, outcome, stage, error category, message, and latency columns.
+- Dedicated diagnostic metadata is separate from latest-sync fields. Contact timestamps may update health, while historical failure details, sync counts, outcomes, stages, categories, and cursors remain intact.
+- Android Network rows expose Diagnose and a separate summary; Copy diagnostics includes sync plus diagnose metadata and excludes secrets, payloads, invites, and ledger contents.
+- Rust adds `peer diagnose <node_id>` and compact output; `peer list` includes a compact latest-diagnose summary.
+- Android uses the existing handshake-only `connectToPairedNode` path; Rust writes HELLO, validates ACCEPT identity/version/pairing, and never sends a sync request. Ledger, cursor, and semantic state/fingerprint are unchanged.
+- Classification uses concrete endpoint/transport/protocol/pairing evidence for invalid config, unreachable, timeout, pairing mismatch, protocol mismatch, remote rejected, malformed frame, IO, or unknown.
+- Android `testDebugUnitTest`: BUILD SUCCESSFUL. Android `assembleDebug`: BUILD SUCCESSFUL.
+- Rust fmt --check: PASS; clippy with `-D warnings`: PASS; cargo test: 49 library tests, 1 binary test, 0 doc-test failures.
+- Localhost handshake+sync and three-node A -> B -> C / C -> B -> A production sync remain green.
+- Invite canonical bytes/id remain 353 / `957a1e5ba01a74a5532ff643cd45e6bd9f4c3ec3297fe0597f95eb91c188ddb9`; all four Mycelium hashes remain unchanged.
+- Root `git diff --check`: PASS. `build.gradle.kts` remains the pre-existing untouched modification; helper prompt files remain untouched.
+- Physical testing: no. Firewall changes: no. Commit/push: no.
+- Unresolved issues: no known implementation blocker; dedicated new Diagnose isolation tests beyond existing regression coverage were not added in this pass.
+
+---
+
+# Mycelium Handshake-Only Diagnose — completion update
+
+Date: 2026-09-29
+
+- No new wire message types were added. Diagnose is exactly `CONNECTION_HELLO` -> `CONNECTION_ACCEPT` -> client clean close; the client performs exactly one attempt and never enters packet sync.
+- The Android path used by `PeerSyncCoordinator.diagnoseOne` is the existing `ConnectionRepository.connectToPairedNode` handshake-only path. Rust `peer diagnose <node_id>` writes one HELLO, validates the ACCEPT identity/version/pairing, then closes. Neither path sends `SYNC_REQUEST`, imports/exports batches, advances a cursor, changes the packet ledger, or changes semantic state/fingerprint.
+- `PeerDiagnoseResult` carries remote node ID, success/failed outcome, connect/hello/accept/complete stage, optional evidence-based category, timestamps, latency, and bounded message. Diagnose has no retry; normal Sync remains at most two attempts with the fixed 150 ms retry.
+- Android Room is version 7 and every production builder, including `MainActivity`, registers `DaoVibeDatabase.MIGRATION_6_7`. The migration only adds six nullable diagnostic columns. The v6 -> v7 test preserves an existing `known_peers` row and all Sync fields while leaving new Diagnose fields null; the full migration chain still opens.
+- Rust SQLite schema extension is idempotent and nullable, preserving old `known_peers` rows and all Sync metadata/counts/cursor. Dedicated metadata is `last_diagnostic_at`, `last_diagnostic_outcome`, `last_diagnostic_stage`, `last_diagnostic_error_category`, `last_diagnostic_message`, and `last_diagnostic_latency_ms`. Diagnose does not overwrite latest Sync outcome/stage/category/attempts/imported/duplicate/exported/start/finish/cursor. Success may update contact health; later success preserves historical failure time/message.
+- Clean EOF is narrow: after the server has sent ACCEPT, zero bytes before the first sync frame succeeds as a handshake-only close. Partial four-byte length, partial payload, malformed UTF-8, zero/oversized frames, malformed sync requests, and ordinary sync failures remain errors in Android and Rust.
+- Classification is evidence-based. Pairing-not-found/inactive/peer-mismatch (and Rust structured `pairing_*`) map to `pairing_mismatch`; unsupported/incompatible connection or packet versions map to `protocol_mismatch`; other explicit reject reasons map to `remote_rejected`; malformed/truncated frames map to `malformed_frame`; invalid endpoint, timeout, unreachable/refused, IO, and otherwise unknown retain their specific categories. Android no longer treats every `ConnectionProtocolException` as pairing mismatch, and Rust classifies the structured `Reject.reason_code` before message fallback.
+- Android UI exposes Diagnose separately from Sync and Copy diagnostics includes local/remote IDs plus Sync and Diagnose summaries while excluding packet payloads, pairing secrets, and diagnostic/error message contents. Rust CLI includes `peer diagnose <node_id>` and `peer list` diagnosis summaries.
+- Focused coverage now proves Android one-attempt success/failure, no `SYNC_REQUEST`, clean EOF vs truncated first frame, ledger/cursor/semantic isolation, dedicated metadata persistence and Sync metadata preservation, reject categories, diagnostics privacy, and Room migration preservation. Android `testDebugUnitTest`: BUILD SUCCESSFUL, **188 tests passed, 0 failures**. Android `assembleDebug`: BUILD SUCCESSFUL.
+- Rust `cargo +1.90.0-x86_64-pc-windows-gnu fmt --check`: PASS. Rust clippy (`--all-targets --all-features -- -D warnings`): PASS. Rust `cargo test`: PASS, **53 library tests + 1 binary test passed, 0 failures; 0 doc-test failures**. Coverage includes valid HELLO -> ACCEPT -> close, no sync request, ledger/fingerprint/cursor isolation, one attempt, structured pairing/version/generic rejects, clean EOF/truncated-frame behavior, old schema migration, localhost handshake+sync, and three-node production sync.
+- Compatibility remains unchanged: invite canonical bytes length **353**, invite ID `957a1e5ba01a74a5532ff643cd45e6bd9f4c3ec3297fe0597f95eb91c188ddb9`; fingerprints remain `aea5b196398a17e03e3ba9f07d388709b654fc417956d1da6c5b1e754c841bc0`, `7b99d4871b0dc2460aa567e2d9c2a735102a316eb4191793fe635144cb9cc2ab`, `455eb3d58a0527a45caf6196bb5dbcf9a40a697f7529acad973bdeb3ed3fbb6f`, and `82697458c19018e54ff8e0aa22f4ce7dc4f701c1b4598772e94797b16eba1a52`.
+- `git diff --check`: PASS (only existing LF/CRLF working-copy warnings). The worktree remains intentionally uncommitted. The pre-existing `apps/daovibe-android/build.gradle.kts` modification was not touched by this milestone. Helper prompt files remain untouched. No physical-device testing, firewall changes, commit, or push occurred.
+- Files changed for this milestone are the Android diagnose/Room/responder/UI and focused test files plus Rust node/storage/transport/CLI and focused tests; no new protocol message file or packet type was introduced. Unresolved issues: none for this milestone.
+
 

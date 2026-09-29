@@ -100,6 +100,75 @@ pub struct PeerSyncResult {
     pub cursor: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PeerDiagnoseOutcome {
+    Success,
+    Failed,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PeerDiagnoseStage {
+    Connect,
+    Hello,
+    Accept,
+    Complete,
+}
+impl std::fmt::Display for PeerDiagnoseStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Connect => "connect",
+                Self::Hello => "hello",
+                Self::Accept => "accept",
+                Self::Complete => "complete",
+            }
+        )
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PeerDiagnoseErrorCategory {
+    InvalidPeerConfig,
+    Unreachable,
+    Timeout,
+    PairingMismatch,
+    ProtocolMismatch,
+    RemoteRejected,
+    MalformedFrame,
+    Io,
+    Unknown,
+}
+impl std::fmt::Display for PeerDiagnoseErrorCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::InvalidPeerConfig => "invalid_peer_config",
+                Self::Unreachable => "unreachable",
+                Self::Timeout => "timeout",
+                Self::PairingMismatch => "pairing_mismatch",
+                Self::ProtocolMismatch => "protocol_mismatch",
+                Self::RemoteRejected => "remote_rejected",
+                Self::MalformedFrame => "malformed_frame",
+                Self::Io => "io",
+                Self::Unknown => "unknown",
+            }
+        )
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PeerDiagnoseResult {
+    pub remote_node_id: String,
+    pub outcome: PeerDiagnoseOutcome,
+    pub stage: PeerDiagnoseStage,
+    pub error_category: Option<PeerDiagnoseErrorCategory>,
+    pub started_at: i64,
+    pub finished_at: i64,
+    pub latency_ms: Option<i64>,
+    pub message: Option<String>,
+}
+
 pub fn peer_health(peer: &PeerRecord, now_seconds: i64) -> &'static str {
     match (peer.last_successful_contact_at, peer.last_failure_at) {
         (None, None) => "never_contacted",
@@ -186,6 +255,87 @@ fn classify_invalid_message(message: &str) -> (PeerSyncStage, PeerSyncErrorCateg
         );
     }
     (PeerSyncStage::Hello, PeerSyncErrorCategory::Unknown)
+}
+
+fn classify_diagnose_reject(reason_code: &str) -> PeerDiagnoseErrorCategory {
+    let reason = reason_code.to_ascii_lowercase();
+    if reason.starts_with("pairing_") {
+        PeerDiagnoseErrorCategory::PairingMismatch
+    } else if matches!(
+        reason.as_str(),
+        "unsupported_connection_version"
+            | "incompatible_connection_version"
+            | "unsupported_packet_version"
+            | "incompatible_packet_version"
+    ) {
+        PeerDiagnoseErrorCategory::ProtocolMismatch
+    } else {
+        PeerDiagnoseErrorCategory::RemoteRejected
+    }
+}
+
+fn classify_diagnose_error(
+    error: &NodeError,
+    structured_reject_reason: Option<&str>,
+) -> (PeerDiagnoseStage, PeerDiagnoseErrorCategory) {
+    if let Some(reason_code) = structured_reject_reason {
+        return (
+            PeerDiagnoseStage::Accept,
+            classify_diagnose_reject(reason_code),
+        );
+    }
+    match error {
+        NodeError::Transport(TransportError::Io(e)) | NodeError::Io(e) => {
+            let c = match e.kind() {
+                io::ErrorKind::TimedOut => PeerDiagnoseErrorCategory::Timeout,
+                io::ErrorKind::ConnectionRefused
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::NotFound
+                | io::ErrorKind::AddrNotAvailable => PeerDiagnoseErrorCategory::Unreachable,
+                _ => PeerDiagnoseErrorCategory::Io,
+            };
+            (PeerDiagnoseStage::Connect, c)
+        }
+        NodeError::Transport(TransportError::Malformed(_)) | NodeError::Json(_) => (
+            PeerDiagnoseStage::Accept,
+            PeerDiagnoseErrorCategory::MalformedFrame,
+        ),
+        NodeError::Protocol(ProtocolError::Json(_)) => (
+            PeerDiagnoseStage::Accept,
+            PeerDiagnoseErrorCategory::MalformedFrame,
+        ),
+        NodeError::Protocol(ProtocolError::Invalid(message)) | NodeError::Invalid(message) => {
+            let m = message.to_ascii_lowercase();
+            if m.contains("remote rejected") {
+                (
+                    PeerDiagnoseStage::Accept,
+                    PeerDiagnoseErrorCategory::RemoteRejected,
+                )
+            } else if m.contains("pairing") {
+                (
+                    PeerDiagnoseStage::Accept,
+                    PeerDiagnoseErrorCategory::PairingMismatch,
+                )
+            } else if m.contains("incompatible") || m.contains("unsupported") {
+                (
+                    PeerDiagnoseStage::Accept,
+                    PeerDiagnoseErrorCategory::ProtocolMismatch,
+                )
+            } else {
+                (
+                    PeerDiagnoseStage::Accept,
+                    PeerDiagnoseErrorCategory::Unknown,
+                )
+            }
+        }
+        NodeError::Protocol(ProtocolError::Packet(_))
+        | NodeError::Storage(_)
+        | NodeError::Invite(_) => (
+            PeerDiagnoseStage::Accept,
+            PeerDiagnoseErrorCategory::Unknown,
+        ),
+    }
 }
 
 #[derive(Debug, Error)]
@@ -301,6 +451,12 @@ impl DesktopNode {
                 last_sync_started_at: None,
                 last_sync_finished_at: None,
                 last_cursor: None,
+                last_diagnostic_at: None,
+                last_diagnostic_outcome: None,
+                last_diagnostic_stage: None,
+                last_diagnostic_error_category: None,
+                last_diagnostic_message: None,
+                last_diagnostic_latency_ms: None,
             })
             .map_err(Into::into)
     }
@@ -512,6 +668,104 @@ impl DesktopNode {
         Ok((inserted, duplicates))
     }
 
+    pub fn diagnose_peer_result(&self, remote_node_id: &str) -> PeerDiagnoseResult {
+        let started_at = now();
+        let started_ms = std::time::Instant::now();
+        let mut structured_reject_reason = None;
+        let result = (|| -> Result<(), NodeError> {
+            let peer = self.store.peer(remote_node_id)?.ok_or_else(|| {
+                NodeError::Invalid("known peer configuration is missing".to_owned())
+            })?;
+            let identity = self.ensure_identity()?;
+            let pairing = self
+                .store
+                .active_pairing_for_remote(&identity.node_id, remote_node_id)?
+                .ok_or_else(|| NodeError::Invalid("approved pairing is missing".to_owned()))?;
+            if pairing.pairing_id != peer.pairing_id {
+                return Err(NodeError::Invalid(
+                    "peer pairing ID does not match approved pairing".to_owned(),
+                ));
+            }
+            let mut stream = TcpStream::connect((&*peer.host, peer.port))?;
+            transport::configure_stream(&stream)?;
+            let session_id = format!(
+                "session_{}",
+                &sha256(&format!("{}:{}", now(), std::process::id()))[..32]
+            );
+            let hello = Hello {
+                protocol_version: CONNECTION_VERSION.to_owned(),
+                session_id: session_id.clone(),
+                source_node_id: identity.node_id.clone(),
+                target_node_id: remote_node_id.to_owned(),
+                source_platform: identity.platform.clone(),
+                source_role: identity.role.clone(),
+                pairing_id: peer.pairing_id.clone(),
+                created_at: now(),
+                supported_connection_versions: vec![CONNECTION_VERSION.to_owned()],
+                supported_packet_protocol_versions: vec![crate::models::LMP_VERSION.to_owned()],
+                capabilities: DESKTOP_CAPABILITIES
+                    .iter()
+                    .map(|v| (*v).to_owned())
+                    .collect(),
+            };
+            transport::write_frame(&mut stream, &hello.canonical_json())?;
+            let value: serde_json::Value =
+                serde_json::from_str(&transport::read_frame(&mut stream)?)?;
+            match protocol::decode_connection(&value)? {
+                protocol::ConnectionMessage::Accept(accept) => {
+                    accept.validate()?;
+                    if accept.session_id != hello.session_id
+                        || accept.source_node_id != remote_node_id
+                        || accept.target_node_id != identity.node_id
+                        || accept.pairing_id != peer.pairing_id
+                    {
+                        return Err(NodeError::Invalid(
+                            "connection accept identity mismatch".to_owned(),
+                        ));
+                    }
+                    Ok(())
+                }
+                protocol::ConnectionMessage::Reject(reject) => {
+                    structured_reject_reason = Some(reject.reason_code.clone());
+                    Err(NodeError::Invalid("remote rejected diagnose".to_owned()))
+                }
+                protocol::ConnectionMessage::Hello(_) => {
+                    Err(NodeError::Invalid("unexpected connection hello".to_owned()))
+                }
+            }
+        })();
+        let finished_at = now();
+        let latency_ms = Some(started_ms.elapsed().as_millis() as i64);
+        let result = match result {
+            Ok(()) => PeerDiagnoseResult {
+                remote_node_id: remote_node_id.to_owned(),
+                outcome: PeerDiagnoseOutcome::Success,
+                stage: PeerDiagnoseStage::Complete,
+                error_category: None,
+                started_at,
+                finished_at,
+                latency_ms,
+                message: None,
+            },
+            Err(error) => {
+                let (stage, category) =
+                    classify_diagnose_error(&error, structured_reject_reason.as_deref());
+                PeerDiagnoseResult {
+                    remote_node_id: remote_node_id.to_owned(),
+                    outcome: PeerDiagnoseOutcome::Failed,
+                    stage,
+                    error_category: Some(category),
+                    started_at,
+                    finished_at,
+                    latency_ms,
+                    message: Some(error.to_string().chars().take(500).collect()),
+                }
+            }
+        };
+        let _ = self.store.record_peer_diagnose(&result);
+        result
+    }
+
     pub fn sync_peer_bounded(&self, remote_node_id: &str) -> Result<(usize, usize), NodeError> {
         let mut last_error = None;
         for attempt in 0..2 {
@@ -694,7 +948,12 @@ impl DesktopNode {
                 };
                 accept.validate()?;
                 transport::write_frame(stream, &accept.canonical_json())?;
-                self.serve_sync(stream, &identity, &hello)?;
+                match transport::read_frame_or_eof(stream)? {
+                    None => return Ok(()),
+                    Some(message_json) => {
+                        self.serve_sync(stream, &identity, &hello, Some(message_json))?
+                    }
+                }
                 Ok(())
             }
             Err(reason) => {
@@ -753,9 +1012,13 @@ impl DesktopNode {
         stream: &mut TcpStream,
         identity: &DeviceIdentity,
         hello: &Hello,
+        mut first_message: Option<String>,
     ) -> Result<(), NodeError> {
         for window in 0..MAX_SYNC_WINDOWS {
-            let message_json = transport::read_frame(stream)?;
+            let message_json = match first_message.take() {
+                Some(value) => value,
+                None => transport::read_frame(stream)?,
+            };
             let value: serde_json::Value = serde_json::from_str(&message_json)?;
 
             let request = match protocol::decode_sync(&value)? {
@@ -1239,6 +1502,150 @@ mod tests {
 
         worker.join().unwrap();
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn diagnose_is_one_handshake_only_and_preserves_ledger_state() {
+        let root = std::env::temp_dir().join(format!("daovibe-diagnose-{}", uuid::Uuid::new_v4()));
+        let client_dir = root.join("client");
+        let server_dir = root.join("server");
+        let client = DesktopNode::open(&client_dir).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let server = DesktopNode::open(&server_dir).unwrap();
+        let client_identity = client.ensure_identity().unwrap();
+        let server_identity = server.ensure_identity().unwrap();
+        let pairing_id = pair_nodes(&client, &client_identity, &server, 1_700_200_000);
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        client
+            .add_peer(
+                &server_identity.node_id,
+                "127.0.0.1",
+                endpoint.port(),
+                &pairing_id,
+                Some("diagnose server".to_owned()),
+            )
+            .unwrap();
+        let before_count = client.store.packet_count().unwrap();
+        let before_fingerprint = MyceliumStateSnapshot::from_store(&client.store)
+            .unwrap()
+            .fingerprint();
+        let before_cursor = client
+            .store
+            .cursor_or_start_for_pairing(&server_identity.node_id, &pairing_id)
+            .unwrap();
+        let worker_dir = server_dir.clone();
+        let worker = std::thread::spawn(move || {
+            let worker_node = DesktopNode::open(worker_dir).unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            transport::configure_stream(&stream).unwrap();
+            let hello_json = transport::read_frame(&mut stream).unwrap();
+            let hello_value: serde_json::Value = serde_json::from_str(&hello_json).unwrap();
+            let hello = Hello::decode(&hello_value).unwrap();
+            let identity = worker_node.ensure_identity().unwrap();
+            let accept = Accept {
+                protocol_version: CONNECTION_VERSION.to_owned(),
+                session_id: hello.session_id.clone(),
+                source_node_id: identity.node_id,
+                target_node_id: hello.source_node_id,
+                pairing_id: hello.pairing_id,
+                accepted_at: now(),
+                negotiated_connection_version: CONNECTION_VERSION.to_owned(),
+                negotiated_packet_protocol_version: crate::models::LMP_VERSION.to_owned(),
+                capabilities: hello.capabilities,
+                state: "connected".to_owned(),
+            };
+            transport::write_frame(&mut stream, &accept.canonical_json()).unwrap();
+            assert!(transport::read_frame_or_eof(&mut stream).unwrap().is_none());
+        });
+
+        let result = client.diagnose_peer_result(&server_identity.node_id);
+        worker.join().unwrap();
+
+        assert_eq!(result.outcome, PeerDiagnoseOutcome::Success);
+        assert_eq!(result.stage, PeerDiagnoseStage::Complete);
+        assert_eq!(client.store.packet_count().unwrap(), before_count);
+        assert_eq!(
+            MyceliumStateSnapshot::from_store(&client.store)
+                .unwrap()
+                .fingerprint(),
+            before_fingerprint
+        );
+        assert_eq!(
+            client
+                .store
+                .cursor_or_start_for_pairing(&server_identity.node_id, &pairing_id)
+                .unwrap(),
+            before_cursor
+        );
+        let peer = client
+            .store
+            .peer(&server_identity.node_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(peer.last_diagnostic_outcome.as_deref(), Some("success"));
+        assert_eq!(peer.last_outcome, None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn diagnose_structured_rejects_use_reason_code_categories() {
+        for (reason, expected) in [
+            (
+                "pairing_not_found",
+                PeerDiagnoseErrorCategory::PairingMismatch,
+            ),
+            (
+                "incompatible_connection_version",
+                PeerDiagnoseErrorCategory::ProtocolMismatch,
+            ),
+            ("invalid_message", PeerDiagnoseErrorCategory::RemoteRejected),
+        ] {
+            let root = std::env::temp_dir()
+                .join(format!("daovibe-diagnose-reject-{}", uuid::Uuid::new_v4()));
+            let client_dir = root.join("client");
+            let server_dir = root.join("server");
+            let client = DesktopNode::open(&client_dir).unwrap();
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let server = DesktopNode::open(&server_dir).unwrap();
+            let client_identity = client.ensure_identity().unwrap();
+            let server_identity = server.ensure_identity().unwrap();
+            let pairing_id = pair_nodes(&client, &client_identity, &server, 1_700_210_000);
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let endpoint = listener.local_addr().unwrap();
+            client
+                .add_peer(
+                    &server_identity.node_id,
+                    "127.0.0.1",
+                    endpoint.port(),
+                    &pairing_id,
+                    None,
+                )
+                .unwrap();
+            let worker = std::thread::spawn(move || {
+                let worker_node = DesktopNode::open(server_dir).unwrap();
+                let (mut stream, _) = listener.accept().unwrap();
+                transport::configure_stream(&stream).unwrap();
+                let hello_json = transport::read_frame(&mut stream).unwrap();
+                let hello_value: serde_json::Value = serde_json::from_str(&hello_json).unwrap();
+                let hello = Hello::decode(&hello_value).unwrap();
+                let identity = worker_node.ensure_identity().unwrap();
+                let reject = protocol::make_reject(
+                    hello.session_id,
+                    identity.node_id,
+                    hello.source_node_id,
+                    hello.pairing_id,
+                    reason,
+                    now(),
+                );
+                transport::write_frame(&mut stream, &reject.canonical_json()).unwrap();
+            });
+            let result = client.diagnose_peer_result(&server_identity.node_id);
+            worker.join().unwrap();
+            assert_eq!(result.error_category, Some(expected));
+            assert_eq!(result.outcome, PeerDiagnoseOutcome::Failed);
+            let _ = fs::remove_dir_all(&root);
+        }
     }
 
     #[test]

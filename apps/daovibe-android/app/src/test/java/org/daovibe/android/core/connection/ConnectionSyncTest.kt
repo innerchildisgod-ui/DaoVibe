@@ -8,11 +8,13 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.daovibe.android.core.identity.DeviceIdentityRepository
 import org.daovibe.android.core.mycelium.LocalMyceliumRepository
+import org.daovibe.android.core.mycelium.MyceliumStateSnapshot
 import org.daovibe.android.core.pairing.PairingRecord
 import org.daovibe.android.core.pairing.PairingRecordStatus
 import org.daovibe.android.core.storage.DaoVibeDatabase
 import org.daovibe.android.core.storage.DeviceIdentityEntity
 import org.daovibe.android.core.storage.PairingRecordEntity
+import org.daovibe.android.core.storage.PeerSyncStateEntity
 import org.daovibe.android.core.sync.MAX_SYNC_WINDOWS_PER_RUN
 import org.daovibe.android.core.sync.SyncBatch
 import org.daovibe.android.core.sync.SyncJsonCodec
@@ -486,6 +488,125 @@ class ConnectionSyncTest {
         assertTrue(transport.closed)
     }
 
+    @Test
+    fun diagnoseHandshakeSendsOnlyHelloAndClosesAfterAccept() = runTest {
+        installClientPairing()
+        lateinit var transport: SyncScriptedPeerTransport
+        transport = SyncScriptedPeerTransport { messages ->
+            assertEquals(1, messages.size)
+            assertEquals(
+                ConnectionMessageType.CONNECTION_HELLO,
+                ConnectionJsonCodec.decode(messages.single()).messageType
+            )
+            acceptForHello(messages.single())
+        }
+        val repository = newClientConnectionRepository(transport)
+
+        val result = repository.connectToPairedNode(
+            remoteNodeId = SERVER_NODE,
+            endpoint = PeerEndpoint("127.0.0.1", 4242)
+        )
+
+        assertTrue(result is ConnectionHandshakeResult.Accepted)
+        assertEquals(1, transport.sentMessages.size)
+        assertEquals(
+            ConnectionMessageType.CONNECTION_HELLO,
+            ConnectionJsonCodec.decode(transport.sentMessages.single()).messageType
+        )
+        assertTrue(transport.closed)
+    }
+
+    @Test
+    fun failedDiagnoseLeavesLedgerFingerprintAndCursorUnchanged() = runTest {
+        installClientPairing()
+        LocalMyceliumRepository(clientDatabase, nowSeconds = { NOW })
+            .observePhrase("diagnose isolation")
+        clientDatabase.daoVibeDao().upsertPeerSyncState(
+            PeerSyncStateEntity(SERVER_NODE, PAIRING_ID, "7:cursor", NOW)
+        )
+        val beforePackets = clientDatabase.daoVibeDao().listPacketsInLedgerOrder()
+        val beforeFingerprint = MyceliumStateSnapshot.fromState(
+            LocalMyceliumRepository(clientDatabase, nowSeconds = { NOW })
+                .rebuildDerivedStateFromLedger()
+        ).fingerprint()
+        val beforeCursor = clientDatabase.daoVibeDao().getPeerSyncState(SERVER_NODE)
+
+        val transport = SyncScriptedPeerTransport {
+            val hello = ConnectionJsonCodec.decodeHello(it.single())
+            ConnectionJsonCodec.encode(
+                ConnectionProtocol.createReject(
+                    sessionId = hello.sessionId,
+                    sourceNodeId = SERVER_NODE,
+                    targetNodeId = hello.sourceNodeId,
+                    pairingId = hello.pairingId,
+                    rejectedAt = NOW,
+                    reason = ConnectionRejectReason.INVALID_MESSAGE
+                )
+            )
+        }
+        val result = newClientConnectionRepository(transport).connectToPairedNode(
+            SERVER_NODE,
+            PeerEndpoint("127.0.0.1", 4242)
+        )
+
+        assertTrue(result is ConnectionHandshakeResult.Rejected)
+        assertEquals(1, transport.sentMessages.size)
+        assertEquals(beforePackets, clientDatabase.daoVibeDao().listPacketsInLedgerOrder())
+        assertEquals(beforeCursor, clientDatabase.daoVibeDao().getPeerSyncState(SERVER_NODE))
+        assertEquals(
+            beforeFingerprint,
+            MyceliumStateSnapshot.fromState(
+                LocalMyceliumRepository(clientDatabase, nowSeconds = { NOW })
+                    .rebuildDerivedStateFromLedger()
+            ).fingerprint()
+        )
+    }
+
+    @Test
+    fun responderAcceptsCleanZeroByteCloseButRejectsPartialFirstFrame() = runTest {
+        val clientNodeId = "mycelium_node_clean_eof_client"
+        installServerPairing(clientNodeId)
+        val pairing = PairingRecord(
+            pairingId = PAIRING_ID,
+            localNodeId = clientNodeId,
+            remoteNodeId = SERVER_NODE,
+            remoteDisplayName = "Server Node",
+            remotePlatform = "windows",
+            remoteRole = "computer",
+            status = PairingRecordStatus.APPROVED,
+            createdAt = CREATED_AT,
+            pairedAt = CREATED_AT + 1L
+        )
+        val hello = ConnectionProtocol.createHello(
+            localNodeId = clientNodeId,
+            pairing = pairing,
+            sourcePlatform = "android",
+            sourceRole = "phone",
+            sessionId = SESSION_ID,
+            createdAt = NOW
+        )
+
+        val clean = PostAcceptFailurePeerTransport(
+            ConnectionJsonCodec.encode(hello),
+            PeerTransportFailureCode.CONNECTION_CLOSED
+        )
+        val cleanResult = SyncResponder(serverDatabase, nowSeconds = { NOW }).serveOnce(clean)
+        assertTrue(cleanResult is SyncResponderResult.Completed)
+        assertEquals(0, (cleanResult as SyncResponderResult.Completed).windowsProcessed)
+        assertEquals(1, clean.sentMessages.size)
+
+        val partial = PostAcceptFailurePeerTransport(
+            ConnectionJsonCodec.encode(hello),
+            PeerTransportFailureCode.TRUNCATED_FRAME
+        )
+        val partialResult = SyncResponder(serverDatabase, nowSeconds = { NOW }).serveOnce(partial)
+        assertTrue(partialResult is SyncResponderResult.Failed)
+        assertEquals(
+            PeerTransportFailureCode.TRUNCATED_FRAME,
+            (partialResult as SyncResponderResult.Failed).failure.code
+        )
+    }
+
     private suspend fun serveLoopbackBidirectionalSync(
         transport: PeerTransport,
         clientNodeId: String
@@ -683,4 +804,28 @@ private class SyncScriptedPeerTransport(
     override suspend fun close() {
         closed = true
     }
+}
+
+private class PostAcceptFailurePeerTransport(
+    private val hello: String,
+    private val failureCode: PeerTransportFailureCode
+) : PeerTransport {
+    val sentMessages = mutableListOf<String>()
+    private var helloRead = false
+
+    override suspend fun connect(endpoint: PeerEndpoint) = Unit
+
+    override suspend fun send(canonicalMessageJson: String) {
+        sentMessages += canonicalMessageJson
+    }
+
+    override suspend fun receive(): String {
+        if (!helloRead) {
+            helloRead = true
+            return hello
+        }
+        throw PeerTransportException(failureCode, failureCode.wireValue)
+    }
+
+    override suspend fun close() = Unit
 }

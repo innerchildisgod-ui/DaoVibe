@@ -456,6 +456,7 @@ internal fun NetworkScreen(
     var syncMessageByPairingId by remember {
         mutableStateOf<Map<String, String>>(emptyMap())
     }
+    var diagnoseMessageByPeer by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var connectionMessage by remember {
         mutableStateOf(
             "Direct TCP only works when the remote host is reachable and its " +
@@ -545,6 +546,9 @@ internal fun NetworkScreen(
                         entity.lastStage?.let { stage ->
                             Text("Last result: ${entity.lastOutcome ?: "unknown"} at $stage" + (entity.lastErrorCategory?.let { "/$it" } ?: ""), color = DaoVibeColors.TextSecondary)
                         }
+                        entity.lastDiagnosticStage?.let { stage ->
+                            Text("Diagnose: ${entity.lastDiagnosticOutcome ?: "unknown"} at $stage" + (entity.lastDiagnosticErrorCategory?.let { "/$it" } ?: ""), color = DaoVibeColors.Cyan)
+                        }
                         peer.lastError?.let { Text("Last error: $it", color = DaoVibeColors.Amber) }
                     }
                     Button(onClick = {
@@ -553,6 +557,12 @@ internal fun NetworkScreen(
                             syncMessageByPairingId = syncMessageByPairingId + (peer.remoteNodeId to (attempt.structuredResult?.let(::peerSyncResultMessage) ?: (attempt.error ?: "Sync unavailable")))
                         }
                     }) { Text("Sync") }
+                    OutlinedButton(onClick = {
+                        scope.launch {
+                            val result = peerSyncCoordinator.diagnoseOne(peer.remoteNodeId)
+                            diagnoseMessageByPeer = diagnoseMessageByPeer + (peer.remoteNodeId to if (result.outcome == org.daovibe.android.core.connection.PeerDiagnoseOutcome.SUCCESS) "Diagnose: healthy in ${result.latencyMs ?: 0} ms" else "Diagnose failed at ${result.stage.name.lowercase()}: ${result.errorCategory?.name?.lowercase() ?: "unknown"}")
+                        }
+                    }) { Text("Diagnose") }
                     OutlinedButton(onClick = {
                         clipboard?.setPrimaryClip(ClipData.newPlainText("DAOVibe peer diagnostics", peerDiagnosticsText(entity, localNodeId)))
                     }) { Text("Copy diagnostics") }
@@ -567,6 +577,7 @@ internal fun NetworkScreen(
                     Button(onClick = { scope.launch { peerRegistryRepository.remove(peer.remoteNodeId) } }) { Text("Remove") }
                 }
                 syncMessageByPairingId[peer.remoteNodeId]?.let { Text(it, color = DaoVibeColors.TextSecondary) }
+                diagnoseMessageByPeer[peer.remoteNodeId]?.let { Text(it, color = DaoVibeColors.Cyan) }
             }
             Button(onClick = { scope.launch { peerSyncCoordinator.syncAll() } }, enabled = knownPeers.isNotEmpty()) { Text("Sync all known peers") }
         }
@@ -892,7 +903,7 @@ private fun peerSyncResultMessage(result: org.daovibe.android.core.connection.Pe
         "Failed at ${result.stage.name.lowercase()}: ${result.errorCategory?.name?.lowercase() ?: "unknown"} — ${result.message ?: "no detail"}"
     }
 
-private fun peerDiagnosticsText(peer: org.daovibe.android.core.storage.KnownPeerEntity, localNodeId: String): String = buildString {
+internal fun peerDiagnosticsText(peer: org.daovibe.android.core.storage.KnownPeerEntity, localNodeId: String): String = buildString {
     appendLine("local diagnostics only")
     appendLine("local_node_id=$localNodeId")
     appendLine("remote_node_id=${peer.remoteNodeId}")
@@ -908,6 +919,10 @@ private fun peerDiagnosticsText(peer: org.daovibe.android.core.storage.KnownPeer
     appendLine("duplicate_packets=${peer.lastDuplicatePackets ?: "none"}")
     appendLine("exported_packets=${peer.lastExportedPackets ?: "none"}")
     appendLine("cursor=${peer.lastCursor ?: "none"}")
-    appendLine("message=${peer.lastError ?: "none"}")
+    appendLine("diagnose_outcome=${peer.lastDiagnosticOutcome ?: "none"}")
+    appendLine("diagnose_stage=${peer.lastDiagnosticStage ?: "none"}")
+    appendLine("diagnose_error_category=${peer.lastDiagnosticErrorCategory ?: "none"}")
+    appendLine("diagnose_at=${peer.lastDiagnosticAt ?: "none"}")
+    appendLine("diagnose_latency_ms=${peer.lastDiagnosticLatencyMs ?: "none"}")
 }
 

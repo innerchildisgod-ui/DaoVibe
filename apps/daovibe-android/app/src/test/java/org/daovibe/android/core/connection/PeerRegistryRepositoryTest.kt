@@ -52,6 +52,64 @@ class PeerRegistryRepositoryTest {
         assertEquals(1, database.daoVibeDao().listPacketsInLedgerOrder().size)
     }
 
+    @Test fun diagnoseMetadataIsSeparateAndHistoricalFailureSurvivesLaterSuccess() = runTest {
+        val repo = PeerRegistryRepository(database, nowSeconds = { 20 })
+        repo.addOrUpdate("remote", "127.0.0.1", 4242, "pair")
+        database.daoVibeDao().markKnownPeerSuccess(
+            remoteNodeId = "remote",
+            contactAt = 10,
+            updatedAt = 10,
+            stage = "complete",
+            attempts = 2,
+            importedPackets = 3,
+            duplicatePackets = 4,
+            exportedPackets = 5,
+            startedAt = 8,
+            cursor = "5:cursor"
+        )
+        repo.recordDiagnose(
+            PeerDiagnoseResult(
+                remoteNodeId = "remote",
+                outcome = PeerDiagnoseOutcome.FAILED,
+                stage = PeerDiagnoseStage.ACCEPT,
+                errorCategory = PeerDiagnoseErrorCategory.PAIRING_MISMATCH,
+                startedAt = 20,
+                finishedAt = 21,
+                latencyMs = 7,
+                message = "pairing mismatch"
+            )
+        )
+        val failed = repo.getPeer("remote")!!
+        assertEquals("success", failed.lastOutcome)
+        assertEquals("complete", failed.lastStage)
+        assertEquals(2, failed.lastAttempts)
+        assertEquals(3, failed.lastImportedPackets)
+        assertEquals(4, failed.lastDuplicatePackets)
+        assertEquals(5, failed.lastExportedPackets)
+        assertEquals("5:cursor", failed.lastCursor)
+        assertEquals("failed", failed.lastDiagnosticOutcome)
+        assertEquals("accept", failed.lastDiagnosticStage)
+        assertEquals("pairing_mismatch", failed.lastDiagnosticErrorCategory)
+        assertEquals("pairing mismatch", failed.lastDiagnosticMessage)
+
+        repo.recordDiagnose(
+            PeerDiagnoseResult(
+                remoteNodeId = "remote",
+                outcome = PeerDiagnoseOutcome.SUCCESS,
+                stage = PeerDiagnoseStage.COMPLETE,
+                startedAt = 22,
+                finishedAt = 23,
+                latencyMs = 4
+            )
+        )
+        val succeeded = repo.getPeer("remote")!!
+        assertEquals(21L, succeeded.lastFailureAt)
+        assertEquals("pairing mismatch", succeeded.lastError)
+        assertEquals("success", succeeded.lastDiagnosticOutcome)
+        assertEquals("complete", succeeded.lastDiagnosticStage)
+        assertEquals(23L, succeeded.lastSuccessfulContactAt)
+    }
+
     @Test fun persistsAcrossReopen() = runTest {
         val path = File.createTempFile("daovibe-peers", ".db")
         database.close()

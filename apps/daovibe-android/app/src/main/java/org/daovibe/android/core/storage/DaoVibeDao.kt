@@ -207,6 +207,12 @@ interface DaoVibeDao {
         cursor: String?
     )
 
+    @Query("UPDATE known_peers SET last_diagnostic_at = :finishedAt, last_diagnostic_outcome = 'success', last_diagnostic_stage = :stage, last_diagnostic_error_category = NULL, last_diagnostic_message = :message, last_diagnostic_latency_ms = :latencyMs, last_successful_contact_at = :finishedAt, updated_at = :finishedAt WHERE remote_node_id = :remoteNodeId")
+    suspend fun markKnownPeerDiagnoseSuccess(remoteNodeId: String, finishedAt: Long, stage: String, latencyMs: Long?, message: String?)
+
+    @Query("UPDATE known_peers SET last_diagnostic_at = :finishedAt, last_diagnostic_outcome = 'failed', last_diagnostic_stage = :stage, last_diagnostic_error_category = :category, last_diagnostic_message = :message, last_diagnostic_latency_ms = :latencyMs, last_failure_at = :finishedAt, last_error = :message, updated_at = :finishedAt WHERE remote_node_id = :remoteNodeId")
+    suspend fun markKnownPeerDiagnoseFailure(remoteNodeId: String, finishedAt: Long, stage: String, category: String, latencyMs: Long?, message: String?)
+
     @Query(
         "SELECT * FROM paired_devices " +
             "ORDER BY updated_at DESC, pairing_id ASC"

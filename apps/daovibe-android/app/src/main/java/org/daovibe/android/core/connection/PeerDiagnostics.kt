@@ -5,6 +5,24 @@ import org.daovibe.android.core.sync.SyncRunResult
 
 enum class PeerSyncOutcome { SUCCESS, FAILED }
 
+enum class PeerDiagnoseOutcome { SUCCESS, FAILED }
+enum class PeerDiagnoseStage { CONNECT, HELLO, ACCEPT, COMPLETE }
+enum class PeerDiagnoseErrorCategory {
+    INVALID_PEER_CONFIG, UNREACHABLE, TIMEOUT, PAIRING_MISMATCH,
+    PROTOCOL_MISMATCH, REMOTE_REJECTED, MALFORMED_FRAME, IO, UNKNOWN
+}
+
+data class PeerDiagnoseResult(
+    val remoteNodeId: String,
+    val outcome: PeerDiagnoseOutcome,
+    val stage: PeerDiagnoseStage,
+    val errorCategory: PeerDiagnoseErrorCategory? = null,
+    val startedAt: Long,
+    val finishedAt: Long,
+    val latencyMs: Long? = null,
+    val message: String? = null
+)
+
 enum class PeerSyncStage {
     CONNECT, HELLO, ACCEPT, PULL, IMPORT, REVERSE_SYNC, COMPLETE
 }

@@ -67,6 +67,7 @@ class DaoVibeMigrationTest {
             .addMigrations(DaoVibeDatabase.MIGRATION_3_4)
             .addMigrations(DaoVibeDatabase.MIGRATION_4_5)
             .addMigrations(DaoVibeDatabase.MIGRATION_5_6)
+            .addMigrations(DaoVibeDatabase.MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
 
@@ -82,6 +83,89 @@ class DaoVibeMigrationTest {
             assertEquals(packet.packetJson(), storedPacket.packetJson)
             assertEquals(emptyList<PairingRecordEntity>(), dao.listPairingRecords())
             assertEquals(emptyList<KnownPeerEntity>(), dao.listKnownPeers())
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migration6To7PreservesKnownPeerAndSyncDiagnostics() = runTest {
+        val before = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            DaoVibeDatabase::class.java,
+            databaseFile.absolutePath
+        ).allowMainThreadQueries().build()
+        before.daoVibeDao().upsertKnownPeer(
+            KnownPeerEntity(
+                remoteNodeId = "remote_v6",
+                displayName = "Remote v6",
+                host = "127.0.0.1",
+                port = 4242,
+                pairingId = "pairing_v6",
+                lastSuccessfulContactAt = 10,
+                lastError = "old error",
+                updatedAt = 20,
+                lastFailureAt = 11,
+                lastOutcome = "success",
+                lastStage = "complete",
+                lastErrorCategory = "none",
+                lastAttempts = 2,
+                lastImportedPackets = 3,
+                lastDuplicatePackets = 4,
+                lastExportedPackets = 5,
+                lastSyncStartedAt = 6,
+                lastSyncFinishedAt = 7,
+                lastCursor = "7:cursor"
+            )
+        )
+        before.close()
+
+        val legacy = SQLiteDatabase.openDatabase(
+            databaseFile.absolutePath,
+            null,
+            SQLiteDatabase.OPEN_READWRITE
+        )
+        try {
+            listOf(
+                "last_diagnostic_at",
+                "last_diagnostic_outcome",
+                "last_diagnostic_stage",
+                "last_diagnostic_error_category",
+                "last_diagnostic_message",
+                "last_diagnostic_latency_ms"
+            ).forEach { legacy.execSQL("ALTER TABLE known_peers DROP COLUMN $it") }
+            legacy.version = 6
+        } finally {
+            legacy.close()
+        }
+
+        val migrated = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            DaoVibeDatabase::class.java,
+            databaseFile.absolutePath
+        ).addMigrations(DaoVibeDatabase.MIGRATION_6_7)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val peer = migrated.daoVibeDao().getKnownPeer("remote_v6")
+            requireNotNull(peer)
+            assertEquals("pairing_v6", peer.pairingId)
+            assertEquals("success", peer.lastOutcome)
+            assertEquals("complete", peer.lastStage)
+            assertEquals("none", peer.lastErrorCategory)
+            assertEquals(2, peer.lastAttempts)
+            assertEquals(3, peer.lastImportedPackets)
+            assertEquals(4, peer.lastDuplicatePackets)
+            assertEquals(5, peer.lastExportedPackets)
+            assertEquals(6L, peer.lastSyncStartedAt)
+            assertEquals(7L, peer.lastSyncFinishedAt)
+            assertEquals("7:cursor", peer.lastCursor)
+            assertEquals(null, peer.lastDiagnosticAt)
+            assertEquals(null, peer.lastDiagnosticOutcome)
+            assertEquals(null, peer.lastDiagnosticStage)
+            assertEquals(null, peer.lastDiagnosticErrorCategory)
+            assertEquals(null, peer.lastDiagnosticMessage)
+            assertEquals(null, peer.lastDiagnosticLatencyMs)
         } finally {
             migrated.close()
         }

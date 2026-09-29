@@ -58,6 +58,9 @@ enum PeerCommand {
     Sync {
         node_id: String,
     },
+    Diagnose {
+        node_id: String,
+    },
     SyncAll,
     Invite {
         #[command(subcommand)]
@@ -217,7 +220,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             PeerCommand::List => {
                 for peer in node.store.peers()? {
                     println!(
-                        "{} {}:{} pairing={} health={}{}",
+                        "{} {}:{} pairing={} health={}{}{}",
                         peer.remote_node_id,
                         peer.host,
                         peer.port,
@@ -226,6 +229,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         peer.last_error
                             .as_deref()
                             .map(|v| format!(" error={v}"))
+                            .unwrap_or_default(),
+                        peer.last_diagnostic_outcome
+                            .as_deref()
+                            .map(|v| format!(
+                                " diagnose={v}/{}",
+                                peer.last_diagnostic_stage.as_deref().unwrap_or("unknown")
+                            ))
                             .unwrap_or_default()
                     );
                 }
@@ -242,6 +252,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             PeerCommand::Sync { node_id } => {
                 let result = node.sync_peer_result(&node_id);
                 println!("{}", format_peer_result(&result));
+            }
+            PeerCommand::Diagnose { node_id } => {
+                println!(
+                    "{}",
+                    format_peer_diagnose_result(&node.diagnose_peer_result(&node_id))
+                );
             }
             PeerCommand::SyncAll => {
                 for peer in node.store.peers()? {
@@ -290,6 +306,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 fn format_peer_result(result: &daovibe_desktop_node::node::PeerSyncResult) -> String {
     format!("remote={} outcome={:?} stage={} category={} attempts={} imported={} duplicates={} cursor={} message={}", result.remote_node_id, result.outcome, result.stage, result.error_category.as_ref().map(ToString::to_string).unwrap_or_else(|| "none".to_owned()), result.attempts, result.imported_packets, result.duplicate_packets, result.cursor.as_deref().unwrap_or("none"), result.message.as_deref().unwrap_or("none"))
+}
+fn format_peer_diagnose_result(result: &daovibe_desktop_node::node::PeerDiagnoseResult) -> String {
+    format!(
+        "remote={} outcome={:?} stage={} category={} latency_ms={} message={}",
+        result.remote_node_id,
+        result.outcome,
+        result.stage,
+        result
+            .error_category
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "none".to_owned()),
+        result
+            .latency_ms
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "none".to_owned()),
+        result.message.as_deref().unwrap_or("none")
+    )
 }
 fn parse_invite(payload: &str) -> Result<PeerInvite, Box<dyn std::error::Error>> {
     let now = unix_now();

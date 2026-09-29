@@ -72,11 +72,111 @@ class PeerSyncCoordinatorTest {
         assertEquals(PeerSyncStage.CONNECT, result.stage)
     }
 
+    @Test fun diagnoseSuccessUsesExactlyOneHandshakeAttempt() = runTest {
+        var calls = 0
+        val registry = FakeRegistry(listOf(peer("a")))
+        val coordinator = PeerSyncCoordinator(
+            registry = registry,
+            diagnoseOperation = {
+                calls += 1
+                ConnectionHandshakeResult.Accepted(
+                    message = acceptMessage(),
+                    session = session.copy(state = ConnectionSessionState.CONNECTED)
+                )
+            }
+        )
+
+        val result = coordinator.diagnoseOne("a")
+
+        assertEquals(1, calls)
+        assertEquals(PeerDiagnoseOutcome.SUCCESS, result.outcome)
+        assertEquals(1, registry.diagnoses.size)
+        assertEquals(null, result.errorCategory)
+    }
+
+    @Test fun diagnoseFailureUsesExactlyOneAttemptAndEvidenceBasedRejectCategories() = runTest {
+        val reasons = listOf(
+            ConnectionRejectReason.PAIRING_NOT_FOUND to PeerDiagnoseErrorCategory.PAIRING_MISMATCH,
+            ConnectionRejectReason.UNSUPPORTED_CONNECTION_VERSION to PeerDiagnoseErrorCategory.PROTOCOL_MISMATCH,
+            ConnectionRejectReason.INVALID_MESSAGE to PeerDiagnoseErrorCategory.REMOTE_REJECTED
+        )
+        reasons.forEach { (reason, expectedCategory) ->
+            var calls = 0
+            val registry = FakeRegistry(listOf(peer("a")))
+            val coordinator = PeerSyncCoordinator(
+                registry = registry,
+                diagnoseOperation = {
+                    calls += 1
+                    ConnectionHandshakeResult.Rejected(
+                        message = rejectMessage(reason),
+                        session = session.copy(
+                            state = ConnectionSessionState.REJECTED,
+                            rejectReason = reason
+                        )
+                    )
+                }
+            )
+
+            val result = coordinator.diagnoseOne("a")
+
+            assertEquals(1, calls)
+            assertEquals(PeerDiagnoseOutcome.FAILED, result.outcome)
+            assertEquals(expectedCategory, result.errorCategory)
+            assertEquals(1, registry.diagnoses.size)
+        }
+    }
+
+    @Test fun diagnoseFailureKeepsTransportEvidenceCategories() = runTest {
+        val registry = FakeRegistry(listOf(peer("a")))
+        val coordinator = PeerSyncCoordinator(
+            registry = registry,
+            diagnoseOperation = {
+                ConnectionHandshakeResult.Failed(
+                    failure = PeerTransportFailure(
+                        PeerTransportFailureCode.TRUNCATED_FRAME,
+                        "truncated first frame"
+                    ),
+                    session = session.copy(state = ConnectionSessionState.FAILED)
+                )
+            }
+        )
+
+        assertEquals(
+            PeerDiagnoseErrorCategory.MALFORMED_FRAME,
+            coordinator.diagnoseOne("a").errorCategory
+        )
+    }
+
+    private fun acceptMessage() = ConnectionAccept(
+        protocolVersion = CONNECTION_PROTOCOL_VERSION,
+        sessionId = session.sessionId,
+        sourceNodeId = session.remoteNodeId,
+        targetNodeId = session.localNodeId,
+        pairingId = session.pairingId,
+        acceptedAt = 1,
+        negotiatedConnectionVersion = CONNECTION_PROTOCOL_VERSION,
+        negotiatedPacketProtocolVersion = "lmp/0.1",
+        capabilities = emptySet(),
+        state = ConnectionSessionState.CONNECTED
+    )
+
+    private fun rejectMessage(reason: ConnectionRejectReason) = ConnectionReject(
+        protocolVersion = CONNECTION_PROTOCOL_VERSION,
+        sessionId = session.sessionId,
+        sourceNodeId = session.remoteNodeId,
+        targetNodeId = session.localNodeId,
+        pairingId = session.pairingId,
+        rejectedAt = 1,
+        reasonCode = reason
+    )
+
     private class FakeRegistry(private val peers: List<KnownPeer>) : PeerSyncRegistry {
         val successes = mutableListOf<String>()
+        val diagnoses = mutableListOf<PeerDiagnoseResult>()
         override suspend fun listPeers() = peers
         override suspend fun getPeer(remoteNodeId: String) = peers.firstOrNull { it.remoteNodeId == remoteNodeId }
         override suspend fun markSuccess(remoteNodeId: String) { successes += remoteNodeId }
         override suspend fun markFailure(remoteNodeId: String, error: String) = Unit
+        override suspend fun recordDiagnose(result: PeerDiagnoseResult) { diagnoses += result }
     }
 }
