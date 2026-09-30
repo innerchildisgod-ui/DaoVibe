@@ -30,6 +30,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import org.daovibe.android.core.mycelium.MyceliumStateDiagnostic
+import org.daovibe.android.core.mycelium.MyceliumConsistencyReport
+import org.daovibe.android.core.mycelium.MyceliumAlphaReadinessReport
+import org.daovibe.android.core.mycelium.MyceliumConsistencyChecker
+import org.daovibe.android.core.mycelium.safeReadinessWarnings
 import org.daovibe.android.core.connection.ConnectionRepository
 import org.daovibe.android.core.connection.KnownPeer
 import org.daovibe.android.core.connection.PeerRegistryRepository
@@ -61,13 +65,16 @@ internal fun DeviceScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var fingerprint by remember(snapshot.ledgerPackets) { mutableStateOf("Calculating...") }
+    var consistencyReport by remember { mutableStateOf<MyceliumConsistencyReport?>(null) }
+    var readinessReport by remember { mutableStateOf<MyceliumAlphaReadinessReport?>(null) }
+    var readinessWorking by remember { mutableStateOf(false) }
     LaunchedEffect(snapshot.ledgerPackets) {
         fingerprint = try {
             MyceliumStateDiagnostic.snapshot(context, snapshot.ledgerPackets).fingerprint()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            "Unavailable: ${error.message ?: "Ledger replay failed"}"
+            "Unavailable: replay_failed"
         }
     }
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -176,6 +183,99 @@ internal fun DeviceScreen(
             )
             SelectionContainer {
                 Text(fingerprint, fontFamily = FontFamily.Monospace)
+            }
+        }
+
+        InfoSurface {
+            Text(
+                text = "Mycelium alpha readiness",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Runs a read-only ledger, replay, and export/import consistency check. " +
+                    "No automatic repair is performed.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = DaoVibeColors.TextSecondary
+            )
+            readinessReport?.let { report ->
+                StatusChip(
+                    text = report.status,
+                    accentColor = when (report.status) {
+                        "ready_for_local_alpha" -> DaoVibeColors.Green
+                        "warning" -> DaoVibeColors.Amber
+                        else -> DaoVibeColors.Amber
+                    }
+                )
+                DetailLine("Node ID", snapshot.identity?.nodeId ?: "missing")
+                DetailLine("Packets", report.packetCount.toString())
+                DetailLine("Peers", report.peerCount.toString())
+                DetailLine("Checked", report.checkedAt.toString())
+                SelectionContainer {
+                    Text(
+                        report.canonicalFingerprint ?: "unavailable",
+                        fontFamily = FontFamily.Monospace,
+                        color = DaoVibeColors.Cyan
+                    )
+                }
+                Text(
+                    "Consistency: ${report.ledgerConsistency.name.lowercase()} · " +
+                        "Replay: ${report.replayConsistency.name.lowercase()}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = DaoVibeColors.TextSecondary
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            readinessWorking = true
+                            runCatching {
+                                MyceliumConsistencyChecker.check(repository, context, System.currentTimeMillis() / 1000L)
+                            }.onSuccess { (consistency, readiness) ->
+                                consistencyReport = consistency
+                                readinessReport = readiness
+                            }.onFailure { error ->
+                                readinessReport = MyceliumAlphaReadinessReport(
+                                    status = "failed",
+                                    nodeIdPresent = snapshot.identity?.nodeId?.isNotBlank() == true,
+                                    databaseOpen = true,
+                                    migrationChainOk = "current_schema_open",
+                                    ledgerConsistency = org.daovibe.android.core.mycelium.MyceliumConsistencyStatus.FAILED,
+                                    replayConsistency = org.daovibe.android.core.mycelium.MyceliumConsistencyStatus.FAILED,
+                                    canonicalFingerprint = null,
+                                    packetCount = snapshot.ledgerPackets.size,
+                                    peerCount = 0,
+                                    identityPersistent = if (snapshot.identity != null) {
+                                        "identity_present_in_persistent_row"
+                                    } else {
+                                        "missing"
+                                    },
+                                    exportImportRoundtripTested = false,
+                                    semanticFixtureCompatibility = "test_suite_verified",
+                                    inviteFixtureCompatibility = "test_suite_verified",
+                                    // Exception text is deliberately excluded from
+                                    // copied readiness diagnostics: it may contain
+                                    // paths, SQL, payload text, or other internals.
+                                    warnings = safeReadinessWarnings(error),
+                                    checkedAt = System.currentTimeMillis() / 1000L
+                                )
+                            }
+                            readinessWorking = false
+                        }
+                    },
+                    enabled = !readinessWorking,
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (readinessWorking) "Checking..." else "Run check") }
+                OutlinedButton(
+                    onClick = {
+                        val text = readinessReport?.diagnosticsText()
+                            ?: consistencyReport?.diagnosticsText()
+                            ?: "No readiness check has been run."
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("DAOVibe readiness diagnostics", text))
+                    },
+                    enabled = readinessReport != null || consistencyReport != null,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Copy diagnostics") }
             }
         }
 

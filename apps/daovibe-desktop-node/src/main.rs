@@ -1,5 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use daovibe_desktop_node::{
+    consistency::MyceliumConsistencyReport,
     invite::PeerInvite,
     mycelium::MyceliumStateSnapshot,
     node::{peer_health, DesktopNode},
@@ -42,6 +43,7 @@ enum Command {
     },
     State,
     StateHash,
+    MyceliumCheck,
     SyncStatus,
     Peer {
         #[command(subcommand)]
@@ -202,6 +204,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Command::StateHash => {
             let snapshot = MyceliumStateSnapshot::from_store(&node.store)?;
             println!("{}", snapshot.fingerprint());
+        }
+        Command::MyceliumCheck => {
+            let report: MyceliumConsistencyReport = node.store.consistency_report(unix_now())?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Command::SyncStatus => {
             let states = node.store.sync_states()?;

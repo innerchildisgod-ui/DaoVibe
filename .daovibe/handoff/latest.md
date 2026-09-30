@@ -401,4 +401,87 @@ Date: 2026-09-29
 - `git diff --check`: PASS (only existing LF/CRLF working-copy warnings). The worktree remains intentionally uncommitted. The pre-existing `apps/daovibe-android/build.gradle.kts` modification was not touched by this milestone. Helper prompt files remain untouched. No physical-device testing, firewall changes, commit, or push occurred.
 - Files changed for this milestone are the Android diagnose/Room/responder/UI and focused test files plus Rust node/storage/transport/CLI and focused tests; no new protocol message file or packet type was introduced. Unresolved issues: none for this milestone.
 
+---
+
+# Mycelium v0.1 Alpha Readiness + Recovery Hardening
+
+Date: 2026-09-29
+
+- Consistency checks: added read-only Android `MyceliumConsistencyReport` and Rust `mycelium-check` report. Checks cover structural identity, canonical ledger order, packet decode/validation, unique IDs, payload hash, packet ID, current development signatures, dependency-aware replay, canonical fingerprint, and exclusion of peer/Diagnose metadata.
+- Mutation boundary: resident Android/Rust stores are never repaired or rewritten by a check. Android uses an isolated in-memory Room database for fresh replay and export/import proof; Rust uses an isolated in-memory SQLite store. Ledger rows, cursors, peer health, sync diagnostics, Diagnose diagnostics, identity, and packets remain unchanged.
+- Replay verification: resident canonical reducer output is compared with a fresh dependency-aware ledger replay; mismatches are reported as `resident_state_mismatch`, with `dependency_unresolved`/`replay_failed` categories for replay errors.
+- Export/import round-trip: Android proves canonical export -> empty temporary Room import -> rebuild -> canonical JSON/fingerprint. Existing atomic import, idempotent duplicate handling, conflicting duplicate rejection, size/expiry/validation rules remain unchanged. Rust uses its current packet insertion/replay path in an isolated temporary store for equivalent round-trip proof; no incompatible format was added.
+- Corruption categories: bounded privacy-safe categories include `identity_missing`, `identity_invalid`, `packet_decode_failed`, `payload_hash_mismatch`, `packet_id_mismatch`, `signature_invalid`, `duplicate_packet_id_conflict`, `dependency_unresolved`, `replay_failed`, `resident_state_mismatch`, `migration_issue`, `export_roundtrip_failed`, and `unknown`.
+- Android readiness UI: Device screen now has explicit “Mycelium alpha readiness”, status, node ID, packet count, fingerprint, consistency/replay result, peer count, last check time, Run check, and Copy diagnostics. Copy output contains no payloads, secrets, invites, or credentials. No background polling or auto-repair was added.
+- Rust CLI: added top-level `mycelium-check`, emitting concise structured JSON without mutating ledger/cursor/peer metadata.
+- Room version/migrations: remains Room v7; `MIGRATION_6_7` and the existing v1->v7 chain are unchanged. No new schema change was needed.
+- Rust schema changes: none; the existing idempotent compatible SQLite extension remains unchanged.
+- Compatibility values remain exact:
+  - convergence `aea5b196398a17e03e3ba9f07d388709b654fc417956d1da6c5b1e754c841bc0`
+  - canonicalization edge `7b99d4871b0dc2460aa567e2d9c2a735102a316eb4191793fe635144cb9cc2ab`
+  - correction `455eb3d58a0527a45caf6196bb5dbcf9a40a697f7529acad973bdeb3ed3fbb6f`
+  - correction tombstone `82697458c19018e54ff8e0aa22f4ce7dc4f701c1b4598772e94797b16eba1a52`
+  - peer invite canonical bytes `353`; invite ID `957a1e5ba01a74a5532ff643cd45e6bd9f4c3ec3297fe0597f95eb91c188ddb9`
+- Android tests/build: `testDebugUnitTest` PASS, 190 tests, 0 failures; `assembleDebug` PASS. Added healthy read-only consistency/replay and diagnostics privacy coverage.
+- Rust fmt/clippy/tests: `fmt --check` PASS; clippy `--all-targets --all-features -- -D warnings` PASS; `cargo test` PASS, 54 library tests + 1 binary test, 0 failures, 0 doc-test failures.
+- Localhost sync: existing localhost sync regression remains green.
+- Diagnose: existing handshake-only Diagnose regression remains green and is excluded from semantic fingerprints/readiness payloads.
+- Three-node sync: existing production three-node convergence regression remains green.
+- `git diff --check`: PASS; only existing LF/CRLF working-copy warnings.
+- Build file untouched: `apps/daovibe-android/build.gradle.kts` remains the pre-existing user modification and was not touched.
+- Physical testing: no.
+- Firewall changes: no.
+- Commit/push: no.
+- Unresolved issues: none for this milestone. Alpha readiness is local-only and explicitly does not claim secure authentication, production readiness, discovery, Byzantine tolerance, censorship resistance, or cloud replacement.
+
+---
+
+# Mycelium v0.1 Alpha Readiness — correctness/audit repair pass
+
+Date: 2026-09-29
+
+This pass did not restart or expand the milestone. It corrected the review gaps in the existing consistency/readiness implementation.
+
+## Problems found and repairs
+
+1. Rust compared `from_packets(packets.clone())` with the same call, so the resident/fresh check was tautological. The resident side now uses the production `MyceliumStateSnapshot::from_store(&store)` path. The fresh side independently reads raw persisted packet rows, validates/decodes them, and replays that independently loaded list. Canonical JSON and fingerprint are both compared.
+2. Rust labels no longer imply validation without doing it. Every stored row is revalidated through the existing `Packet::from_json`/`Packet::validate` path used by normal storage/import logic. This checks canonical decode, payload hash, packet ID, required/expiry structure, and the current development signature rule. Raw row ID is compared with decoded packet ID; non-canonical stored JSON is rejected. Failures map to `packet_decode_failed`, `payload_hash_mismatch`, `packet_id_mismatch`, `signature_invalid`, `duplicate_packet_id_conflict`, `dependency_unresolved`, `replay_failed`, or `unknown`. Existing rows with past expiry remain historical ledger input; expiry is structurally validated, while import-time expiry rejection remains in the normal import path.
+3. SQLite `packets.packet_id` is a primary key, so duplicate physical rows are schema-impossible. A focused test proves that boundary. The checker still detects conflicting/ambiguous representations if corruption is introduced through a tampered row or mismatched stored ID; it does not pretend the schema can contain two rows with the same primary key.
+4. Android readiness failure fallback now uses only the bounded stable code `unknown`; raw exception text is never placed in copied readiness diagnostics. The fingerprint display fallback is also reduced to `replay_failed` rather than exposing exception text. A focused test proves fake secret/path/SQL text cannot appear in copied diagnostics.
+5. Readiness fields no longer claim unverified runtime facts. `database_open=true` means the explicit check is executing against an already-open Room database. `migration_chain_ok=current_schema_open` means only that current-schema access succeeded; it does not claim every historical migration was runtime-tested. Fixture fields are `test_suite_verified`, not hardcoded booleans: fixture execution remains owned by the existing compatibility tests and is not duplicated in production code. `identity_persistent` reports `identity_present_in_persistent_row` (or `missing`), meaning the identity was loaded from the persistent Room row, not that a write/persistence cycle was performed. Overall readiness is based on actual consistency/replay results, not fabricated fixture booleans.
+
+## Proof coverage
+
+- Android readiness round-trip now checks packet count, packet IDs, authors, canonical packet JSON, canonical derived state JSON, fingerprint, and a second import with zero new inserts. Existing `LocalMyceliumRepository.importLedgerJson` tests continue to prove deterministic conflicting-duplicate rejection and idempotence.
+- Rust round-trip uses the current packet canonical JSON/insertion path into a fresh in-memory `Store`, compares canonical state and fingerprint, and verifies the second insertion is idempotent. No new wire/export format was introduced.
+- Android and Rust read-only tests snapshot the packet ledger, sync cursor/state, sync success/failure timestamps, sync outcome/stage/category, imported/duplicate/exported counts, Diagnose timestamp/outcome/stage/category/message/latency, known-peer metadata, identity, and semantic fingerprint. After consistency/readiness, all snapshots remain equal. Rust additionally proves the SQLite primary-key duplicate boundary and revalidation of a tampered payload hash.
+
+## Compatibility and scope
+
+- Room remains version 7; no schema change was made.
+- Rust SQLite schema is unchanged.
+- Convergence fingerprint: `aea5b196398a17e03e3ba9f07d388709b654fc417956d1da6c5b1e754c841bc0`
+- Canonicalization edge fingerprint: `7b99d4871b0dc2460aa567e2d9c2a735102a316eb4191793fe635144cb9cc2ab`
+- Correction fingerprint: `455eb3d58a0527a45caf6196bb5dbcf9a40a697f7529acad973bdeb3ed3fbb6f`
+- Correction tombstone fingerprint: `82697458c19018e54ff8e0aa22f4ce7dc4f701c1b4598772e94797b16eba1a52`
+- Peer invite canonical bytes: `353`
+- Peer invite ID: `957a1e5ba01a74a5532ff643cd45e6bd9f4c3ec3297fe0597f95eb91c188ddb9`
+
+## Verification results
+
+- Android `testDebugUnitTest --no-daemon --console=plain`: PASS, **191 tests, 0 failures**.
+- Android `assembleDebug --no-daemon --console=plain`: PASS.
+- Rust `cargo +1.90.0-x86_64-pc-windows-gnu fmt --check`: PASS.
+- Rust `cargo +1.90.0-x86_64-pc-windows-gnu clippy --all-targets --all-features -- -D warnings`: PASS.
+- Rust `cargo +1.90.0-x86_64-pc-windows-gnu test`: PASS, **56 library tests + 1 binary test, 0 failures; 0 doc-test failures**.
+- Localhost sync regression: PASS (`node::tests::localhost_listener_accepts_handshake_and_sync_request`).
+- Diagnose regression: PASS (`node::tests::diagnose_is_one_handshake_only_and_preserves_ledger_state`, plus structured reject coverage).
+- Three-node regression: PASS (`node::tests::three_node_production_sync_converges_bidirectionally_without_direct_a_c_pairing`).
+- Root `git diff --check`: PASS; only existing LF/CRLF working-copy warnings.
+- `git status --short`: expected uncommitted milestone/audit files plus the pre-existing build-file and helper/prompt files; no reset/clean/revert/checkout/stash was used.
+
+`apps/daovibe-android/build.gradle.kts` remains the pre-existing modification and was untouched. No physical-device testing was performed. No firewall or network configuration was changed. No commit or push was performed. No node identities or compatibility fixtures were changed.
+
+Unresolved issues: none for this focused audit/repair pass. The readiness check remains local-only and does not claim secure authentication, discovery, Byzantine tolerance, or production deployment readiness.
+
 

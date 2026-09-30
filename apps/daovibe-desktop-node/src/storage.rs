@@ -318,6 +318,20 @@ impl Store {
         })?;
         Ok(values.collect::<Result<Vec<_>, _>>()?)
     }
+    /// Returns the persisted packet-id column together with its raw JSON.
+    /// This is intentionally separate from `packets_for_replay`: consistency
+    /// checks use it to re-run the normal `Packet::from_json` validator over
+    /// every stored row instead of treating the production replay query as a
+    /// validation result.
+    pub fn packet_rows_for_replay(&self) -> Result<Vec<(String, String)>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT packet_id,packet_json FROM packets ORDER BY created_at ASC,packet_id ASC",
+        )?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<(String, String)>, _>>()?;
+        Ok(rows)
+    }
     pub fn sync_states(&self) -> Result<Vec<(String, String, String, i64)>, StorageError> {
         let mut statement=self.connection.prepare("SELECT remote_node_id,pairing_id,inbound_cursor,updated_at FROM peer_sync_state ORDER BY remote_node_id ASC")?;
         let result = statement

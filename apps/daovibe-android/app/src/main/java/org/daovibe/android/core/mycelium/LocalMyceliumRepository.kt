@@ -65,6 +65,13 @@ class LocalMyceliumRepository(
     private val packetFactory = PacketFactory(nowSeconds)
     val identityRepository = DeviceIdentityRepository(dao, nowSeconds)
 
+    /** Read-only inputs for the explicit consistency/readiness check. */
+    internal suspend fun diagnosticPackets(): List<PacketEntity> = dao.listPacketsForReplay()
+
+    internal suspend fun diagnosticDeviceIdentity() = dao.getDeviceIdentity()
+
+    internal suspend fun diagnosticKnownPeerCount(): Int = dao.listKnownPeers().size
+
     fun observeSnapshot(): Flow<LocalMyceliumSnapshot> {
         val packetLists = combine(
             dao.observeRecentPackets(20),
