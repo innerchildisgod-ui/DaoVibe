@@ -790,5 +790,3 @@ Threat model: `docs/mycelium-v0.2-threat-model.md`. Transport:
 
 Next task is exactly `Mycelium v0.2A — Cryptographic Node Identity Foundation`
 in `.daovibe/tasks/NEXT_TASK.md`; do not begin it in this design run.
-
-
