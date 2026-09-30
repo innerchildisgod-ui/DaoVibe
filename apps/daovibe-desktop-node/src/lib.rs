@@ -5,6 +5,7 @@ pub mod models;
 pub mod mycelium;
 pub mod node;
 pub mod protocol;
+pub mod release;
 pub mod storage;
 pub mod transport;
 

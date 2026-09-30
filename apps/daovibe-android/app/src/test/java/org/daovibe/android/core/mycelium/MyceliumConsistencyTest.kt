@@ -36,7 +36,7 @@ class MyceliumConsistencyTest {
     fun tearDown() = database.close()
 
     @Test
-    fun healthyCheckIsReadOnlyAndFreshReplayMatches() = runTest {
+    fun alphaReleaseAcceptanceIsHealthyAndReadOnly() = runTest {
         repository.ensureDeviceIdentity()
         repository.observePhrase("read only consistency")
         val beforeLedger = repository.exportLedgerJson()
@@ -110,6 +110,48 @@ class MyceliumConsistencyTest {
     }
 
     @Test
+    fun alphaExportImportAcceptancePreservesFingerprintAndTargetIdentity() = runTest {
+        val sourceIdentity = repository.ensureDeviceIdentity()
+        repository.observePhrase("alpha acceptance phrase")
+        val phraseId = repository.rebuildDerivedStateFromLedger().phrases.single().phraseId
+        repository.proposeMeaning(phraseId, "alpha acceptance meaning", confidence = 0.75)
+        val sourceFingerprint = MyceliumStateDiagnostic.snapshot(
+            ApplicationProvider.getApplicationContext(),
+            repository.diagnosticPackets()
+        ).fingerprint()
+        val exported = repository.exportLedgerJson()
+
+        val isolated = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            DaoVibeDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val target = LocalMyceliumRepository(isolated, nowSeconds = { CHECKED_AT })
+            val targetIdentity = target.ensureDeviceIdentity()
+            target.importLedgerJson(exported, CHECKED_AT)
+            val (_, readiness) = MyceliumConsistencyChecker.check(
+                target,
+                ApplicationProvider.getApplicationContext(),
+                CHECKED_AT
+            )
+
+            assertEquals("ready_for_local_alpha", readiness.status)
+            assertEquals(sourceFingerprint, readiness.canonicalFingerprint)
+            assertEquals(2, readiness.packetCount)
+            assertEquals(targetIdentity, isolated.daoVibeDao().getDeviceIdentity()?.let {
+                org.daovibe.android.core.identity.DeviceIdentity(
+                    nodeId = it.nodeId,
+                    displayName = it.displayName,
+                    createdAt = it.createdAt
+                )
+            })
+            assertTrue(sourceIdentity.nodeId != targetIdentity.nodeId)
+        } finally {
+            isolated.close()
+        }
+    }
+
+    @Test
     fun copiedReadinessDiagnosticsContainNoPacketPayloadsOrSecrets() = runTest {
         repository.ensureDeviceIdentity()
         repository.observePhrase("private payload marker")
@@ -120,6 +162,9 @@ class MyceliumConsistencyTest {
         )
 
         val diagnostics = readiness.diagnosticsText()
+        assertTrue(diagnostics.contains("app_package="))
+        assertTrue(diagnostics.contains("app_version_name="))
+        assertTrue(diagnostics.contains("room_schema_version=7"))
         assertFalse(diagnostics.contains("private payload marker"))
         assertFalse(diagnostics.contains("payload"))
         assertFalse(diagnostics.contains("secret"))
@@ -128,6 +173,10 @@ class MyceliumConsistencyTest {
     @Test
     fun failureDiagnosticsUseOnlyBoundedStableIssueCode() {
         val report = MyceliumAlphaReadinessReport(
+            appPackage = "org.daovibe.android",
+            appVersionName = "0.1-alpha",
+            appVersionCode = 1,
+            roomSchemaVersion = 7,
             status = "failed",
             nodeIdPresent = false,
             databaseOpen = true,

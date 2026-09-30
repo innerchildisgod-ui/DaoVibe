@@ -236,6 +236,12 @@ internal fun DeviceScreen(
                                 readinessReport = readiness
                             }.onFailure { error ->
                                 readinessReport = MyceliumAlphaReadinessReport(
+                                    appPackage = context.packageName,
+                                    appVersionName = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown",
+                                    appVersionCode = context.packageManager.getPackageInfo(context.packageName, 0).let { info ->
+                                        if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+                                    },
+                                    roomSchemaVersion = org.daovibe.android.core.storage.DAO_VIBE_ROOM_SCHEMA_VERSION,
                                     status = "failed",
                                     nodeIdPresent = snapshot.identity?.nodeId?.isNotBlank() == true,
                                     databaseOpen = true,

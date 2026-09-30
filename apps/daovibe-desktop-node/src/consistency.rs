@@ -4,6 +4,7 @@ use crate::storage::{StorageError, Store};
 use serde::Serialize;
 
 const MAX_ISSUES: usize = 12;
+pub const RUST_SCHEMA_COMPATIBILITY: &str = "idempotent_sqlite_current_layout";
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -22,6 +23,8 @@ pub struct ConsistencyIssue {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MyceliumConsistencyReport {
+    pub package_version: String,
+    pub schema_compatibility: String,
     pub status: ConsistencyStatus,
     pub checked_at: i64,
     pub node_id: Option<String>,
@@ -187,6 +190,8 @@ impl Store {
             ConsistencyStatus::Healthy
         };
         Ok(MyceliumConsistencyReport {
+            package_version: env!("CARGO_PKG_VERSION").to_owned(),
+            schema_compatibility: RUST_SCHEMA_COMPATIBILITY.to_owned(),
             status,
             checked_at,
             node_id,
@@ -239,7 +244,7 @@ mod tests {
     use serde_json::Value;
 
     #[test]
-    fn healthy_consistency_check_is_read_only_and_replay_stable() {
+    fn alpha_release_acceptance_is_healthy_and_replay_stable() {
         let store = Store::open_in_memory().unwrap();
         store
             .insert_identity(&DeviceIdentity {
@@ -327,6 +332,58 @@ mod tests {
                 .fingerprint(),
             before_fingerprint
         );
+    }
+
+    #[test]
+    fn alpha_store_copy_acceptance_preserves_packets_and_fingerprint() {
+        let source = Store::open_in_memory().unwrap();
+        source
+            .insert_identity(&DeviceIdentity {
+                node_id: "mycelium_alpha_source".to_owned(),
+                display_name: "Alpha source".to_owned(),
+                created_at: 1_700_000_000,
+                platform: "desktop".to_owned(),
+                role: "independent_node".to_owned(),
+            })
+            .unwrap();
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../daovibe-android/app/src/test/resources/fixtures/mycelium_state_convergence.json"
+        ))
+        .unwrap();
+        for (index, value) in fixture["packets"].as_array().unwrap().iter().enumerate() {
+            let packet = Packet::from_value(value).unwrap();
+            assert!(source
+                .insert_packet(&packet, 1_701_000_000 + index as i64)
+                .unwrap());
+        }
+
+        let source_packets = source.packets_for_replay().unwrap();
+        let source_fingerprint = MyceliumStateSnapshot::from_store(&source)
+            .unwrap()
+            .fingerprint();
+        let target = Store::open_in_memory().unwrap();
+        target
+            .insert_identity(&DeviceIdentity {
+                node_id: "mycelium_alpha_target".to_owned(),
+                display_name: "Alpha target".to_owned(),
+                created_at: 1_700_000_001,
+                platform: "desktop".to_owned(),
+                role: "independent_node".to_owned(),
+            })
+            .unwrap();
+        for (index, packet) in source_packets.iter().enumerate() {
+            assert!(target
+                .insert_packet(packet, 1_702_000_000 + index as i64)
+                .unwrap());
+        }
+
+        let report = target.consistency_report(1_702_000_100).unwrap();
+        assert_eq!(report.status, ConsistencyStatus::Healthy);
+        assert_eq!(
+            report.canonical_fingerprint.as_deref(),
+            Some(source_fingerprint.as_str())
+        );
+        assert_eq!(target.packets_for_replay().unwrap(), source_packets);
     }
 
     #[test]

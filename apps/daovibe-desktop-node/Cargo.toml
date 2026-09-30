@@ -1,6 +1,6 @@
 [package]
 name = "daovibe-desktop-node"
-version = "0.1.0"
+version = "0.1.0-alpha"
 edition = "2021"
 rust-version = "1.90"
 description = "DAOVibe independent desktop node foundation"

@@ -313,7 +313,7 @@ Unchanged fingerprints: convergence `aea5b196398a17e03e3ba9f07d388709b654fc41795
 
 ---
 
-# Mycelium Peer Invite Bootstrap — audit and gap repair
+# Mycelium Peer Invite Bootstrap â€” audit and gap repair
 
 Peer invites/pairing remain development correlation only: not authentication, encryption, proof-of-possession, or MITM protection.
 
@@ -383,7 +383,7 @@ Verification: Android `testDebugUnitTest` PASS, 179 tests/0 failures (including 
 
 ---
 
-# Mycelium Handshake-Only Diagnose — completion update
+# Mycelium Handshake-Only Diagnose â€” completion update
 
 Date: 2026-09-29
 
@@ -412,7 +412,7 @@ Date: 2026-09-29
 - Replay verification: resident canonical reducer output is compared with a fresh dependency-aware ledger replay; mismatches are reported as `resident_state_mismatch`, with `dependency_unresolved`/`replay_failed` categories for replay errors.
 - Export/import round-trip: Android proves canonical export -> empty temporary Room import -> rebuild -> canonical JSON/fingerprint. Existing atomic import, idempotent duplicate handling, conflicting duplicate rejection, size/expiry/validation rules remain unchanged. Rust uses its current packet insertion/replay path in an isolated temporary store for equivalent round-trip proof; no incompatible format was added.
 - Corruption categories: bounded privacy-safe categories include `identity_missing`, `identity_invalid`, `packet_decode_failed`, `payload_hash_mismatch`, `packet_id_mismatch`, `signature_invalid`, `duplicate_packet_id_conflict`, `dependency_unresolved`, `replay_failed`, `resident_state_mismatch`, `migration_issue`, `export_roundtrip_failed`, and `unknown`.
-- Android readiness UI: Device screen now has explicit “Mycelium alpha readiness”, status, node ID, packet count, fingerprint, consistency/replay result, peer count, last check time, Run check, and Copy diagnostics. Copy output contains no payloads, secrets, invites, or credentials. No background polling or auto-repair was added.
+- Android readiness UI: Device screen now has explicit â€œMycelium alpha readinessâ€, status, node ID, packet count, fingerprint, consistency/replay result, peer count, last check time, Run check, and Copy diagnostics. Copy output contains no payloads, secrets, invites, or credentials. No background polling or auto-repair was added.
 - Rust CLI: added top-level `mycelium-check`, emitting concise structured JSON without mutating ledger/cursor/peer metadata.
 - Room version/migrations: remains Room v7; `MIGRATION_6_7` and the existing v1->v7 chain are unchanged. No new schema change was needed.
 - Rust schema changes: none; the existing idempotent compatible SQLite extension remains unchanged.
@@ -436,7 +436,7 @@ Date: 2026-09-29
 
 ---
 
-# Mycelium v0.1 Alpha Readiness — correctness/audit repair pass
+# Mycelium v0.1 Alpha Readiness â€” correctness/audit repair pass
 
 Date: 2026-09-29
 
@@ -483,5 +483,151 @@ This pass did not restart or expand the milestone. It corrected the review gaps 
 `apps/daovibe-android/build.gradle.kts` remains the pre-existing modification and was untouched. No physical-device testing was performed. No firewall or network configuration was changed. No commit or push was performed. No node identities or compatibility fixtures were changed.
 
 Unresolved issues: none for this focused audit/repair pass. The readiness check remains local-only and does not claim secure authentication, discovery, Byzantine tolerance, or production deployment readiness.
+
+---
+
+# Mycelium v0.1 Alpha Acceptance & Release Readiness
+
+Date: 2026-09-30
+
+## Release contract
+
+Created `docs/mycelium-v0.1-alpha.md`. The contract is local-first Mycelium
+semantic ledger only: Android light node, Rust desktop/heavy node, manual peers,
+development pairing correlation, bounded packet sync, deterministic convergence,
+canonical export/import, diagnostics, and a local alpha-readiness check. It
+explicitly excludes cryptographic authentication, encrypted transport guarantees,
+DHT/discovery, NAT traversal, Bluetooth/Wi-Fi Direct/hotspot mesh, anonymous
+identity, distributed cloud, compute/WASM, EEE, SBP, orchestrators, service
+modules, and production security certification. Pairing/invites remain
+development correlation only.
+
+## Files created/changed
+
+Created:
+
+- `docs/mycelium-v0.1-alpha.md`
+- `docs/mycelium-v0.1-physical-acceptance.md`
+- `docs/mycelium-v0.1-operator-guide.md`
+- `docs/mycelium-v0.1-recovery-drill.md`
+- `docs/mycelium-v0.1-artifacts.md`
+- `apps/daovibe-desktop-node/src/release.rs`
+
+Changed release/readiness code and tests:
+
+- Android app version metadata, Room schema constant, readiness diagnostics,
+  failure diagnostics construction, and two high-level acceptance tests.
+- Rust package/Cargo lock version, consistency report metadata, release blocker
+  model, and two high-level acceptance tests.
+- `.daovibe/tasks/NEXT_TASK.md` now names the next milestone exactly as
+  `Mycelium v0.2 — Cryptographic Identity & Authenticated Transport Design`
+  and records the plan-only topics: asymmetric node identity, signed packets,
+  authenticated handshake, encrypted transport, key persistence/recovery,
+  migration compatibility, and threat model.
+
+The pre-existing `apps/daovibe-android/build.gradle.kts` working-tree change was
+not touched (initial and final SHA-256:
+`A7C977BDEAD4CE0BD3EE061BB8651719D19D74D99F6E4F4CE438CCF9DBEAB932`). Helper
+prompt files were not touched.
+
+## Release diagnostics behavior
+
+Android reuses the existing read-only consistency/readiness checker. Copied
+readiness diagnostics now include exactly: `app_package`, `app_version_name`,
+`app_version_code`, `room_schema_version`, readiness `status`, `checked_at`,
+`node_id_present`, `database_open`, `migration_chain_ok`, `ledger_consistency`,
+`replay_consistency`, `canonical_fingerprint`, `packet_count`, `peer_count`,
+`identity_persistent`, `export_import_roundtrip_tested`,
+`semantic_fixture_compatibility`, `invite_fixture_compatibility`, and bounded
+`warnings`. Rust `mycelium-check` includes `package_version`,
+`schema_compatibility`, `status`, `checked_at`, `node_id`,
+`ledger_packet_count`, `derived_phrase_count`, `canonical_fingerprint`,
+`issues`, and `checks_performed`.
+
+Diagnostics exclude packet payload bodies, pairing secrets/PINs, invite payloads,
+filesystem secrets, and raw exception text. Peer/Diagnose metadata remains
+excluded from semantic fingerprints. No redundant readiness system was added.
+
+## Acceptance and recovery documentation
+
+The physical checklist covers identity persistence/distinct IDs, handshake-only
+Diagnose invariants, Androidâ†”desktop sync in both directions, restart
+persistence, repeated-sync idempotence, isolated export/import recovery,
+Aâ†”Bâ†”C propagation, and unreachable/wrong-correlation/protocol-mismatch cases.
+It is human execution only; no physical testing was performed.
+
+The operator guide was checked against the current Clap definitions for build,
+listener, identity/state/state-hash, ledger status, `mycelium-check`, peer
+list/add/remove/sync/sync-all/diagnose, invite and pairing commands, and Android
+build/APK paths. The recovery drill requires preserving the original export,
+non-empty verification, isolated import, packet count/ID/author/canonical JSON/
+fingerprint comparison, and a repeated idempotent import; it never deletes the
+live database and makes no backup-encryption claim.
+
+## Artifact inventory and metadata
+
+- Android package: `org.daovibe.android`.
+- Android version: `0.1-alpha`, version code `1`.
+- Android APK: `apps/daovibe-android/app/build/outputs/apk/debug/app-debug.apk`
+  (present; output metadata reports the same package/version/code).
+- Rust package/CLI: `0.1.0-alpha`; `daovibe-desktop --version` reports
+  `daovibe-desktop 0.1.0-alpha`.
+- Rust debug binary:
+  `apps/daovibe-desktop-node/target/debug/daovibe-desktop.exe` (present).
+- Optional release binary path is documented but was not built.
+- Compatibility fixtures remain under
+  `apps/daovibe-android/app/src/test/resources/fixtures/` and
+  `protocol-fixtures/`; no APK/EXE was added to Git.
+
+## Release blocker model
+
+`release::evaluate_alpha_release` is deterministic and test-covered. Fail/pass
+blockers are build failure, test failure, consistency failure, fingerprint
+compatibility regression, invite compatibility regression, migration/schema
+incompatibility, and privacy leak in diagnostics. Explicit warning entries are
+no cryptographic auth, manual peer configuration, no discovery, and development
+pairing only. The model does not call the release secure.
+
+## Verification
+
+- Room version: **7**; no Room migration was added.
+- Rust schema: no schema changes; existing idempotent SQLite layout, reported as
+  `idempotent_sqlite_current_layout`.
+- Compatibility fingerprints unchanged: convergence
+  `aea5b196398a17e03e3ba9f07d388709b654fc417956d1da6c5b1e754c841bc0`,
+  canonicalization edge
+  `7b99d4871b0dc2460aa567e2d9c2a735102a316eb4191793fe635144cb9cc2ab`,
+  correction
+  `455eb3d58a0527a45caf6196bb5dbcf9a40a697f7529acad973bdeb3ed3fbb6f`,
+  correction tombstone
+  `82697458c19018e54ff8e0aa22f4ce7dc4f701c1b4598772e94797b16eba1a52`.
+- Peer invite canonical bytes: **353**; invite ID:
+  `957a1e5ba01a74a5532ff643cd45e6bd9f4c3ec3297fe0597f95eb91c188ddb9`.
+- Android high-level acceptance: production phrase/meaning creation, export,
+  isolated Room import, readiness/fingerprint verification, and target identity
+  preservation; **192 tests, 0 failures**, including the named alpha acceptance
+  checks.
+- Android `testDebugUnitTest --no-daemon --console=plain`: **PASS**.
+- Android `assembleDebug --no-daemon --console=plain`: **PASS**.
+- Rust high-level acceptance: production `insert_packet` copy into an isolated
+  second Store, readiness/fingerprint comparison; **58 library tests + 1 binary
+  test passed, 0 failures, 0 doc-test failures**.
+- Rust `cargo +1.90.0-x86_64-pc-windows-gnu fmt --check`: **PASS**.
+- Rust clippy (`--all-targets --all-features -- -D warnings`): **PASS**.
+- Rust `cargo +1.90.0-x86_64-pc-windows-gnu test`: **PASS**.
+- Rust `cargo +1.90.0-x86_64-pc-windows-gnu build`: **PASS**.
+- Localhost sync regression: **PASS** (`localhost_listener_accepts_handshake_and_sync_request`).
+- Diagnose regression: **PASS** (`diagnose_is_one_handshake_only_and_preserves_ledger_state`, plus structured rejects).
+- Three-node production sync regression: **PASS** (`three_node_production_sync_converges_bidirectionally_without_direct_a_c_pairing`).
+- `git diff --check`: **PASS** (only existing LF/CRLF working-copy warnings).
+- Git status: branch `android-rebuild` at `f638b11`, tracking local
+  `origin/android-rebuild`; expected uncommitted release/docs/code changes, the
+  protected pre-existing Gradle edit, and existing helper prompt files remain.
+
+Physical testing: **no**. Firewall changes: **no**. Commit/push/tag: **no**.
+Unresolved issues: none for this alpha-readiness milestone; Android compiler
+emits only existing API-deprecation warnings for the pre-28 versionCode fallback.
+
+The worktree remains intentionally uncommitted.
 
 

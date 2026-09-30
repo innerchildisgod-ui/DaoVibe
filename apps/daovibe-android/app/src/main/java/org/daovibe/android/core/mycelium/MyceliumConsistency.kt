@@ -1,10 +1,12 @@
 package org.daovibe.android.core.mycelium
 
 import android.content.Context
+import android.os.Build
 import androidx.room.Room
 import org.daovibe.android.core.protocol.PacketJsonCodec
 import org.daovibe.android.core.protocol.PacketValidator
 import org.daovibe.android.core.storage.DaoVibeDatabase
+import org.daovibe.android.core.storage.DAO_VIBE_ROOM_SCHEMA_VERSION
 import org.daovibe.android.core.storage.PacketEntity
 
 enum class MyceliumConsistencyStatus { HEALTHY, WARNING, FAILED }
@@ -56,6 +58,10 @@ data class MyceliumConsistencyReport(
 }
 
 data class MyceliumAlphaReadinessReport(
+    val appPackage: String,
+    val appVersionName: String,
+    val appVersionCode: Long,
+    val roomSchemaVersion: Int,
     val status: String,
     val nodeIdPresent: Boolean,
     val databaseOpen: Boolean,
@@ -76,6 +82,10 @@ data class MyceliumAlphaReadinessReport(
     val checkedAt: Long
 ) {
     fun diagnosticsText(): String = buildString {
+        appendLine("app_package=$appPackage")
+        appendLine("app_version_name=$appVersionName")
+        appendLine("app_version_code=$appVersionCode")
+        appendLine("room_schema_version=$roomSchemaVersion")
         appendLine("Mycelium alpha readiness: $status")
         appendLine("checked_at=$checkedAt")
         appendLine("node_id_present=$nodeIdPresent")
@@ -230,6 +240,12 @@ internal object MyceliumConsistencyChecker {
             else -> "ready_for_local_alpha"
         }
         val readiness = MyceliumAlphaReadinessReport(
+            appPackage = context.packageName,
+            appVersionName = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown",
+            appVersionCode = context.packageManager.getPackageInfo(context.packageName, 0).let { info ->
+                if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+            },
+            roomSchemaVersion = DAO_VIBE_ROOM_SCHEMA_VERSION,
             status = readinessStatus,
             nodeIdPresent = identity?.nodeId?.isNotBlank() == true,
             databaseOpen = true,

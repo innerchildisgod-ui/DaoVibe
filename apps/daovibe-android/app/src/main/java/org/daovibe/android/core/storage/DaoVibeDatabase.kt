@@ -5,6 +5,8 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
+const val DAO_VIBE_ROOM_SCHEMA_VERSION = 7
+
 @Database(
     entities = [
         DeviceIdentityEntity::class,
@@ -18,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PairingRecordEntity::class,
         PendingPairingOfferEntity::class
     ],
-    version = 7,
+    version = DAO_VIBE_ROOM_SCHEMA_VERSION,
     exportSchema = false
 )
 abstract class DaoVibeDatabase : RoomDatabase() {
