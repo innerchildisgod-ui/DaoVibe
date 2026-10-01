@@ -1,19 +1,19 @@
 # NEXT TASK
 
-Mycelium v0.2A — Cryptographic Node Identity Foundation
+Mycelium v0.2B — Real Packet Signatures
 
 Plan only:
 
-- standard identity signing algorithm selected by ADR
-- Android secure key persistence
-- Rust/Windows secure key persistence
-- public key + fingerprint
-- bind existing node_id to key
-- explicit trust-state data model
-- no packet-signature migration yet
+- versioned Ed25519 signature envelope
+- domain-separated canonical signing preimage
+- author public-key lookup
+- legacy v0.1 packet compatibility
+- no historical packet rewrites
+- Android/Rust cross-language signature vectors
+- import/validation policy
+- unchanged packet_id semantics
+- unchanged four semantic fingerprints
+- unchanged invite v1 fixture
 - no encrypted transport yet
-- preserve v0.1 packet/state fingerprints
-- migration tests
-- Android/Rust interoperability fixture for public key/fingerprint
 
-Do NOT implement v0.2A now.
+Do NOT implement v0.2B now.

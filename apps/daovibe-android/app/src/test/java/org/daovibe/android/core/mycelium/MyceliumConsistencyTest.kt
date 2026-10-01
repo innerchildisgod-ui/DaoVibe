@@ -164,10 +164,12 @@ class MyceliumConsistencyTest {
         val diagnostics = readiness.diagnosticsText()
         assertTrue(diagnostics.contains("app_package="))
         assertTrue(diagnostics.contains("app_version_name="))
-        assertTrue(diagnostics.contains("room_schema_version=7"))
+        assertTrue(diagnostics.contains("room_schema_version=8"))
         assertFalse(diagnostics.contains("private payload marker"))
         assertFalse(diagnostics.contains("payload"))
         assertFalse(diagnostics.contains("secret"))
+        assertFalse(diagnostics.contains("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"))
+        assertFalse(diagnostics.contains("ciphertext"))
     }
 
     @Test

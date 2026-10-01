@@ -79,7 +79,14 @@ data class MyceliumAlphaReadinessReport(
     val semanticFixtureCompatibility: String,
     val inviteFixtureCompatibility: String,
     val warnings: List<String>,
-    val checkedAt: Long
+    val checkedAt: Long,
+    val identityKeyScheme: String? = null,
+    val identityKeyState: String = "uninitialized",
+    val identityPublicKeyPresent: Boolean = false,
+    val identityKeyFingerprint: String? = null,
+    val identityKeyCreatedAt: Long? = null,
+    val secureStorageBackend: String? = null,
+    val hardwareBacked: Boolean? = null
 ) {
     fun diagnosticsText(): String = buildString {
         appendLine("app_package=$appPackage")
@@ -97,6 +104,13 @@ data class MyceliumAlphaReadinessReport(
         appendLine("packet_count=$packetCount")
         appendLine("peer_count=$peerCount")
         appendLine("identity_persistent=$identityPersistent")
+        appendLine("identity_key_scheme=${identityKeyScheme ?: "unavailable"}")
+        appendLine("identity_key_state=$identityKeyState")
+        appendLine("identity_public_key_present=$identityPublicKeyPresent")
+        appendLine("identity_key_fingerprint=${identityKeyFingerprint ?: "unavailable"}")
+        appendLine("identity_key_created_at=${identityKeyCreatedAt ?: "unavailable"}")
+        appendLine("secure_storage_backend=${secureStorageBackend ?: "unavailable"}")
+        appendLine("hardware_backed=${hardwareBacked ?: "unknown"}")
         appendLine("export_import_roundtrip_tested=$exportImportRoundtripTested")
         appendLine("semantic_fixture_compatibility=$semanticFixtureCompatibility")
         appendLine("invite_fixture_compatibility=$inviteFixtureCompatibility")
@@ -260,7 +274,14 @@ internal object MyceliumConsistencyChecker {
             semanticFixtureCompatibility = "test_suite_verified",
             inviteFixtureCompatibility = "test_suite_verified",
             warnings = issues.map { it.code.name.lowercase() },
-            checkedAt = checkedAt
+            checkedAt = checkedAt,
+            identityKeyScheme = identity?.identityKeyScheme,
+            identityKeyState = identity?.identityKeyState ?: "uninitialized",
+            identityPublicKeyPresent = !identity?.identityPublicKey.isNullOrBlank(),
+            identityKeyFingerprint = identity?.identityKeyFingerprint,
+            identityKeyCreatedAt = identity?.identityKeyCreatedAt,
+            secureStorageBackend = identity?.identitySecureStorageBackend,
+            hardwareBacked = identity?.identityHardwareBacked
         )
         return report to readiness
     }

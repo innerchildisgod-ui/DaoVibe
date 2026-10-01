@@ -791,4 +791,211 @@ Threat model: `docs/mycelium-v0.2-threat-model.md`. Transport:
 Next task is exactly `Mycelium v0.2A — Cryptographic Node Identity Foundation`
 in `.daovibe/tasks/NEXT_TASK.md`; do not begin it in this design run.
 
+# Mycelium v0.2A Cryptographic Node Identity Foundation
+
+Date: 2026-09-30. Implemented only v0.2A. Packet signatures, transport
+encryption, HELLO/ACCEPT/REJECT, pairing, invite v1, Diagnose, sync framing,
+packet JSON, packet IDs, and export/import behavior were not changed.
+
+## Files changed
+
+Android: `app/build.gradle.kts`, `MainActivity.kt`, identity models/repository,
+`CryptoIdentity.kt`, Room entities/DAO/database, `LocalMyceliumRepository.kt`,
+readiness diagnostics, Device UI, migration tests, identity tests, and the
+Android copy of `mycelium_identity_ed25519.json`.
+
+Rust: `Cargo.toml`/`Cargo.lock`, `crypto.rs`, `lib.rs`, CLI identity output,
+`DesktopNode` identity service/tests, and SQLite additive storage/trust model.
+Shared fixture: `shared/fixtures/mycelium_identity_ed25519.json`.
+Documentation: ADR resolution, key-storage implementation facts, the duplicated
+implementation-plan discrepancy, and `.daovibe/tasks/NEXT_TASK.md`.
+
+## Identity audit and implementation
+
+Android previously persisted only `device_identity(id,node_id,display_name,
+created_at)` and generated `mycelium_node_` plus 16 UUID hex characters.
+Rust previously persisted `device_identity(id,node_id,display_name,created_at,
+platform,role)` and generated `mycelium_node_` plus a 32-hex SHA-256 prefix over
+desktop/time/process/current-directory inputs. Both paths remain unchanged.
+
+Android uses Bouncy Castle `bcprov-jdk18on:1.82` Ed25519 operations. The API-26
+capability spike did not justify assuming direct Ed25519 Android Keystore
+support, so the vetted fallback is a Keystore AES/GCM/NoPadding wrapping key.
+Every wrap uses a fresh random 12-byte IV, version byte, and authenticated
+node/scheme AAD; only IV+ciphertext metadata is in preferences. Hardware-backed
+status is read from `KeyInfo` where available and otherwise reported unknown.
+The test adapter is in-memory only and is never used by `MainActivity`.
+
+Rust uses `ed25519-dalek:2.2.0` and `base64:0.22`; Windows uses user-scoped
+DPAPI through `windows-sys:0.59`. `identity-key-v1.bin` is versioned, binds the
+existing node ID, carries public/fingerprint metadata, and is atomically
+created with a no-clobber rename after protection; existing material is
+recovered/validated and never overwritten. The data directory remains `%LOCALAPPDATA%\\DAOVibe`
+by default. No plaintext seed is written.
+
+Canonical public key is raw 32-byte Ed25519 encoded as unpadded base64url.
+Fingerprint is SHA-256(raw public key), lowercase 64-character hex; grouped
+display is four hex characters separated by spaces. Local states are
+`uninitialized`, `available`, `unavailable`, `revoked`. Peer trust states are
+`legacy_unverified`, `pending_verification`, `trusted`, `key_changed`, and
+`revoked`; migrated peers are never auto-trusted.
+
+First initialization binds exactly one key to the existing node ID. Restart
+loads the same public key/fingerprint. Missing, corrupt, unprotectable, or
+mismatched private material changes an existing binding to `unavailable` and
+never silently regenerates a replacement. Ledger-only restore therefore keeps
+historical packets readable while identity signing readiness is unavailable;
+private identity material is not in ledger export.
+
+## Schema and diagnostics
+
+Android Room is now v8. `MIGRATION_7_8` additively adds nullable local identity
+metadata and nullable peer pins/verification timestamps plus non-null
+`trust_state DEFAULT 'legacy_unverified'`. The migration is column-idempotent
+for the repository's existing migration harness. Node IDs, packets, and peers
+are untouched.
+
+Rust creates additive `identity_crypto` and `peer_trust` tables during the
+existing SQLite initialization and seeds peer trust rows as legacy-unverified;
+existing device identity and packet tables are preserved. The additive schema
+is idempotent and does not rewrite semantic packet storage.
+
+Readiness and UI expose scheme, state, public-key-present, fingerprint, key
+creation time, backend, and hardware-backed/unknown only. Private seeds,
+wrapping keys, decrypted material, and raw provider exceptions are not exposed.
+Android Device shows the same safe fields. Rust `identity` prints node ID,
+scheme, public key, fingerprint, state, backend, and hardware status only.
+
+## Shared fixture and compatibility
+
+Fixture: `shared/fixtures/mycelium_identity_ed25519.json` (mirrored in Android
+test resources), RFC8032 test-only seed, node binding
+`mycelium_node_crypto_fixture`, public key
+`11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo`, fingerprint
+`21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9`, grouped
+`21fe 31df a154 a261 626b f854 046f d227 1b7b ed4b 6abe 45aa 5887 7ef4 7f97 21b9`.
+Android and Rust assert identical encoding and fingerprint. The test seed is
+clearly test-only and never used at runtime.
+
+The four semantic fingerprints remain unchanged:
+`aea5b196398a17e03e3ba9f07d388709b654fc417956d1da6c5b1e754c841bc0`,
+`7b99d4871b0dc2460aa567e2d9c2a735102a316eb4191793fe635144cb9cc2ab`,
+`455eb3d58a0527a45caf6196bb5dbcf9a40a697f7529acad973bdeb3ed3fbb6f`,
+`82697458c19018e54ff8e0aa22f4ce7dc4f701c1b4598772e94797b16eba1a52`.
+Invite v1 remains 353 canonical bytes with ID
+`957a1e5ba01a74a5532ff643cd45e6bd9f4c3ec3297fe0597f95eb91c188ddb9`.
+
+## Verification
+
+- Android `testDebugUnitTest --no-daemon`: provisional pre-review run (superseded
+  by the 201-test acceptance run recorded below).
+- Android `assembleDebug --no-daemon`: PASS.
+- Rust `cargo +1.90.0-x86_64-pc-windows-gnu fmt --check`: PASS.
+- Rust clippy all targets/features with `-D warnings`: PASS.
+- Rust cargo test: PASS, 60 library tests + 1 binary test, 0 doc-test failures.
+- Rust identity test covers restart persistence and missing-key fail-closed.
+- Android identity tests cover fixture parity, idempotence, restart metadata,
+  and missing-secret unavailable state; Room migration tests cover v7/v8 and
+  old-ledger preservation/trust default.
+- Localhost sync, Diagnose, three-node convergence, four semantic fixtures,
+  invite v1, packet dev-signature behavior, and canonical packet JSON remain
+  covered by the passing regression suites.
+- `git diff --check`: PASS (only existing LF/CRLF warnings).
+
+No physical-device testing. No Windows firewall changes. No commit, push, or
+tag. The protected pre-existing `apps/daovibe-android/build.gradle.kts` was not
+touched. The five helper prompt files remain pre-existing untracked files.
+
+Unresolved: direct Ed25519 hardware-keystore capability remains provider/device
+dependent and is surfaced as hardware-backed/unknown; v0.2A intentionally does
+not add rotation, packet signatures, authenticated transport, or recovery UX.
+
+Exact next milestone in `NEXT_TASK.md`: **Mycelium v0.2B — Real Packet
+Signatures**, plan only (versioned Ed25519 envelope, canonical preimage,
+author-key lookup, legacy compatibility, cross-language vectors, and unchanged
+packet IDs/fingerprints/invite v1; no encrypted transport).
+
+## v0.2A review/repair verification amendment (2026-10-01)
+
+This amendment supersedes the provisional counts and any “atomically replaced”
+wording above. The review repaired compile errors, bound-key scheme validation,
+Rust DPAPI node-bound entropy, secure-first recovery, no-clobber atomic key-file
+creation, production migration registration, and added the focused failure and
+migration tests below.
+
+- v0.2A complete: **yes**. No v0.2B packet-signature or encrypted-transport
+  code was started.
+- Android production wiring: `MainActivity` calls
+  `createProductionIdentitySecretStorage(applicationContext)`, which returns
+  `AndroidKeystoreIdentitySecretStorage`, and injects that same instance into
+  `LocalMyceliumRepository`, `PairingRepository`, `ConnectionRepository`, and
+  `PeerRegistryRepository`. `InMemoryIdentitySecretStorage` appears only in
+  identity unit tests; production has no in-memory default. Other non-production
+  helpers fail closed with `UnavailableIdentitySecretStorage`.
+- Android crypto: Bouncy Castle `bcprov-jdk18on:1.82` Ed25519 from a 32-byte
+  seed; Keystore AES/GCM/NoPadding wrapping with a stable node-derived alias,
+  fresh 12-byte IV per wrap, version byte, and AAD
+  `daovibe/identity-wrap/v1|<node_id>|ed25519`. SharedPreferences stores only
+  base64 ciphertext blob (IV plus ciphertext/tag); plaintext seed and wrapping
+  key are never persisted or displayed. `KeyInfo.isInsideSecureHardware` is
+  reported when available and otherwise `unknown`; no hardware claim is made.
+- Android failure behavior: first-run secure write precedes DB metadata; a
+  secure-first/DB-failed restart recovers the existing secret, while any
+  existing DB binding with missing, corrupt, unavailable, scheme-mismatched, or
+  public-key/fingerprint-mismatched material becomes `unavailable` and never
+  regenerates or overwrites a key. Remaining limitation: DB and secure-store
+  writes are not one physical transaction, so recovery is intentionally
+  fail-closed/deterministic rather than crash-atomic across both stores.
+- Room: schema version 8; additive `MIGRATION_7_8` adds identity metadata and
+  peer pin/trust fields, and `DaoVibeDatabase.ALL_MIGRATIONS` is registered by
+  the production builder. Node IDs, packets, peers, and pairing rows are
+  retained; migrated known peers default to `legacy_unverified`.
+- Rust crypto: `ed25519-dalek:2.2.0`, `base64:0.22.1`, and `windows-sys:0.59.0`.
+  DPAPI is user-scoped with `CRYPTPROTECT_UI_FORBIDDEN` and node-derived
+  optional entropy. `identity-key-v1.bin` is bounds-checked/versioned and
+  contains node binding plus stored public key; protected seed public key and
+  DB fingerprint are cross-checked. Creation writes a unique temp file,
+  flushes/syncs, and performs an atomic no-clobber rename; an existing file is
+  recovered/validated and is never clobbered. Missing/corrupt/mismatched files
+  mark an existing binding unavailable.
+- Rust schema: additive `identity_crypto` and `peer_trust` tables, idempotent
+  column additions, `PRAGMA user_version` advanced to 2, and existing peers
+  seeded with `legacy_unverified`. Packet storage and semantics are unchanged.
+- Shared fixture: `shared/fixtures/mycelium_identity_ed25519.json`, seed
+  `9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60` (test
+  only), public key base64url
+  `11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo`, fingerprint
+  `21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9`.
+- Verification: Android `testDebugUnitTest --no-daemon` **PASS, 201 tests,
+  0 failures/errors/skips**; `assembleDebug --no-daemon` **PASS**. Rust fmt
+  `--check` **PASS**; clippy all targets/features with `-D warnings` **PASS**;
+  `cargo test` **PASS, 64 library + 1 binary tests, 0 failures, 0 doc-test
+  failures**. The Windows DPAPI integration test ran on this Windows host.
+  Existing localhost handshake/sync/Diagnose and three-node compatibility
+  tests remain green.
+- Compatibility remains exact: semantic fingerprints
+  `aea5b196398a17e03e3ba9f07d388709b654fc417956d1da6c5b1e754c841bc0`,
+  `7b99d4871b0dc2460aa567e2d9c2a735102a316eb4191793fe635144cb9cc2ab`,
+  `455eb3d58a0527a45caf6196bb5dbcf9a40a697f7529acad973bdeb3ed3fbb6f`, and
+  `82697458c19018e54ff8e0aa22f4ce7dc4f701c1b4598772e94797b16eba1a52`; invite
+  v1 canonical bytes `353`, ID
+  `957a1e5ba01a74a5532ff643cd45e6bd9f4c3ec3297fe0597f95eb91c188ddb9`.
+- Packet signature behavior: **unchanged** (`dev_signature` v0.1 behavior).
+  Transport/HELLO/ACCEPT/REJECT/framing/sync/pairing/Diagnose behavior:
+  **unchanged**. Physical phone testing: **no**. Firewall changes: **no**.
+  Commit/push/tag: **no**. The protected root
+  `apps/daovibe-android/build.gradle.kts` was not touched during this pass;
+  its pre-existing worktree modification remains unstaged. The five helper
+  prompt files remain untouched/untracked.
+- Final worktree checks: `git diff --check` **PASS**; changes remain
+  uncommitted and unstaged. Unresolved risks are provider/device-dependent
+  hardware-backed reporting and the deliberate lack of cross-store physical
+  transaction/rotation/recovery UX; these are outside v0.2A.
+
+Exact next milestone remains **Mycelium v0.2B — Real Packet Signatures**,
+plan only: versioned Ed25519 envelope, domain-separated canonical preimage,
+public-key lookup, legacy v0.1 compatibility, cross-language vectors and
+import/validation policy, with unchanged packet IDs/fingerprints/invite v1 and
+no encrypted transport.
+
 

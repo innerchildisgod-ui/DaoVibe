@@ -10,7 +10,14 @@ data class DeviceIdentityEntity(
     @PrimaryKey val id: Int,
     @ColumnInfo(name = "node_id") val nodeId: String,
     @ColumnInfo(name = "display_name") val displayName: String,
-    @ColumnInfo(name = "created_at") val createdAt: Long
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "identity_key_scheme") val identityKeyScheme: String? = null,
+    @ColumnInfo(name = "identity_public_key") val identityPublicKey: String? = null,
+    @ColumnInfo(name = "identity_key_fingerprint") val identityKeyFingerprint: String? = null,
+    @ColumnInfo(name = "identity_key_created_at") val identityKeyCreatedAt: Long? = null,
+    @ColumnInfo(name = "identity_key_state") val identityKeyState: String? = null,
+    @ColumnInfo(name = "identity_secure_storage_backend") val identitySecureStorageBackend: String? = null,
+    @ColumnInfo(name = "identity_hardware_backed") val identityHardwareBacked: Boolean? = null
 )
 
 @Entity(
@@ -167,7 +174,13 @@ data class KnownPeerEntity(
     @ColumnInfo(name = "last_diagnostic_stage") val lastDiagnosticStage: String? = null,
     @ColumnInfo(name = "last_diagnostic_error_category") val lastDiagnosticErrorCategory: String? = null,
     @ColumnInfo(name = "last_diagnostic_message") val lastDiagnosticMessage: String? = null,
-    @ColumnInfo(name = "last_diagnostic_latency_ms") val lastDiagnosticLatencyMs: Long? = null
+    @ColumnInfo(name = "last_diagnostic_latency_ms") val lastDiagnosticLatencyMs: Long? = null,
+    @ColumnInfo(name = "pinned_public_key") val pinnedPublicKey: String? = null,
+    @ColumnInfo(name = "pinned_fingerprint") val pinnedFingerprint: String? = null,
+    @ColumnInfo(name = "trust_state") val trustState: String = org.daovibe.android.core.identity.PeerTrustState.LEGACY_UNVERIFIED,
+    @ColumnInfo(name = "first_verified_at") val firstVerifiedAt: Long? = null,
+    @ColumnInfo(name = "last_verified_at") val lastVerifiedAt: Long? = null,
+    @ColumnInfo(name = "key_change_detected_at") val keyChangeDetectedAt: Long? = null
 )
 
 @Entity(

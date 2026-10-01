@@ -1,3 +1,6 @@
+use crate::crypto::{
+    self, IdentityCryptoError, IdentityCryptoMetadata, IDENTITY_KEY_STATE_UNAVAILABLE,
+};
 use crate::invite::{InviteError, PeerInvite};
 use crate::models::{sha256, DeviceIdentity};
 use crate::protocol::{
@@ -220,6 +223,7 @@ fn classify_error(error: &NodeError) -> (PeerSyncStage, PeerSyncErrorCategory) {
             (PeerSyncStage::Connect, category)
         }
         NodeError::Invalid(message) => classify_invalid_message(message),
+        NodeError::Identity(_) => (PeerSyncStage::Connect, PeerSyncErrorCategory::Unknown),
         NodeError::Json(_) => (PeerSyncStage::Hello, PeerSyncErrorCategory::MalformedFrame),
         NodeError::Invite(_) => (
             PeerSyncStage::Accept,
@@ -331,7 +335,8 @@ fn classify_diagnose_error(
         }
         NodeError::Protocol(ProtocolError::Packet(_))
         | NodeError::Storage(_)
-        | NodeError::Invite(_) => (
+        | NodeError::Invite(_)
+        | NodeError::Identity(_) => (
             PeerDiagnoseStage::Accept,
             PeerDiagnoseErrorCategory::Unknown,
         ),
@@ -354,6 +359,8 @@ pub enum NodeError {
     Invalid(String),
     #[error("invite: {0}")]
     Invite(#[from] InviteError),
+    #[error("identity: {0}")]
+    Identity(#[from] IdentityCryptoError),
 }
 
 pub struct DesktopNode {
@@ -393,6 +400,35 @@ impl DesktopNode {
         };
         self.store.insert_identity(&identity)?;
         Ok(self.store.identity()?.expect("identity was inserted"))
+    }
+
+    /// Bind one persistent Ed25519 key to the existing immutable node ID.
+    /// An existing binding is verified and never silently replaced.
+    pub fn ensure_identity_key(&self) -> Result<IdentityCryptoMetadata, NodeError> {
+        let identity = self.ensure_identity()?;
+        let existing = self.store.identity_crypto()?;
+        match crypto::load_or_create(
+            &self.data_dir,
+            &identity.node_id,
+            existing.as_ref(),
+            identity.created_at,
+        ) {
+            Ok(metadata) => {
+                self.store.upsert_identity_crypto(&metadata)?;
+                Ok(metadata)
+            }
+            Err(error) => {
+                if let Some(mut metadata) = existing {
+                    metadata.identity_key_state = IDENTITY_KEY_STATE_UNAVAILABLE.to_owned();
+                    self.store.upsert_identity_crypto(&metadata)?;
+                }
+                Err(error.into())
+            }
+        }
+    }
+
+    pub fn identity_key_status(&self) -> Result<Option<IdentityCryptoMetadata>, NodeError> {
+        Ok(self.store.identity_crypto()?)
     }
     pub fn set_name(&self, name: &str) -> Result<DeviceIdentity, NodeError> {
         let name = name.trim();
@@ -1406,6 +1442,75 @@ mod tests {
             signature: String::new(),
         };
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cryptographic_identity_is_persistent_and_missing_key_fails_closed() {
+        let dir = std::env::temp_dir().join(format!("daovibe-crypto-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let first = DesktopNode::open(&dir).unwrap();
+        let metadata = first.ensure_identity_key().unwrap();
+        let reopened = DesktopNode::open(&dir).unwrap();
+        let same = reopened.ensure_identity_key().unwrap();
+        assert_eq!(metadata.identity_public_key, same.identity_public_key);
+        assert_eq!(
+            metadata.identity_key_fingerprint,
+            same.identity_key_fingerprint
+        );
+        fs::remove_file(dir.join("identity-key-v1.bin")).unwrap();
+        assert!(reopened.ensure_identity_key().is_err());
+        assert_eq!(
+            reopened
+                .identity_key_status()
+                .unwrap()
+                .unwrap()
+                .identity_key_state,
+            crate::crypto::IDENTITY_KEY_STATE_UNAVAILABLE
+        );
+        assert_eq!(
+            reopened.ensure_identity().unwrap().node_id,
+            first.ensure_identity().unwrap().node_id
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cryptographic_identity_rejects_corrupt_blob_and_public_key_mismatch() {
+        let dir = std::env::temp_dir().join(format!(
+            "daovibe-crypto-corrupt-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let node = DesktopNode::open(&dir).unwrap();
+        let _ = node.ensure_identity_key().unwrap();
+        fs::write(dir.join("identity-key-v1.bin"), [0u8, 1, 2]).unwrap();
+        assert!(node.ensure_identity_key().is_err());
+        assert_eq!(
+            node.identity_key_status()
+                .unwrap()
+                .unwrap()
+                .identity_key_state,
+            crate::crypto::IDENTITY_KEY_STATE_UNAVAILABLE
+        );
+        let _ = fs::remove_dir_all(&dir);
+
+        let mismatch_dir = std::env::temp_dir().join(format!(
+            "daovibe-crypto-mismatch-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&mismatch_dir);
+        fs::create_dir_all(&mismatch_dir).unwrap();
+        let mismatch_node = DesktopNode::open(&mismatch_dir).unwrap();
+        let _ = mismatch_node.ensure_identity_key().unwrap();
+        let mut blob = fs::read(mismatch_dir.join("identity-key-v1.bin")).unwrap();
+        let node_id_len = mismatch_node.ensure_identity().unwrap().node_id.len();
+        let public_offset = crate::crypto::MAGIC.len() + 1 + 2 + node_id_len;
+        blob[public_offset] ^= 0x01;
+        fs::write(mismatch_dir.join("identity-key-v1.bin"), blob).unwrap();
+        assert!(mismatch_node.ensure_identity_key().is_err());
+        let _ = fs::remove_dir_all(&mismatch_dir);
     }
 
     #[test]

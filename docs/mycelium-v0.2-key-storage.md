@@ -68,3 +68,25 @@ Lost device, reinstall, database-only restore, and key-only restore all surface
 the same bounded failure categories and require explicit recovery. An optional
 future recovery package may contain threshold/out-of-band approvals; it is not
 part of v0.2.
+
+## v0.2A implementation facts (2026-09-30)
+
+The Android minSdk-26 capability spike found no portable direct Ed25519
+Android-Keystore path that could be assumed for the supported runtime. v0.2A
+therefore uses Bouncy Castle `bcprov-jdk18on:1.82` for Ed25519 seed/public-key
+operations and an Android Keystore AES/GCM/NoPadding key for wrapping. Every
+wrap uses a fresh 12-byte IV and authenticated format/node/scheme AAD. The
+ciphertext blob is versioned and kept in app preferences; plaintext seed and
+wrapping keys are never persisted there. Hardware-backed status is reported
+only when the provider exposes it; otherwise it is `unknown`.
+
+Windows uses `ed25519-dalek:2.2.0` and Windows user-scoped DPAPI via
+`windows-sys:0.59`. The versioned `identity-key-v1.bin` blob includes the
+node-id binding, public key, and fingerprint metadata and is atomically created
+with a no-clobber rename after protection. An existing destination is
+recovered/validated and never overwritten. Missing, malformed, unprotectable,
+or mismatched material marks the existing binding unavailable; no replacement
+key is minted.
+
+The implementation deliberately does not change packet signatures, transport,
+HELLO/ACCEPT, pairing, invite v1, or ledger export/import behavior.

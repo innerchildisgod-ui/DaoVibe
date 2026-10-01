@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import org.json.JSONObject
 import org.daovibe.android.core.identity.DeviceIdentityRepository
+import org.daovibe.android.core.identity.IdentitySecretStorage
+import org.daovibe.android.core.identity.UnavailableIdentitySecretStorage
 import org.daovibe.android.core.protocol.InputType
 import org.daovibe.android.core.protocol.LmpPacket
 import org.daovibe.android.core.protocol.MeaningProposalPayload
@@ -58,12 +60,15 @@ data class LedgerImportResult(
 class LocalMyceliumRepository(
     private val database: DaoVibeDatabase,
     private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
-    private val zone: String = "local_device_zone"
+    private val zone: String = "local_device_zone",
+    private val secretStorage: IdentitySecretStorage = UnavailableIdentitySecretStorage()
 ) {
     private val dao = database.daoVibeDao()
     private val validator = PacketValidator()
     private val packetFactory = PacketFactory(nowSeconds)
-    val identityRepository = DeviceIdentityRepository(dao, nowSeconds)
+    val identityRepository = DeviceIdentityRepository(dao, nowSeconds, secretStorage)
+    internal val identitySecretStorageBackend: String
+        get() = secretStorage.backend
 
     /** Read-only inputs for the explicit consistency/readiness check. */
     internal suspend fun diagnosticPackets(): List<PacketEntity> = dao.listPacketsForReplay()

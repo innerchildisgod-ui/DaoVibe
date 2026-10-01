@@ -44,6 +44,8 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.4.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Audited Ed25519 primitive used only for v0.2A identity derivation.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.82")
 
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")

@@ -178,6 +178,29 @@ internal fun DeviceScreen(
 
         InfoSurface {
             Text(
+                text = "Cryptographic node identity",
+                style = MaterialTheme.typography.titleMedium
+            )
+            DetailLine("Scheme", identity?.identityKeyScheme ?: "uninitialized")
+            DetailLine("Key state", identity?.identityKeyState ?: "uninitialized")
+            DetailLine("Secure storage", identity?.secureStorageBackend ?: "unavailable")
+            DetailLine("Hardware-backed", identity?.hardwareBacked?.toString() ?: "unknown")
+            SelectionContainer {
+                Text(
+                    identity?.identityKeyFingerprint ?: "Fingerprint unavailable",
+                    fontFamily = FontFamily.Monospace,
+                    color = DaoVibeColors.Cyan
+                )
+            }
+            Text(
+                "Public metadata only. Private key material is never exported or displayed.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = DaoVibeColors.TextSecondary
+            )
+        }
+
+        InfoSurface {
+            Text(
                 text = "Mycelium state fingerprint",
                 style = MaterialTheme.typography.titleMedium
             )

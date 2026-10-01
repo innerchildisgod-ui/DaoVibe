@@ -59,3 +59,11 @@ repair a compromised unlocked device, or create Byzantine consensus. Exact
 Android Keystore Ed25519 support at minSdk 26, the audited cross-platform Noise
 libraries, Windows protection API, and final binary frame encoding require the
 v0.2A/C implementation spikes and must not be guessed in this design milestone.
+
+## v0.2A resolution
+
+The v0.2A spike selected audited Bouncy Castle Ed25519 plus Android Keystore
+AES-GCM wrapping for API-26-compatible Android persistence. Windows uses
+`ed25519-dalek` with user-scoped DPAPI wrapping. These choices affect only local
+identity persistence and diagnostics; packet signatures and transport remain
+the v0.1 development behaviors until later milestones.

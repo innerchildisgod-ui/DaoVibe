@@ -1,5 +1,6 @@
 pub mod canonical;
 pub mod consistency;
+pub mod crypto;
 pub mod invite;
 pub mod models;
 pub mod mycelium;

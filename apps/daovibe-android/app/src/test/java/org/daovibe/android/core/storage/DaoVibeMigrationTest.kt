@@ -7,12 +7,14 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.test.runTest
 import org.daovibe.android.core.protocol.InputType
 import org.daovibe.android.core.protocol.PacketFactory
+import org.daovibe.android.core.protocol.PacketJsonCodec
 import org.daovibe.android.core.protocol.PacketType
 import org.daovibe.android.core.protocol.PhraseObservedPayload
 import org.daovibe.android.core.protocol.StableJson
 import org.daovibe.android.core.protocol.estimatePacketSize
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,6 +39,16 @@ class DaoVibeMigrationTest {
     @After
     fun tearDown() {
         databaseFile.delete()
+    }
+
+    @Test
+    fun productionMigrationRegistryIncludesEveryAdditiveStepThroughV8() {
+        assertEquals(7, DaoVibeDatabase.ALL_MIGRATIONS.size)
+        assertTrue(
+            DaoVibeDatabase.ALL_MIGRATIONS.any {
+                it.startVersion == 7 && it.endVersion == 8
+            }
+        )
     }
 
     @Test
@@ -68,6 +80,7 @@ class DaoVibeMigrationTest {
             .addMigrations(DaoVibeDatabase.MIGRATION_4_5)
             .addMigrations(DaoVibeDatabase.MIGRATION_5_6)
             .addMigrations(DaoVibeDatabase.MIGRATION_6_7)
+            .addMigrations(DaoVibeDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
@@ -83,6 +96,7 @@ class DaoVibeMigrationTest {
             assertEquals(packet.packetJson(), storedPacket.packetJson)
             assertEquals(emptyList<PairingRecordEntity>(), dao.listPairingRecords())
             assertEquals(emptyList<KnownPeerEntity>(), dao.listKnownPeers())
+            assertEquals(null, identity?.identityPublicKey)
         } finally {
             migrated.close()
         }
@@ -144,6 +158,7 @@ class DaoVibeMigrationTest {
             DaoVibeDatabase::class.java,
             databaseFile.absolutePath
         ).addMigrations(DaoVibeDatabase.MIGRATION_6_7)
+            .addMigrations(DaoVibeDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
         try {
@@ -166,6 +181,99 @@ class DaoVibeMigrationTest {
             assertEquals(null, peer.lastDiagnosticErrorCategory)
             assertEquals(null, peer.lastDiagnosticMessage)
             assertEquals(null, peer.lastDiagnosticLatencyMs)
+            assertEquals("legacy_unverified", peer.trustState)
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migration7To8PreservesIdentityPacketsPeersAndSeedsLegacyTrust() = runTest {
+        val packet = PacketFactory { 1_700_000_000L }.create(
+            packetType = PacketType.PHRASE_OBSERVED,
+            zone = "v7_zone",
+            author = "v7_node",
+            payload = PhraseObservedPayload(
+                phraseId = "v7_phrase",
+                surfaceText = "v7 packet",
+                languageHint = "en",
+                inputType = InputType.TEXT
+            ),
+            createdAt = 1_700_000_000L
+        )
+        val size = estimatePacketSize(packet)
+        val before = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(), DaoVibeDatabase::class.java,
+            databaseFile.absolutePath
+        ).allowMainThreadQueries().build()
+        before.daoVibeDao().insertDeviceIdentity(
+            DeviceIdentityEntity(1, "v7_node", "V7 Device", 1_600_000_000L)
+        )
+        before.daoVibeDao().insertPacket(
+            PacketEntity(
+                packetId = packet.packetId,
+                packetType = packet.packetType.wireValue,
+                zone = packet.zone,
+                author = packet.author,
+                parent = packet.parent,
+                phraseId = "v7_phrase",
+                meaningId = null,
+                payloadHash = packet.payloadHash,
+                payloadJson = StableJson.stringify(packet.payload.toStableMap()),
+                packetJson = PacketJsonCodec.encode(packet),
+                packetSizeBytes = size.bytes,
+                packetSizeClass = size.sizeClass.wireValue,
+                sizeRecommendation = size.recommendation,
+                createdAt = packet.createdAt,
+                receivedAt = 1_700_000_100L
+            )
+        )
+        before.daoVibeDao().upsertKnownPeer(
+            KnownPeerEntity(
+                remoteNodeId = "remote_v7",
+                displayName = "Remote v7",
+                host = "127.0.0.1",
+                port = 4242,
+                pairingId = "pair_v7",
+                lastSuccessfulContactAt = null,
+                lastError = null,
+                updatedAt = 20
+            )
+        )
+        before.close()
+
+        val legacy = SQLiteDatabase.openDatabase(
+            databaseFile.absolutePath,
+            null,
+            SQLiteDatabase.OPEN_READWRITE
+        )
+        try {
+            listOf(
+                "identity_key_scheme", "identity_public_key", "identity_key_fingerprint",
+                "identity_key_created_at", "identity_key_state",
+                "identity_secure_storage_backend", "identity_hardware_backed"
+            ).forEach { legacy.execSQL("ALTER TABLE device_identity DROP COLUMN $it") }
+            listOf(
+                "pinned_public_key", "pinned_fingerprint", "trust_state",
+                "first_verified_at", "last_verified_at", "key_change_detected_at"
+            ).forEach { legacy.execSQL("ALTER TABLE known_peers DROP COLUMN $it") }
+            legacy.version = 7
+        } finally {
+            legacy.close()
+        }
+
+        val migrated = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(), DaoVibeDatabase::class.java,
+            databaseFile.absolutePath
+        ).addMigrations(DaoVibeDatabase.MIGRATION_7_8)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = migrated.daoVibeDao()
+            assertEquals("v7_node", dao.getDeviceIdentity()?.nodeId)
+            assertEquals(packet.packetId, dao.listPacketsInLedgerOrder().single().packetId)
+            assertEquals("remote_v7", dao.listKnownPeers().single().remoteNodeId)
+            assertEquals("legacy_unverified", dao.listKnownPeers().single().trustState)
         } finally {
             migrated.close()
         }

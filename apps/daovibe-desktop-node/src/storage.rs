@@ -1,3 +1,4 @@
+use crate::crypto::{IdentityCryptoMetadata, IDENTITY_KEY_STATE_UNAVAILABLE};
 use crate::models::{DeviceIdentity, Packet, PacketError};
 use crate::protocol::{PairingApproval, PairingOffer, ProtocolError, SyncBatch, START_CURSOR};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -55,6 +56,17 @@ pub struct PeerRecord {
     pub last_diagnostic_message: Option<String>,
     pub last_diagnostic_latency_ms: Option<i64>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PeerTrustRecord {
+    pub remote_node_id: String,
+    pub pinned_public_key: Option<String>,
+    pub pinned_fingerprint: Option<String>,
+    pub trust_state: String,
+    pub first_verified_at: Option<i64>,
+    pub last_verified_at: Option<i64>,
+    pub key_change_detected_at: Option<i64>,
+}
 #[derive(Clone, Debug)]
 pub struct StoredPacket {
     pub packet: Packet,
@@ -78,7 +90,7 @@ impl Store {
         Ok(store)
     }
     fn initialize(&self) -> Result<(), StorageError> {
-        self.connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; CREATE TABLE IF NOT EXISTS device_identity (id INTEGER PRIMARY KEY CHECK (id = 1), node_id TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, created_at INTEGER NOT NULL, platform TEXT NOT NULL, role TEXT NOT NULL); CREATE TABLE IF NOT EXISTS packets (packet_id TEXT PRIMARY KEY, packet_type TEXT NOT NULL, created_at INTEGER NOT NULL, received_at INTEGER NOT NULL, packet_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS packets_ledger_order ON packets(received_at ASC, packet_id ASC); CREATE TABLE IF NOT EXISTS paired_devices (pairing_id TEXT PRIMARY KEY, local_node_id TEXT NOT NULL, remote_node_id TEXT NOT NULL, remote_display_name TEXT NOT NULL, remote_platform TEXT NOT NULL, remote_role TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, paired_at INTEGER); CREATE UNIQUE INDEX IF NOT EXISTS paired_devices_remote_active ON paired_devices(local_node_id, remote_node_id) WHERE status = 'approved'; CREATE TABLE IF NOT EXISTS peer_sync_state (remote_node_id TEXT PRIMARY KEY, pairing_id TEXT NOT NULL, inbound_cursor TEXT NOT NULL DEFAULT '0:', updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS known_peers (remote_node_id TEXT PRIMARY KEY, display_name TEXT, host TEXT NOT NULL, port INTEGER NOT NULL, pairing_id TEXT NOT NULL, last_successful_contact_at INTEGER, last_error TEXT, updated_at INTEGER NOT NULL);")?;
+        self.connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; CREATE TABLE IF NOT EXISTS device_identity (id INTEGER PRIMARY KEY CHECK (id = 1), node_id TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, created_at INTEGER NOT NULL, platform TEXT NOT NULL, role TEXT NOT NULL); CREATE TABLE IF NOT EXISTS identity_crypto (id INTEGER PRIMARY KEY CHECK (id = 1), node_id TEXT NOT NULL UNIQUE, identity_key_scheme TEXT NOT NULL, identity_public_key TEXT NOT NULL, identity_key_fingerprint TEXT NOT NULL, identity_key_created_at INTEGER NOT NULL, identity_key_state TEXT NOT NULL DEFAULT 'uninitialized', secure_storage_backend TEXT NOT NULL, hardware_backed INTEGER); CREATE TABLE IF NOT EXISTS packets (packet_id TEXT PRIMARY KEY, packet_type TEXT NOT NULL, created_at INTEGER NOT NULL, received_at INTEGER NOT NULL, packet_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS packets_ledger_order ON packets(received_at ASC, packet_id ASC); CREATE TABLE IF NOT EXISTS paired_devices (pairing_id TEXT PRIMARY KEY, local_node_id TEXT NOT NULL, remote_node_id TEXT NOT NULL, remote_display_name TEXT NOT NULL, remote_platform TEXT NOT NULL, remote_role TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, paired_at INTEGER); CREATE UNIQUE INDEX IF NOT EXISTS paired_devices_remote_active ON paired_devices(local_node_id, remote_node_id) WHERE status = 'approved'; CREATE TABLE IF NOT EXISTS peer_sync_state (remote_node_id TEXT PRIMARY KEY, pairing_id TEXT NOT NULL, inbound_cursor TEXT NOT NULL DEFAULT '0:', updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS known_peers (remote_node_id TEXT PRIMARY KEY, display_name TEXT, host TEXT NOT NULL, port INTEGER NOT NULL, pairing_id TEXT NOT NULL, last_successful_contact_at INTEGER, last_error TEXT, updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS peer_trust (remote_node_id TEXT PRIMARY KEY, pinned_public_key TEXT, pinned_fingerprint TEXT, trust_state TEXT NOT NULL DEFAULT 'legacy_unverified', first_verified_at INTEGER, last_verified_at INTEGER, key_change_detected_at INTEGER);")?;
         for (name, sql) in [
             (
                 "last_failure_at",
@@ -169,6 +181,31 @@ impl Store {
                 self.connection.execute(sql, [])?;
             }
         }
+        self.connection.execute("INSERT OR IGNORE INTO peer_trust(remote_node_id) SELECT remote_node_id FROM known_peers", [])?;
+        let user_version: i64 = self
+            .connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if user_version < 2 {
+            self.connection.execute_batch("PRAGMA user_version = 2;")?;
+        }
+        Ok(())
+    }
+
+    pub fn identity_crypto(&self) -> Result<Option<IdentityCryptoMetadata>, StorageError> {
+        self.connection.query_row("SELECT node_id,identity_key_scheme,identity_public_key,identity_key_fingerprint,identity_key_created_at,identity_key_state,secure_storage_backend,hardware_backed FROM identity_crypto WHERE id=1", [], |row| Ok(IdentityCryptoMetadata { node_id: row.get(0)?, identity_key_scheme: row.get(1)?, identity_public_key: row.get(2)?, identity_key_fingerprint: row.get(3)?, identity_key_created_at: row.get(4)?, identity_key_state: row.get(5)?, secure_storage_backend: row.get(6)?, hardware_backed: row.get(7)? })).optional().map_err(Into::into)
+    }
+    pub fn upsert_identity_crypto(
+        &self,
+        metadata: &IdentityCryptoMetadata,
+    ) -> Result<(), StorageError> {
+        self.connection.execute("INSERT INTO identity_crypto(id,node_id,identity_key_scheme,identity_public_key,identity_key_fingerprint,identity_key_created_at,identity_key_state,secure_storage_backend,hardware_backed) VALUES(1,?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET node_id=excluded.node_id,identity_key_scheme=excluded.identity_key_scheme,identity_public_key=excluded.identity_public_key,identity_key_fingerprint=excluded.identity_key_fingerprint,identity_key_created_at=excluded.identity_key_created_at,identity_key_state=excluded.identity_key_state,secure_storage_backend=excluded.secure_storage_backend,hardware_backed=excluded.hardware_backed", params![metadata.node_id, metadata.identity_key_scheme, metadata.identity_public_key, metadata.identity_key_fingerprint, metadata.identity_key_created_at, metadata.identity_key_state, metadata.secure_storage_backend, metadata.hardware_backed])?;
+        Ok(())
+    }
+    pub fn mark_identity_unavailable(&self) -> Result<(), StorageError> {
+        self.connection.execute(
+            "UPDATE identity_crypto SET identity_key_state=?1 WHERE id=1",
+            [IDENTITY_KEY_STATE_UNAVAILABLE],
+        )?;
         Ok(())
     }
     pub fn identity(&self) -> Result<Option<DeviceIdentity>, StorageError> {
@@ -208,6 +245,10 @@ impl Store {
     }
     pub fn upsert_peer(&self, peer: &PeerRecord) -> Result<(), StorageError> {
         self.connection.execute("INSERT INTO known_peers(remote_node_id,display_name,host,port,pairing_id,last_successful_contact_at,last_error,updated_at,last_failure_at,last_outcome,last_stage,last_error_category,last_attempts,last_imported_packets,last_duplicate_packets,last_exported_packets,last_sync_started_at,last_sync_finished_at,last_cursor,last_diagnostic_at,last_diagnostic_outcome,last_diagnostic_stage,last_diagnostic_error_category,last_diagnostic_message,last_diagnostic_latency_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25) ON CONFLICT(remote_node_id) DO UPDATE SET display_name=excluded.display_name,host=excluded.host,port=excluded.port,pairing_id=excluded.pairing_id,last_successful_contact_at=known_peers.last_successful_contact_at,last_error=known_peers.last_error,last_failure_at=known_peers.last_failure_at,last_outcome=known_peers.last_outcome,last_stage=known_peers.last_stage,last_error_category=known_peers.last_error_category,last_attempts=known_peers.last_attempts,last_imported_packets=known_peers.last_imported_packets,last_duplicate_packets=known_peers.last_duplicate_packets,last_exported_packets=known_peers.last_exported_packets,last_sync_started_at=known_peers.last_sync_started_at,last_sync_finished_at=known_peers.last_sync_finished_at,last_cursor=known_peers.last_cursor,last_diagnostic_at=known_peers.last_diagnostic_at,last_diagnostic_outcome=known_peers.last_diagnostic_outcome,last_diagnostic_stage=known_peers.last_diagnostic_stage,last_diagnostic_error_category=known_peers.last_diagnostic_error_category,last_diagnostic_message=known_peers.last_diagnostic_message,last_diagnostic_latency_ms=known_peers.last_diagnostic_latency_ms,updated_at=excluded.updated_at", params![peer.remote_node_id, peer.display_name, peer.host, peer.port, peer.pairing_id, peer.last_successful_contact_at, peer.last_error, peer.updated_at, peer.last_failure_at, peer.last_outcome, peer.last_stage, peer.last_error_category, peer.last_attempts, peer.last_imported_packets, peer.last_duplicate_packets, peer.last_exported_packets, peer.last_sync_started_at, peer.last_sync_finished_at, peer.last_cursor, peer.last_diagnostic_at, peer.last_diagnostic_outcome, peer.last_diagnostic_stage, peer.last_diagnostic_error_category, peer.last_diagnostic_message, peer.last_diagnostic_latency_ms])?;
+        self.connection.execute(
+            "INSERT OR IGNORE INTO peer_trust(remote_node_id) VALUES(?1)",
+            [&peer.remote_node_id],
+        )?;
         Ok(())
     }
     pub fn peer(&self, remote_node_id: &str) -> Result<Option<PeerRecord>, StorageError> {
@@ -226,6 +267,10 @@ impl Store {
             [remote_node_id],
         )?;
         Ok(())
+    }
+
+    pub fn peer_trust(&self, remote_node_id: &str) -> Result<PeerTrustRecord, StorageError> {
+        self.connection.query_row("SELECT remote_node_id,pinned_public_key,pinned_fingerprint,trust_state,first_verified_at,last_verified_at,key_change_detected_at FROM peer_trust WHERE remote_node_id=?1", [remote_node_id], |row| Ok(PeerTrustRecord { remote_node_id: row.get(0)?, pinned_public_key: row.get(1)?, pinned_fingerprint: row.get(2)?, trust_state: row.get(3)?, first_verified_at: row.get(4)?, last_verified_at: row.get(5)?, key_change_detected_at: row.get(6)? })).optional().map_err(Into::into).map(|value| value.unwrap_or(PeerTrustRecord { remote_node_id: remote_node_id.to_owned(), pinned_public_key: None, pinned_fingerprint: None, trust_state: "legacy_unverified".to_owned(), first_verified_at: None, last_verified_at: None, key_change_detected_at: None }))
     }
     pub fn mark_peer_success(&self, remote_node_id: &str, at: i64) -> Result<(), StorageError> {
         self.connection.execute("UPDATE known_peers SET last_successful_contact_at=?1,updated_at=?1 WHERE remote_node_id=?2", params![at, remote_node_id])?;
@@ -930,6 +975,10 @@ mod tests {
         assert_eq!(peer.last_diagnostic_error_category, None);
         assert_eq!(peer.last_diagnostic_message, None);
         assert_eq!(peer.last_diagnostic_latency_ms, None);
+        assert_eq!(
+            store.peer_trust("remote").unwrap().trust_state,
+            "legacy_unverified"
+        );
         drop(store);
         let _ = std::fs::remove_file(&path);
     }

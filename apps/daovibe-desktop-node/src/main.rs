@@ -156,13 +156,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Command::Identity => {
             let identity = node.ensure_identity()?;
+            let crypto = node
+                .ensure_identity_key()
+                .err()
+                .and_then(|_| node.identity_key_status().ok().flatten())
+                .or_else(|| node.identity_key_status().ok().flatten());
             println!(
-                "Node ID: {}\nDisplay name: {}\nPlatform: {}\nRole: {}\nCreated at: {}",
+                "Node ID: {}\nDisplay name: {}\nPlatform: {}\nRole: {}\nCreated at: {}\nIdentity scheme: {}\nPublic key: {}\nFingerprint: {}\nKey state: {}\nSecure storage: {}\nHardware-backed: {}",
                 identity.node_id,
                 identity.display_name,
                 identity.platform,
                 identity.role,
-                identity.created_at
+                identity.created_at,
+                crypto.as_ref().map(|v| v.identity_key_scheme.as_str()).unwrap_or("ed25519"),
+                crypto.as_ref().map(|v| v.identity_public_key.as_str()).unwrap_or("unavailable"),
+                crypto.as_ref().map(|v| v.identity_key_fingerprint.as_str()).unwrap_or("unavailable"),
+                crypto.as_ref().map(|v| v.identity_key_state.as_str()).unwrap_or("unavailable"),
+                crypto.as_ref().map(|v| v.secure_storage_backend.as_str()).unwrap_or("windows_dpapi_user"),
+                crypto.as_ref().and_then(|v| v.hardware_backed).map(|v| v.to_string()).unwrap_or_else(|| "unknown".to_owned())
             );
         }
         Command::SetName { name } => {

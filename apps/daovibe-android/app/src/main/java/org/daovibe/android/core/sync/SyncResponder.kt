@@ -8,6 +8,8 @@ import org.daovibe.android.core.connection.ConnectionSession
 import org.daovibe.android.core.connection.PeerTransport
 import org.daovibe.android.core.connection.PeerTransportException
 import org.daovibe.android.core.connection.toFailure
+import org.daovibe.android.core.identity.IdentitySecretStorage
+import org.daovibe.android.core.identity.UnavailableIdentitySecretStorage
 import org.daovibe.android.core.storage.DaoVibeDatabase
 
 class SyncResponder(
@@ -18,18 +20,21 @@ class SyncResponder(
     supportedConnectionVersions: Set<String> =
         org.daovibe.android.core.connection.SUPPORTED_CONNECTION_VERSIONS,
     supportedPacketProtocolVersions: Set<String> =
-        org.daovibe.android.core.connection.SUPPORTED_PACKET_PROTOCOL_VERSIONS
+        org.daovibe.android.core.connection.SUPPORTED_PACKET_PROTOCOL_VERSIONS,
+    secretStorage: IdentitySecretStorage = UnavailableIdentitySecretStorage()
 ) {
     private val connectionRepository = ConnectionRepository(
         database = database,
         nowSeconds = nowSeconds,
         localCapabilities = localCapabilities,
         supportedConnectionVersions = supportedConnectionVersions,
-        supportedPacketProtocolVersions = supportedPacketProtocolVersions
+        supportedPacketProtocolVersions = supportedPacketProtocolVersions,
+        secretStorage = secretStorage
     )
     private val packetSyncRepository = PacketSyncRepository(
         database = database,
-        nowSeconds = nowSeconds
+        nowSeconds = nowSeconds,
+        secretStorage = secretStorage
     )
 
     suspend fun serveOnce(transport: PeerTransport): SyncResponderResult {

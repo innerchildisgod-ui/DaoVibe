@@ -1,6 +1,8 @@
 package org.daovibe.android.core.sync
 
 import org.daovibe.android.core.mycelium.LocalMyceliumRepository
+import org.daovibe.android.core.identity.IdentitySecretStorage
+import org.daovibe.android.core.identity.UnavailableIdentitySecretStorage
 import org.daovibe.android.core.protocol.PacketJsonCodec
 import org.daovibe.android.core.protocol.PacketValidator
 import org.daovibe.android.core.storage.DaoVibeDatabase
@@ -9,8 +11,9 @@ import java.nio.charset.StandardCharsets
 class PacketSyncRepository(
     private val database: DaoVibeDatabase,
     private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
+    secretStorage: IdentitySecretStorage = UnavailableIdentitySecretStorage(),
     private val myceliumRepository: LocalMyceliumRepository =
-        LocalMyceliumRepository(database, nowSeconds)
+        LocalMyceliumRepository(database, nowSeconds, secretStorage = secretStorage)
 ) {
     private val dao = database.daoVibeDao()
     private val validator = PacketValidator()

@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-const val DAO_VIBE_ROOM_SCHEMA_VERSION = 7
+const val DAO_VIBE_ROOM_SCHEMA_VERSION = 8
 
 @Database(
     entities = [
@@ -157,5 +157,42 @@ abstract class DaoVibeDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE known_peers ADD COLUMN last_diagnostic_latency_ms INTEGER")
             }
         }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                fun add(table: String, column: String, definition: String) {
+                    db.query("PRAGMA table_info(`$table`)").use { cursor ->
+                        var present = false
+                        val index = cursor.getColumnIndex("name")
+                        while (cursor.moveToNext()) if (cursor.getString(index) == column) present = true
+                        if (!present) db.execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+                    }
+                }
+                add("device_identity", "identity_key_scheme", "TEXT")
+                add("device_identity", "identity_public_key", "TEXT")
+                add("device_identity", "identity_key_fingerprint", "TEXT")
+                add("device_identity", "identity_key_created_at", "INTEGER")
+                add("device_identity", "identity_key_state", "TEXT")
+                add("device_identity", "identity_secure_storage_backend", "TEXT")
+                add("device_identity", "identity_hardware_backed", "INTEGER")
+                add("known_peers", "pinned_public_key", "TEXT")
+                add("known_peers", "pinned_fingerprint", "TEXT")
+                add("known_peers", "trust_state", "TEXT NOT NULL DEFAULT 'legacy_unverified'")
+                add("known_peers", "first_verified_at", "INTEGER")
+                add("known_peers", "last_verified_at", "INTEGER")
+                add("known_peers", "key_change_detected_at", "INTEGER")
+            }
+        }
+
+        /** The production builder must register every additive migration. */
+        val ALL_MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8
+        )
     }
 }

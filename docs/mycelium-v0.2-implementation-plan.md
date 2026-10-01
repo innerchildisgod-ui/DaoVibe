@@ -790,3 +790,11 @@ Threat model: `docs/mycelium-v0.2-threat-model.md`. Transport:
 
 Next task is exactly `Mycelium v0.2A — Cryptographic Node Identity Foundation`
 in `.daovibe/tasks/NEXT_TASK.md`; do not begin it in this design run.
+
+## v0.2A implementation record (2026-09-30)
+
+The repository's implementation-plan file is currently a byte-for-byte copy of
+the historical handoff rather than a dedicated phased-plan document. The
+implemented v0.2A facts are recorded in `docs/mycelium-v0.2-key-storage.md` and
+`.daovibe/handoff/latest.md`; no protocol semantics are inferred from the
+duplicated file. The exact next milestone is v0.2B Real Packet Signatures.

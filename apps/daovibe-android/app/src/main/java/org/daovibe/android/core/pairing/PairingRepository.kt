@@ -4,16 +4,19 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.daovibe.android.core.identity.DeviceIdentityRepository
+import org.daovibe.android.core.identity.IdentitySecretStorage
+import org.daovibe.android.core.identity.UnavailableIdentitySecretStorage
 import org.daovibe.android.core.storage.DaoVibeDatabase
 import org.daovibe.android.core.storage.PendingPairingOfferEntity
 import org.daovibe.android.core.storage.PairingRecordEntity
 
 class PairingRepository(
     private val database: DaoVibeDatabase,
-    private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L }
+    private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
+    secretStorage: IdentitySecretStorage = UnavailableIdentitySecretStorage()
 ) {
     private val dao = database.daoVibeDao()
-    private val identityRepository = DeviceIdentityRepository(dao, nowSeconds)
+    private val identityRepository = DeviceIdentityRepository(dao, nowSeconds, secretStorage)
 
     fun observePairingRecords(): Flow<List<PairingRecord>> =
         dao.observePairingRecords().map { records ->

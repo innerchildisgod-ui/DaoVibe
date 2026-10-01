@@ -2,6 +2,8 @@ package org.daovibe.android.core.connection
 
 import kotlinx.coroutines.flow.Flow
 import org.daovibe.android.core.identity.DeviceIdentityRepository
+import org.daovibe.android.core.identity.IdentitySecretStorage
+import org.daovibe.android.core.identity.UnavailableIdentitySecretStorage
 import org.daovibe.android.core.storage.DaoVibeDatabase
 import org.daovibe.android.core.storage.KnownPeerEntity
 
@@ -39,10 +41,11 @@ class PeerRegistryException(message: String) : IllegalArgumentException(message)
 /** Local connection metadata only; it never participates in Mycelium state or hashes. */
 class PeerRegistryRepository(
     private val database: DaoVibeDatabase,
-    private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L }
+    private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
+    secretStorage: IdentitySecretStorage = UnavailableIdentitySecretStorage()
 ) : PeerSyncRegistry {
     private val dao = database.daoVibeDao()
-    private val identityRepository = DeviceIdentityRepository(dao, nowSeconds)
+    private val identityRepository = DeviceIdentityRepository(dao, nowSeconds, secretStorage)
 
     suspend fun localIdentity() = identityRepository.getOrCreate()
 

@@ -17,6 +17,17 @@ interface DaoVibeDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertDeviceIdentity(identity: DeviceIdentityEntity): Long
 
+    @Query("UPDATE device_identity SET identity_key_scheme = :scheme, identity_public_key = :publicKey, identity_key_fingerprint = :fingerprint, identity_key_created_at = :keyCreatedAt, identity_key_state = :state, identity_secure_storage_backend = :backend, identity_hardware_backed = :hardwareBacked WHERE id = 1")
+    suspend fun updateIdentityCrypto(
+        scheme: String?,
+        publicKey: String?,
+        fingerprint: String?,
+        keyCreatedAt: Long?,
+        state: String,
+        backend: String?,
+        hardwareBacked: Boolean?
+    )
+
     @Query("UPDATE device_identity SET display_name = :displayName WHERE id = 1")
     suspend fun updateDeviceDisplayName(displayName: String)
 

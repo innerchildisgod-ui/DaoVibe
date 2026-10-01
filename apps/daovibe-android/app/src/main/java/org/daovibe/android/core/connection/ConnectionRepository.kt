@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import org.daovibe.android.core.identity.DeviceIdentityRepository
+import org.daovibe.android.core.identity.IdentitySecretStorage
+import org.daovibe.android.core.identity.UnavailableIdentitySecretStorage
 import org.daovibe.android.core.pairing.PairingRecord
 import org.daovibe.android.core.pairing.PairingRepository
 import org.daovibe.android.core.pairing.PairingRecordStatus
@@ -52,14 +54,16 @@ class ConnectionRepository(
     private val supportedPacketProtocolVersions: Set<String> =
         SUPPORTED_PACKET_PROTOCOL_VERSIONS,
     private val peerTransportFactory: () -> PeerTransport =
-        { TcpPeerTransport() }
+        { TcpPeerTransport() },
+    secretStorage: IdentitySecretStorage = UnavailableIdentitySecretStorage()
 ) {
     private val identityRepository = DeviceIdentityRepository(
         database.daoVibeDao(),
-        nowSeconds
+        nowSeconds,
+        secretStorage
     )
-    private val pairingRepository = PairingRepository(database, nowSeconds)
-    private val packetSyncRepository = PacketSyncRepository(database, nowSeconds)
+    private val pairingRepository = PairingRepository(database, nowSeconds, secretStorage)
+    private val packetSyncRepository = PacketSyncRepository(database, nowSeconds, secretStorage = secretStorage)
     private val _sessions = MutableStateFlow<List<ConnectionSession>>(emptyList())
     private val attemptMutex = Mutex()
 
